@@ -11,5 +11,5 @@
     "lib": ["ESNext", "DOM"],
     "skipLibCheck": true
   },
-  "include": ["src/FirmSerial.ts"]
+  "include": ["src/FirmSerial.ts", "src/index.ts"]
 }

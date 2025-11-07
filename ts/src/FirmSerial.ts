@@ -63,7 +63,6 @@ export class FIRM {
       throw new Error("Web Serial API not available in this browser");
     }
 
-    // Initialize the wasm module (from ../pkg/firm_client.js).
     await init();
 
     const wasm = new WasmFIRM();
@@ -78,15 +77,14 @@ export class FIRM {
 
     const firm = new FIRM(wasm);
     firm.reader = reader;
-    firm.startReadLoop(); // fire-and-forget
+    firm.startReadLoop();
     return firm;
   }
 
   /**
-   * Internal read loop:
-   * - reads chunks from Web Serial,
-   * - feeds them into the Rust parser,
-   * - enqueues all ready packets.
+   * This is the internal read loop that continuously reads from Web Serial. It
+   * reads raw bytes, feeds them into the Rust parser, and then enqueues all the
+   * parsed packets.
    *
    * @returns Resolves when the stream ends or an error occurs.
    */
@@ -131,14 +129,14 @@ export class FIRM {
   /**
    * Enqueues a newly parsed packet or resolves a pending waiter.
    *
-   * @param pkt Parsed FIRM data packet.
+   * @param dataPacket Parsed FIRM data packet.
    */
-  private enqueuePacket(pkt: FirmDataPacket): void {
+  private enqueuePacket(dataPacket: FirmDataPacket): void {
     if (this.packetWaiters.length > 0) {
       const waiter = this.packetWaiters.shift()!;
-      waiter(pkt);
+      waiter(dataPacket);
     } else {
-      this.packetQueue.push(pkt);
+      this.packetQueue.push(dataPacket);
     }
   }
 

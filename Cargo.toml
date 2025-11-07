@@ -12,6 +12,7 @@ serde-wasm-bindgen = { version = "0.5", optional = true }
 
 [features]
 wasm = ["wasm-bindgen", "serde-wasm-bindgen"]
+python = ["pyo3"]
 
 [[bin]]
 name = "firm_cli"

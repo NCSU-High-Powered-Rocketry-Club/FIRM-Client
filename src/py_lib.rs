@@ -1,17 +1,14 @@
-#[cfg(feature = "python")]
-use crate::parser::SerialParser;
-#[cfg(feature = "python")]
-use crate::parser::FIRMPacket;
-#[cfg(feature = "python")]
+#![cfg(feature = "python")]
+
+use crate::parser::{FIRMPacket, SerialParser};
 use pyo3::prelude::*;
 
-#[cfg(feature = "python")]
+/// Python-facing wrapper around the FIRM serial parser.
 #[pyclass]
 pub struct PyFirmParser {
     inner: SerialParser,
 }
 
-#[cfg(feature = "python")]
 #[pymethods]
 impl PyFirmParser {
     /// Creates a new FIRM parser for Python.
@@ -67,7 +64,6 @@ impl PyFirmParser {
 /// # Returns
 /// 
 /// - `PyResult<()>` - Ok if module initialization succeeded.
-#[cfg(feature = "python")]
 #[pymodule]
 fn firm_client(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<PyFirmParser>()?;

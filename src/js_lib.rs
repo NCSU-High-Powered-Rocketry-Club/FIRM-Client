@@ -1,18 +1,12 @@
+#![cfg(feature = "wasm")]
+
 use crate::parser::SerialParser;
 use serde_wasm_bindgen::to_value;
 use wasm_bindgen::prelude::*;
 
 /// JS-facing wrapper around the FIRM serial parser.
-///
+/// 
 /// Exposed to JavaScript as the `FIRM` class.
-///
-/// # Arguments
-///
-/// - *None* - Constructed with default internal parser state.
-///
-/// # Returns
-///
-/// - `WasmSerialParser` - A new JS-visible parser wrapper.
 #[wasm_bindgen(js_name = FIRM)]
 pub struct WasmSerialParser {
     inner: SerialParser,

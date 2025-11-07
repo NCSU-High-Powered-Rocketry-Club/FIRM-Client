@@ -10,6 +10,7 @@
   "files": [
     "ts/dist",
     "pkg/firm_client.js",
+    "pkg/firm_client_bg.js",
     "pkg/firm_client_bg.wasm",
     "pkg/firm_client.d.ts",
     "LICENSE",

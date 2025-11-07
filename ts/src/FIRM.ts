@@ -1,4 +1,4 @@
-import init, { FIRM as WasmFIRM } from "../pkg/firm_client.js";
+import init, { FIRM as WasmFIRM } from "../../pkg/firm_client.js";
 
 /**
  * Data packet received from FIRM.

@@ -1,6 +1,6 @@
 {
   "name": "firm-client",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Web Serial + Rust WASM client reading data packets from FIRM",
   "license": "MIT",
   "type": "module",

@@ -4,10 +4,10 @@
     "module": "ESNext",
     "moduleResolution": "node",
     "declaration": true,
-    "outDir": "./dist",
+    "outDir": "../dist",
+    "rootDir": ".",
     "strict": true,
     "esModuleInterop": true,
-
     "lib": ["ESNext", "DOM"],
     "skipLibCheck": true
   },

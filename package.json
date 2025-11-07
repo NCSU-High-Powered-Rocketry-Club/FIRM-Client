@@ -1,12 +1,33 @@
 {
-  "name": "firm-client-root",
-  "private": true,
+  "name": "firm-client",
+  "version": "0.1.0",
+  "description": "Web Serial + Rust WASM client reading data packets from FIRM",
+  "license": "MIT",
+  "type": "module",
+
+  "main": "ts/dist/FirmSerial.js",
+  "module": "ts/dist/FirmSerial.js",
+  "types": "ts/dist/FirmSerial.d.ts",
+
+  "files": [
+    "ts/dist",
+    "pkg/firm_client.js",
+    "pkg/firm_client_bg.wasm",
+    "pkg/firm_client.d.ts",
+    "LICENSE",
+    "README.md"
+  ],
+
   "scripts": {
-    "build-wasm": "wasm-pack build --target web --out-dir pkg --out-name firm_client --no-default-features --features wasm",
-    "build-ts": "cd ts && npx tsc",
-    "build-all": "npm run build-wasm && npm run build-ts"
+    "clean": "rimraf pkg ts/dist",
+    "build:wasm": "wasm-pack build --target web --out-dir pkg --out-name firm_client --no-default-features --features wasm",
+    "build:ts": "cd ts && tsc",
+    "build": "npm run build:wasm && npm run build:ts",
+    "prepare": "npm run build"
   },
+
   "devDependencies": {
-    "typescript": "^5.9.3"
+    "rimraf": "^6.0.0",
+    "typescript": "^5.0.0"
   }
 }

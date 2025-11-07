@@ -2,7 +2,7 @@
 
 // This imports the wasm-bindgen JS glue generated into ../pkg by wasm-pack
 // after you run the wasm build step.
-import init, { FIRM } from "../pkg/firm_client";
+import init, { FIRM } from "../pkg/firm_client.js";
 
 // You can refine this later once you know FIRMPacket’s shape
 export type FirmPacket = any;

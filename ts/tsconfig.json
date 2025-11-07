@@ -4,12 +4,12 @@
     "module": "ESNext",
     "moduleResolution": "node",
     "declaration": true,
-    "outDir": "../dist",
-    "rootDir": ".",
+    "outDir": "./dist",
+    "rootDir": "./src",
     "strict": true,
     "esModuleInterop": true,
     "lib": ["ESNext", "DOM"],
     "skipLibCheck": true
   },
-  "include": ["FirmSerial.ts"]
+  "include": ["src/FirmSerial.ts"]
 }

@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>FIRM Client Test</title>
+    <style>
+      :root {
+        --theme-color: #f85e39;
+        --bg-color: #ffffff;
+        --text-color: #1a1a1a;
+      }
+
+      body {
+        font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+        background: var(--bg-color);
+        color: var(--text-color);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: flex-start;
+        gap: 1.5rem;
+        margin: 3rem auto;
+        max-width: 600px;
+      }
+
+      h1 {
+        color: var(--theme-color);
+        margin-bottom: 0.5rem;
+        font-size: 1.8rem;
+      }
+
+      button {
+        background: var(--theme-color);
+        color: white;
+        border: none;
+        border-radius: 8px;
+        padding: 0.7rem 1.5rem;
+        font-size: 1rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background 0.2s ease;
+      }
+
+      button:hover {
+        background: #d94f2f;
+      }
+
+      #output {
+        width: 100%;
+        min-height: 250px;
+        background: #f9f9f9;
+        border: 2px solid var(--theme-color);
+        border-radius: 10px;
+        padding: 1rem;
+        font-family: monospace;
+        font-size: 0.95rem;
+        white-space: pre-wrap;
+        overflow: hidden;
+        color: #333;
+        text-align: left;
+      }
+
+      .status {
+        font-size: 0.9rem;
+        color: #666;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>FIRM Client Test</h1>
+    <button id="connect">Connect to Device</button>
+    <div class="status" id="status">Waiting for connection...</div>
+    <div id="output">{ No packet data yet }</div>
+
+    <script type="module">
+      import { FIRM } from "../../ts/dist/FirmSerial.js";
+
+      const btn = document.getElementById("connect");
+      const output = document.getElementById("output");
+      const status = document.getElementById("status");
+
+      function setStatus(msg) {
+        status.textContent = msg;
+      }
+
+      function showPacket(pkt) {
+        output.textContent = JSON.stringify(pkt, null, 2);
+      }
+
+      btn.addEventListener("click", async () => {
+        setStatus("[UI] Connecting...");
+
+        try {
+          const firm = await FIRM.connect({ baudRate: 115200 });
+          setStatus("[UI] Connected. Streaming packets...");
+
+          // 🔁 use the new async iterator
+          for await (const pkt of firm.getDataPackets()) {
+            showPacket(pkt);
+          }
+
+          setStatus("[UI] Stream ended.");
+        } catch (err) {
+          console.error(err);
+          setStatus("Error: " + (err?.message ?? err));
+        }
+      });
+    </script>
+  </body>
+</html>

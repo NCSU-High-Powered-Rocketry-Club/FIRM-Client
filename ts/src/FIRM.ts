@@ -1,4 +1,4 @@
-import { FIRM as WasmFIRM } from "../../pkg/firm_client.js";
+import init, { FIRM as WasmFIRM } from "../../pkg/firm_client.js";
 
 /**
  * Data packet received from FIRM.
@@ -62,6 +62,8 @@ export class FIRM {
     if (!("serial" in navigator)) {
       throw new Error("Web Serial API not available in this browser");
     }
+
+    await init();
 
     const wasm = new WasmFIRM();
     const baudRate = options.baudRate ?? 115200;

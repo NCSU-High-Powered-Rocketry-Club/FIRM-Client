@@ -17,12 +17,10 @@
     "README.md"
   ],
   "scripts": {
-    "clean": "rimraf pkg pkg-web ts/dist",
-    "build:wasm:bundler": "wasm-pack build --target bundler --out-dir pkg --out-name firm_client --no-default-features --features wasm",
-    "build:wasm:web": "wasm-pack build --target web --out-dir pkg-web --out-name firm_client --no-default-features --features wasm",
+    "clean": "rimraf pkg ts/dist",
+    "build:wasm": "wasm-pack build --target web --out-dir pkg --out-name firm_client --no-default-features --features wasm",
     "build:ts": "cd ts && tsc",
-    "build": "npm run build:wasm:bundler && npm run build:ts",
-    "build:web": "npm run build && npm run build:wasm:web",
+    "build": "npm run build:wasm && npm run build:ts",
     "prepare": "npm run build"
   },
   "devDependencies": {

@@ -1,0 +1,12 @@
+{
+  "name": "firm-client-root",
+  "private": true,
+  "scripts": {
+    "build-wasm": "wasm-pack build --target web --out-dir pkg --out-name firm_client --no-default-features --features wasm",
+    "build-ts": "cd ts && npx tsc",
+    "build-all": "npm run build-wasm && npm run build-ts"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}

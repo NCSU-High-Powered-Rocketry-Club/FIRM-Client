@@ -28,6 +28,7 @@ const FULL_PACKET_SIZE: usize =
 const GRAVITY_METERS_PER_SECONDS_SQUARED: f32 = 9.80665;
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "python", pyo3::pyclass)]
 pub struct FIRMPacket {
     pub timestamp_seconds: f64,
 

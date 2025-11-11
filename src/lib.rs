@@ -34,3 +34,36 @@ pub mod wasm_bindings {
         }
     }
 }
+
+#[cfg(feature = "python")]
+mod python_bindings {
+    #[pyo3::pymodule]
+    mod _firm_client {
+        use pyo3::{prelude::*, pymethods};
+
+        use crate::parser::{FIRMPacket, SerialParser};
+
+        #[pyclass]
+        pub struct PythonSerialParser {
+            inner: SerialParser,
+        }
+
+        #[pymethods]
+        impl PythonSerialParser {
+            #[new]
+            fn new() -> Self {
+                Self {
+                    inner: SerialParser::new(),
+                }
+            }
+
+            pub fn parse_bytes(&mut self, data: &[u8]) {
+                self.inner.parse_bytes(data);
+            }
+
+            pub fn get_packet(&mut self) -> Option<FIRMPacket> {
+                self.inner.get_packet()
+            }
+        }
+    }
+}

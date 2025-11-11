@@ -41,7 +41,10 @@ mod python_bindings {
     mod _firm_client {
         use pyo3::{prelude::*, pymethods};
 
-        use crate::parser::{FIRMPacket, SerialParser};
+        use crate::parser::SerialParser;
+
+        #[pymodule_export]
+        pub use crate::parser::FIRMPacket;
 
         #[pyclass]
         pub struct PythonSerialParser {

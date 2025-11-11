@@ -1,12 +1,13 @@
-from . import _firm_client
+from ._firm_client import PythonSerialParser, FIRMPacket
 
 import threading
 import serial
+import time
 
 
 class FIRM:
     def __init__(self, port: str, baudrate: int = 115_200):
-        self._parser = _firm_client.PythonSerialParser()
+        self._parser = PythonSerialParser()
         self._serial_port = serial.Serial(port, baudrate)
         self._serial_reader_thread = None
         self._stop_event = threading.Event()
@@ -45,12 +46,15 @@ class FIRM:
 
     def get_number_of_available_packets(self) -> int:
         """
-        Get the number of FIRMPacket objects currently available in the queue.
+        Get the number of FIRMPacket objects currently available from the
+        underlying parser.
 
-        Returns:
-            Number of available FIRMPacket objects.
+        Note: this will consume available packets from the parser. To avoid
+        losing packets, call `get_data_packets` which returns the packets.
         """
-        return self._packet_queue.qsize()
+        # Drain available packets and return the count (consumes them).
+        packets = self.get_data_packets(block=False)
+        return len(packets)
 
     def get_most_recent_data_packet(self) -> FIRMPacket:
         """
@@ -63,23 +67,42 @@ class FIRM:
         block: bool = True,
     ) -> list[FIRMPacket]:
         """
-        Retrieve FIRMPacket objects parsed by the background thread.
+        Retrieve FIRMPacket objects parsed by the background thread by
+        calling into the parser's `get_packet` method.
 
         Args:
             block: If True, wait for at least one packet.
 
         Returns:
-            List of FIRMPacket objects.
+            List of FIRMPacket objects. Calling this consumes the packets
+            from the parser's internal queue.
         """
         firm_packets: list[FIRMPacket] = []
 
+        # If blocking, wait until at least one packet is available.
         if block:
-            # Keep waiting until we successfully get a packet
-            while not firm_packets:
-                packet = self._packet_queue.get()
-                firm_packets.append(packet)
+            while True:
+                pkt = self._parser.get_packet()
+                if pkt is None:
+                    if firm_packets:
+                        break
+                    # Yeild
+                    time.sleep(0)
+                    continue
+                firm_packets.append(pkt)
 
-        while self._packet_queue.qsize() > 0:
-            firm_packets.append(self._packet_queue.get_nowait())
+        # Drain any remaining available packets without blocking.
+        while True:
+            pkt = self._parser.get_packet()
+            if pkt is None:
+                break
+            firm_packets.append(pkt)
 
         return firm_packets
+
+    def _serial_reader(self):
+        """Continuously read from serial port, parse packets, and enqueue them."""
+        while not self._stop_event.is_set():
+            new_bytes = self._serial_port.read(self._serial_port.in_waiting)
+            # Parse as many packets as possible
+            self._parser.parse_bytes(new_bytes)

@@ -4,30 +4,23 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-serialport = { version = "4.8.1", optional = true }
-
+serialport = "4.8.1"
 serde = { version = "1.0", features = ["derive"] }
 
 wasm-bindgen = { version = "0.2", optional = true }
 serde-wasm-bindgen = { version = "0.5", optional = true }
-pyo3 = { version = "0.27.1", optional = true }
 
-pyo3 = { version = "0.22", features = [
-    "extension-module",
-    "abi3-py39",
-], optional = true }
+pyo3 = { version = "0.27.1", optional = true, features = ["extension-module"] }
 
 [features]
-default = ["native"]
+default = []
 
 native = ["serialport"]
 
 wasm = ["wasm-bindgen", "serde-wasm-bindgen"]
-python = ["pyo3"]
-
-default = ["python"]
 
 python = ["pyo3"]
+serialport = ["dep:serialport"]
 
 [[bin]]
 name = "firm_cli"
@@ -37,6 +30,3 @@ path = "examples/rust/main.rs"
 name = "firm_client"
 path = "src/lib.rs"
 crate-type = ["cdylib", "rlib"]
-
-[tool.maturin]
-features = ["python"]

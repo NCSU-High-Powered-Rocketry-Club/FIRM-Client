@@ -1,11 +1,13 @@
 [build-system]
-requires = ["maturin>=1,<2"]
+requires = ["maturin>=1.8,<2"]
 build-backend = "maturin"
 
 [project]
 name = "firm_client"
 version = "0.1.0"
-requires-python = ">=3.7"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.11"
 classifiers = [
     "Programming Language :: Rust",
     "Programming Language :: Python :: Implementation :: CPython",
@@ -13,6 +15,13 @@ classifiers = [
 ]
 dependencies = ["pyserial"]
 
+[project.optional-dependencies]
+dev = [
+    "maturin>=1.8,<2.0",
+    "pytest",
+]
+
 [tool.maturin]
+bindings = "pyo3"
 python-source = "python"
 module-name = "firm_client._firm_client"

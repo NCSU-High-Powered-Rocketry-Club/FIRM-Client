@@ -1,5 +1,5 @@
-use std::{process::exit, time::Duration};
 use std::io::Read;
+use std::{process::exit, time::Duration};
 
 use firm_client::parser::SerialParser;
 

@@ -27,6 +27,7 @@ const FULL_PACKET_SIZE: usize =
 /// Standard gravity in m/s².
 const GRAVITY_METERS_PER_SECONDS_SQUARED: f32 = 9.80665;
 
+/// Represents a decoded FIRM telemetry packet with converted physical units.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct FIRMPacket {
     pub timestamp_seconds: f64,
@@ -48,7 +49,26 @@ pub struct FIRMPacket {
 }
 
 impl FIRMPacket {
+    /// Constructs a `FIRMPacket` from a raw payload byte slice.
+    /// 
+    /// # Arguments
+    /// 
+    /// - `bytes` (`&[u8]`) - Raw payload bytes in the FIRM on-wire format.
+    /// 
+    /// # Returns
+    /// 
+    /// - `Self` - Parsed packet with converted sensor and timestamp values.
     fn from_bytes(bytes: &[u8]) -> Self {
+        /// Reads 4 bytes from `bytes` at `idx` and advances the index.
+        /// 
+        /// # Arguments
+        /// 
+        /// - `bytes` (`&[u8]`) - Source byte slice to read from.
+        /// - `idx` (`&mut usize`) - Current read offset, updated in place.
+        /// 
+        /// # Returns
+        /// 
+        /// - `[u8; 4]` - Four-byte chunk starting at the current index.
         fn four_bytes(bytes: &[u8], idx: &mut usize) -> [u8; 4] {
             let res = [
                 bytes[*idx],
@@ -62,9 +82,11 @@ impl FIRMPacket {
 
         let mut idx = 0;
 
+        // Scalars.
         let temperature_celsius: f32 = f32::from_le_bytes(four_bytes(bytes, &mut idx));
         let pressure_pascals: f32 = f32::from_le_bytes(four_bytes(bytes, &mut idx));
 
+        // Accelerometer values originally in g, converted to m/s².
         let accel_x_meters_per_s2: f32 =
             f32::from_le_bytes(four_bytes(bytes, &mut idx)) * GRAVITY_METERS_PER_SECONDS_SQUARED;
         let accel_y_meters_per_s2: f32 =
@@ -72,15 +94,18 @@ impl FIRMPacket {
         let accel_z_meters_per_s2: f32 =
             f32::from_le_bytes(four_bytes(bytes, &mut idx)) * GRAVITY_METERS_PER_SECONDS_SQUARED;
 
+        // Gyroscope values in rad/s.
         let gyro_x_radians_per_s: f32 = f32::from_le_bytes(four_bytes(bytes, &mut idx));
         let gyro_y_radians_per_s: f32 = f32::from_le_bytes(four_bytes(bytes, &mut idx));
         let gyro_z_radians_per_s: f32 = f32::from_le_bytes(four_bytes(bytes, &mut idx));
 
+        // Magnetometer values in µT.
         let mag_x_microteslas: f32 = f32::from_le_bytes(four_bytes(bytes, &mut idx));
         let mag_y_microteslas: f32 = f32::from_le_bytes(four_bytes(bytes, &mut idx));
         let mag_z_microteslas: f32 = f32::from_le_bytes(four_bytes(bytes, &mut idx));
 
-        idx += 4; // Account for padding
+        // Skip padding before timestamp.
+        idx += 4;
         let timestamp_seconds: f64 = f64::from_le_bytes([
             bytes[idx],
             bytes[idx + 1],
@@ -109,12 +134,24 @@ impl FIRMPacket {
     }
 }
 
+/// Streaming parser that accumulates serial bytes and produces `FIRMPacket` values.
 pub struct SerialParser {
+    /// Rolling buffer of unprocessed serial bytes.
     serial_bytes: Vec<u8>,
+    /// Queue of fully decoded packets ready to be consumed.
     serial_packets: VecDeque<FIRMPacket>,
 }
 
 impl SerialParser {
+    /// Creates a new empty `SerialParser`.
+    /// 
+    /// # Arguments
+    /// 
+    /// - *None* - The parser starts with no buffered bytes or queued packets.
+    /// 
+    /// # Returns
+    /// 
+    /// - `Self` - A new parser instance with empty internal state.
     pub fn new() -> Self {
         SerialParser {
             serial_bytes: Vec::new(),
@@ -122,10 +159,21 @@ impl SerialParser {
         }
     }
 
+    /// Feeds new bytes into the parser and queues any fully decoded packets.
+    /// 
+    /// # Arguments
+    /// 
+    /// - `bytes` (`&[u8]`) - Incoming raw bytes read from the FIRM serial stream.
+    /// 
+    /// # Returns
+    /// 
+    /// - `()` - No direct return; parsed packets are stored internally for `get_packet`.
     pub fn parse_bytes(&mut self, bytes: &[u8]) {
+        // Append new bytes onto the rolling buffer.
         self.serial_bytes.extend(bytes);
 
         let mut pos = 0usize;
+        // Scan through the buffer looking for start bytes and valid packets.
         while pos < self.serial_bytes.len().saturating_sub(1) {
             if self.serial_bytes[pos] != START_BYTES[0]
                 || self.serial_bytes[pos + 1] != START_BYTES[1]
@@ -136,7 +184,7 @@ impl SerialParser {
 
             let header_start = pos;
 
-            // Ensure we have enough space to read the packet
+            // Ensure we have enough bytes buffered to contain a full packet.
             if header_start + FULL_PACKET_SIZE > self.serial_bytes.len() {
                 break;
             }
@@ -146,6 +194,7 @@ impl SerialParser {
             let length_bytes = &self.serial_bytes[length_start..length_start + LENGTH_FIELD_SIZE];
             let length = u16::from_le_bytes([length_bytes[0], length_bytes[1]]);
 
+            // Reject packets with an unexpected payload length.
             if length as usize != PAYLOAD_LENGTH {
                 pos = length_start;
                 continue;
@@ -153,6 +202,8 @@ impl SerialParser {
 
             let payload_start = length_start + LENGTH_FIELD_SIZE + PADDING_SIZE;
             let crc_start = payload_start + length as usize;
+
+            // Compute CRC over header + length + padding + payload.
             let data_to_crc = &self.serial_bytes[header_start..crc_start];
             let data_crc = crc16_ccitt(data_to_crc);
             let crc_value = u16::from_le_bytes([
@@ -160,7 +211,7 @@ impl SerialParser {
                 self.serial_bytes[crc_start + 1],
             ]);
 
-            // Verify CRC
+            // Verify CRC before trusting the payload.
             if data_crc != crc_value {
                 pos = length_start;
                 continue;
@@ -170,14 +221,26 @@ impl SerialParser {
 
             let packet = FIRMPacket::from_bytes(payload_slice);
 
+            // Queue the parsed packet for downstream consumers.
             self.serial_packets.push_back(packet);
 
+            // Advance past this full packet and continue scanning.
             pos = crc_start + CRC_SIZE;
         }
 
+        // Drop all bytes that were processed; keep only the tail for next call.
         self.serial_bytes = self.serial_bytes[pos..].to_vec();
     }
 
+    /// Pops the next parsed packet from the internal queue, if available.
+    /// 
+    /// # Arguments
+    /// 
+    /// - *None* - Operates on the parser's existing queued packets.
+    /// 
+    /// # Returns
+    /// 
+    /// - `Option<FIRMPacket>` - `Some(packet)` if a packet is available, otherwise `None`.
     pub fn get_packet(&mut self) -> Option<FIRMPacket> {
         self.serial_packets.pop_front()
     }

@@ -1,3 +1,4 @@
+// Precomputed CRC-16/CCITT lookup table for all 256 possible byte values.
 const CRC16_TABLE: [u16; 256] = [
     0x0000, 0x1189, 0x2312, 0x329B, 0x4624, 0x57AD, 0x6536, 0x74BF, 0x8C48, 0x9DC1, 0xAF5A, 0xBED3,
     0xCA6C, 0xDBE5, 0xE97E, 0xF8F7, 0x1081, 0x0108, 0x3393, 0x221A, 0x56A5, 0x472C, 0x75B7, 0x643E,
@@ -23,6 +24,16 @@ const CRC16_TABLE: [u16; 256] = [
     0x3DE3, 0x2C6A, 0x1EF1, 0x0F78,
 ];
 
+/// Computes the CRC-16/CCITT checksum for a given byte slice. This is
+/// used for checking that data has not been corrupted while being received.
+/// 
+/// # Arguments
+/// 
+/// - `data` (`&[u8]`) - The input byte slice to compute the checksum for.
+/// 
+/// # Returns
+/// 
+/// - `u16` - The resulting 16-bit CRC-16/CCITT checksum.
 pub(crate) fn crc16_ccitt(data: &[u8]) -> u16 {
     let mut crc: u16 = 0x0000;
     for &byte in data {

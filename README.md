@@ -1,7 +1,40 @@
-# FIRM-Client
+# firm-client
 
-FIRM Client library written in rust. A rewrite of the first python bindings. Will eventually have python bindings too, but just JS for now
+TODO: Write a description
 
-To test connectivity with firm, do `cargo run`.
+---
 
-To use the web demo, follow the instructions in the [web demo readme](web_demo/README.md)
+## Rust Setup
+
+TODO: copy the hprm docs for this part and include how to run the example code
+
+---
+
+## TypeScript / Web Usage
+
+### Requirements
+- Node.js
+- npm
+
+### Install dependencies & build everything
+```bash
+npm install  
+npm run build   (builds WASM + TypeScript)
+```
+
+### Test in a browser
+
+Run this command and navigate to examples/test.html
+```bash
+npx serve .
+```
+
+### Linting & Formatting (optional)
+
+TODO: setup eslint and prettier
+After changing any TypeScript code, run:
+```bash
+npm run lint  
+npm run format
+```
+---

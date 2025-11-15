@@ -4,27 +4,26 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-serialport = "4.8.1"
+# Core parser dependencies
 serde = { version = "1.0", features = ["derive"] }
 
+# Optional dependencies for bindings
+serialport = { version = "4.8.1", optional = true }
 wasm-bindgen = { version = "0.2", optional = true }
-serde-wasm-bindgen = { version = "0.5", optional = true }
-
 pyo3 = { version = "0.27.1", optional = true, features = ["extension-module"] }
 
 [features]
+# No default features
 default = []
 
-native = ["serialport"]
+# Feature enables serialport support (native CLI or other non-WASM builds)
+native = ["dep:serialport"]
 
-wasm = ["wasm-bindgen", "serde-wasm-bindgen"]
+# Feature enables wasm-bindgen for JS/wasm builds
+wasm = ["dep:wasm-bindgen"]
 
-python = ["pyo3"]
-serialport = ["dep:serialport"]
-
-[[bin]]
-name = "firm_cli"
-path = "examples/rust/main.rs"
+# Feature enables PyO3 for Python extension builds
+python = ["dep:pyo3"]
 
 [lib]
 name = "firm_client"

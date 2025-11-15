@@ -9,8 +9,7 @@
     "strict": true,
     "esModuleInterop": true,
     "lib": ["ESNext", "DOM"],
-    "skipLibCheck": true,
-    "ignoreDeprecations": "6.0"
+    "skipLibCheck": true
   },
   "include": ["src/FIRM.ts", "src/index.ts"]
 }

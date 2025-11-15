@@ -4,44 +4,56 @@ use crate::parser::{FIRMPacket, SerialParser};
 use pyo3::prelude::*;
 
 /// Python-facing wrapper around the FIRM serial parser.
+///
+/// Exposed to Python as the `PyFIRMParser` class.
 #[pyclass]
-pub struct PyFirmParser {
+pub struct PyFIRMParser {
+    /// Internal Rust streaming parser.
     inner: SerialParser,
 }
 
 #[pymethods]
-impl PyFirmParser {
-    /// Create a new `PyFirmParser`.
+impl PyFIRMParser {
+    /// Creates a new `PyFIRMParser` instance for use in Python.
+    ///
+    /// Returns
+    /// -------
+    /// PyFIRMParser
+    ///     A parser with an empty internal buffer and no queued packets.
     #[new]
     fn new() -> Self {
-        PyFirmParser {
+        PyFIRMParser {
             inner: SerialParser::new(),
         }
     }
 
-    /// Feed raw bytes (from Python `bytes`) into the parser.
+    /// Feeds raw bytes into the parser.
+    ///
+    /// Parameters
+    /// ----------
+    /// data : bytes
+    ///     Raw bytes from the FIRM serial stream.
     fn parse_bytes(&mut self, data: &[u8]) {
         self.inner.parse_bytes(data);
     }
 
-    /// Return the next parsed packet as a Python object, or `None`.
+    /// Returns the next parsed packet, if one is available.
     ///
-    /// This converts the Rust `FIRMPacket` (which is annotated with
-    /// `#[pyo3::pyclass]` when the `python` feature is enabled) into a
-    /// Python object using the current GIL.
-    fn get_packet(&mut self, py: Python<'_>) -> Option<PyObject> {
-        match self.inner.get_packet() {
-            Some(pkt) => Py::new(py, pkt).ok().map(|p| p.into_py(py)),
-            None => None,
-        }
+    /// Returns
+    /// -------
+    /// FIRMPacket or None
+    ///     The next parsed packet, or ``None`` if no packets are queued.
+    fn get_packet(&mut self) -> Option<FIRMPacket> {
+        self.inner.get_packet()
     }
 }
 
 /// Python module entry point for `firm_client`.
+///
+/// Registers the `PyFIRMParser` and `FIRMPacket` classes with the module.
 #[pymodule]
-fn firm_client(py: Python<'_>, m: &PyModule) -> PyResult<()> {
-    m.add_class::<PyFirmParser>()?;
-    // Expose FIRMPacket type to Python as well so callers can inspect/construct if needed.
+fn firm_client(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
+    m.add_class::<PyFIRMParser>()?;
     m.add_class::<FIRMPacket>()?;
     Ok(())
 }

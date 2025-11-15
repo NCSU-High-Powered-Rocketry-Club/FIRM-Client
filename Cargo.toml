@@ -24,7 +24,7 @@ python = ["pyo3"]
 
 [[bin]]
 name = "firm_cli"
-path = "src/main.rs"
+path = "examples/rust/main.rs"
 
 [lib]
 name = "firm_client"

@@ -1,5 +1,5 @@
 export {
   FIRM,
-  type FirmDataPacket,
+  FIRMPacket,
   type FIRMConnectOptions,
 } from "./FIRM.js";

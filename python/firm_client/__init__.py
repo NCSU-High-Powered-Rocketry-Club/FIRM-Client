@@ -1,9 +1,9 @@
-"""All public classes for FIRM."""
+"""Public API for FIRM client.
 
-__all__ = (
-    "FIRM",
-    "FIRMPacket",
-)
+Exports high-level `FIRM` plus low-level parser and packet types.
+"""
 
 from .firm import FIRM
-from ._firm_client import FIRMPacket
+from ._firm_client import PyFIRMParser, FIRMPacket
+
+__all__ = ["FIRM", "PyFIRMParser", "FIRMPacket"]

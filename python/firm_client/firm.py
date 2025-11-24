@@ -1,5 +1,4 @@
-from ._firm_client import PythonSerialParser, FIRMPacket
-
+from ._firm_client import FIRMPacket, PyFIRMParser
 import threading
 import serial
 import time
@@ -7,7 +6,7 @@ import time
 
 class FIRM:
     def __init__(self, port: str, baudrate: int = 115_200):
-        self._parser = PythonSerialParser()
+        self._parser = PyFIRMParser()
         self._serial_port = serial.Serial(port, baudrate)
         self._serial_reader_thread = None
         self._stop_event = threading.Event()

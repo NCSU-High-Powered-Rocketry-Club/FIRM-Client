@@ -52,7 +52,7 @@ impl PyFIRMParser {
 ///
 /// Registers the `PyFIRMParser` and `FIRMPacket` classes with the module.
 #[pymodule]
-fn firm_client(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
+fn _firm_client(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<PyFIRMParser>()?;
     m.add_class::<FIRMPacket>()?;
     Ok(())

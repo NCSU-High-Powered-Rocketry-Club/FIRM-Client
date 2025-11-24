@@ -17,17 +17,17 @@
 # Node / TypeScript
 # ────────────────────────────────
 /node_modules
-ts/dist/
-/ts/dist/
+/typescript/dist/
+/typescript/dist/
 /*.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
 # Ignore compiled .js and .d.ts in TS output (they’re generated)
-ts/dist/
-ts/*.js
-ts/*.d.ts
+typescript/dist/
+typescript/*.js
+typescript/*.d.ts
 
 # ────────────────────────────────
 # Editor / OS files
@@ -59,3 +59,4 @@ Thumbs.db
 __pycache__/
 
 node_modules/
+.venv/

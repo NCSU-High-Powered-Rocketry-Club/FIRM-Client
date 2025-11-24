@@ -4,68 +4,56 @@ use crate::parser::{FIRMPacket, SerialParser};
 use pyo3::prelude::*;
 
 /// Python-facing wrapper around the FIRM serial parser.
+///
+/// Exposed to Python as the `PyFIRMParser` class.
 #[pyclass]
-pub struct PyFirmParser {
+pub struct PyFIRMParser {
+    /// Internal Rust streaming parser.
     inner: SerialParser,
 }
 
 #[pymethods]
-impl PyFirmParser {
-    /// Creates a new FIRM parser for Python.
-    /// 
-    /// # Arguments
-    /// 
-    /// - *None* - Initializes an empty internal parser.
-    /// 
-    /// # Returns
-    /// 
-    /// - `PyFirmParser` - A new parser ready to accept bytes.
+impl PyFIRMParser {
+    /// Creates a new `PyFIRMParser` instance for use in Python.
+    ///
+    /// Returns
+    /// -------
+    /// PyFIRMParser
+    ///     A parser with an empty internal buffer and no queued packets.
     #[new]
     fn new() -> Self {
-        PyFirmParser {
+        PyFIRMParser {
             inner: SerialParser::new(),
         }
     }
 
-    /// Feeds raw bytes from Python into the parser.
-    /// 
-    /// # Arguments
-    /// 
-    /// - `data` (`&[u8]`) - Raw bytes from the FIRM serial stream.
-    /// 
-    /// # Returns
-    /// 
-    /// - `()` - Parsed packets are stored internally for `get_packet`.
+    /// Feeds raw bytes into the parser.
+    ///
+    /// Parameters
+    /// ----------
+    /// data : bytes
+    ///     Raw bytes from the FIRM serial stream.
     fn parse_bytes(&mut self, data: &[u8]) {
         self.inner.parse_bytes(data);
     }
 
-    /// Returns the next parsed packet as a Python object or `None`.
-    /// 
-    /// # Arguments
-    /// 
-    /// - *None* - Reads from the internal packet queue.
-    /// 
-    /// # Returns
-    /// 
-    /// - `Option<FIRMPacket>` - The next packet or `None` if none are available.
+    /// Returns the next parsed packet, if one is available.
+    ///
+    /// Returns
+    /// -------
+    /// FIRMPacket or None
+    ///     The next parsed packet, or ``None`` if no packets are queued.
     fn get_packet(&mut self) -> Option<FIRMPacket> {
         self.inner.get_packet()
     }
 }
 
 /// Python module entry point for `firm_client`.
-/// 
-/// # Arguments
-/// 
-/// - `_py` (`Python`) - Python interpreter handle.
-/// - `m` (`&PyModule`) - Module to register classes and functions on.
-/// 
-/// # Returns
-/// 
-/// - `PyResult<()>` - Ok if module initialization succeeded.
+///
+/// Registers the `PyFIRMParser` and `FIRMPacket` classes with the module.
 #[pymodule]
-fn firm_client(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
-    m.add_class::<PyFirmParser>()?;
+fn _firm_client(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
+    m.add_class::<PyFIRMParser>()?;
+    m.add_class::<FIRMPacket>()?;
     Ok(())
 }

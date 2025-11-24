@@ -1,26 +1,14 @@
-import init, { FIRM as WasmFIRM } from "../../pkg/firm_client.js";
+import init, {
+  JSFIRMParser,
+  FIRMPacket,
+} from "../../pkg/firm_client.js";
 
 /**
  * Data packet received from FIRM.
+ *
+ * This is the Rust `FIRMPacket` type exported via wasm-bindgen.
  */
-export interface FirmDataPacket {
-  timestamp_seconds: number;
-
-  accel_x_meters_per_s2: number;
-  accel_y_meters_per_s2: number;
-  accel_z_meters_per_s2: number;
-
-  gyro_x_radians_per_s: number;
-  gyro_y_radians_per_s: number;
-  gyro_z_radians_per_s: number;
-
-  pressure_pascals: number;
-  temperature_celsius: number;
-
-  mag_x_microteslas: number;
-  mag_y_microteslas: number;
-  mag_z_microteslas: number;
-}
+export { FIRMPacket };
 
 /** Options for connecting to a FIRM device over Web Serial. */
 export interface FIRMConnectOptions {
@@ -36,14 +24,22 @@ export interface FIRMConnectOptions {
  * - Exposes methods to read parsed telemetry packets.
  */
 export class FIRM {
-  private wasm: WasmFIRM;
+  /** Underlying WASM-backed streaming parser. */
+  private wasm: JSFIRMParser;
+
+  /** Reader for the Web Serial stream. */
   private reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
+
+  /** Whether the background read loop is currently running. */
   private running = false;
 
-  private packetQueue: FirmDataPacket[] = [];
-  private packetWaiters: Array<(pkt: FirmDataPacket | null) => void> = [];
+  /** Queue of parsed packets waiting to be consumed. */
+  private packetQueue: FIRMPacket[] = [];
 
-  private constructor(wasm: WasmFIRM) {
+  /** Waiters that are pending the next available packet. */
+  private packetWaiters: Array<(pkt: FIRMPacket | null) => void> = [];
+
+  private constructor(wasm: JSFIRMParser) {
     this.wasm = wasm;
   }
 
@@ -63,9 +59,10 @@ export class FIRM {
       throw new Error("Web Serial API not available in this browser");
     }
 
+    // Initialize the WASM module.
     await init();
 
-    const wasm = new WasmFIRM();
+    const wasm = new JSFIRMParser();
     const baudRate = options.baudRate ?? 115200;
 
     // Ask user for a serial device & open it.
@@ -82,11 +79,8 @@ export class FIRM {
   }
 
   /**
-   * This is the internal read loop that continuously reads from Web Serial. It
-   * reads raw bytes, feeds them into the Rust parser, and then enqueues all the
-   * parsed packets.
-   *
-   * @returns Resolves when the stream ends or an error occurs.
+   * Internal read loop that continuously reads from Web Serial,
+   * feeds raw bytes into the WASM parser, and enqueues parsed packets.
    */
   private async startReadLoop(): Promise<void> {
     if (!this.reader) return;
@@ -101,14 +95,14 @@ export class FIRM {
         }
 
         if (value && value.length > 0) {
-          // Push raw bytes into Rust parser.
+          // Push raw bytes into the Rust/WASM parser.
           this.wasm.parse_bytes(value);
 
           // Drain all packets that are ready.
           while (true) {
-            const pkt = this.wasm.get_packet();
-            if (pkt === null) break;
-            this.enqueuePacket(pkt as FirmDataPacket);
+            const pkt = this.wasm.get_packet(); // FIRMPacket | undefined
+            if (!pkt) break;                    // `None` -> `undefined`
+            this.enqueuePacket(pkt);
           }
         }
       }
@@ -131,7 +125,7 @@ export class FIRM {
    *
    * @param dataPacket Parsed FIRM data packet.
    */
-  private enqueuePacket(dataPacket: FirmDataPacket): void {
+  private enqueuePacket(dataPacket: FIRMPacket): void {
     if (this.packetWaiters.length > 0) {
       const waiter = this.packetWaiters.shift()!;
       waiter(dataPacket);
@@ -155,7 +149,7 @@ export class FIRM {
    *
    * @returns Next packet, or null if the stream has ended.
    */
-  private async waitForNextPacket(): Promise<FirmDataPacket | null> {
+  private async waitForNextPacket(): Promise<FIRMPacket | null> {
     if (this.packetQueue.length > 0) {
       return this.packetQueue.shift()!;
     }
@@ -164,7 +158,7 @@ export class FIRM {
       return null;
     }
 
-    return new Promise<FirmDataPacket | null>((resolve) => {
+    return new Promise<FIRMPacket | null>((resolve) => {
       this.packetWaiters.push(resolve);
     });
   }
@@ -175,9 +169,9 @@ export class FIRM {
    * If no packets are queued, waits for the next one to arrive.
    * Returns null if the stream has ended and no packets remain.
    *
-   * @returns The latest FirmDataPacket, or null if no more packets will arrive.
+   * @returns The latest FIRMPacket, or null if no more packets will arrive.
    */
-  async getMostRecentDataPacket(): Promise<FirmDataPacket | null> {
+  async getMostRecentDataPacket(): Promise<FIRMPacket | null> {
     if (!this.running && this.packetQueue.length === 0) {
       return null;
     }
@@ -199,9 +193,9 @@ export class FIRM {
    *     console.log(pkt.timestamp_seconds);
    *   }
    *
-   * @returns Async generator yielding FirmDataPacket objects.
+   * @returns Async generator yielding FIRMPacket objects.
    */
-  async *getDataPackets(): AsyncGenerator<FirmDataPacket, void> {
+  async *getDataPackets(): AsyncGenerator<FIRMPacket, void> {
     while (true) {
       const pkt = await this.waitForNextPacket();
       if (pkt === null) return;

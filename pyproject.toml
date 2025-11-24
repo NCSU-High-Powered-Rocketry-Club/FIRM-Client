@@ -1,0 +1,28 @@
+[build-system]
+requires = ["maturin>=1.8"]
+build-backend = "maturin"
+
+[project]
+name = "firm_client"
+version = "0.1.0"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.14"
+classifiers = [
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Python :: Implementation :: PyPy",
+]
+dependencies = ["pyserial"]
+
+[project.optional-dependencies]
+dev = [
+    "maturin>=1.8,<2.0",
+    "pytest",
+]
+
+[tool.maturin]
+features = ["pyo3/extension-module"]
+
+[tool.uv]
+package = false

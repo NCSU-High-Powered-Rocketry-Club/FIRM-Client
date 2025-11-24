@@ -17,17 +17,17 @@
 # Node / TypeScript
 # ────────────────────────────────
 /node_modules
-ts/dist/
-/ts/dist/
+/typescript/dist/
+/typescript/dist/
 /*.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
 # Ignore compiled .js and .d.ts in TS output (they’re generated)
-ts/dist/
-ts/*.js
-ts/*.d.ts
+typescript/dist/
+typescript/*.js
+typescript/*.d.ts
 
 # ────────────────────────────────
 # Editor / OS files
@@ -44,3 +44,19 @@ Thumbs.db
 # Cargo lock file can be tracked or ignored depending on library vs binary crate
 # (recommended to keep if binary, ignore if published library)
 # Cargo.lock
+
+# RustRover
+#  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
+#  be found at https://github.com/github/gitignore/blob/main/Global/JetBrains.gitignore
+#  and can be added to the global gitignore or merged into this file.  For a more nuclear
+#  option (not recommended) you can uncomment the following to ignore the entire idea folder.
+#.idea/
+
+.vscode
+
+*.pyd
+
+__pycache__/
+
+node_modules/
+.venv/

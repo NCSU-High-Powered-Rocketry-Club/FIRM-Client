@@ -2,6 +2,9 @@ use crate::crc::crc16_ccitt;
 use serde::Serialize;
 use std::collections::VecDeque;
 
+#[cfg(feature = "wasm")]
+use wasm_bindgen::prelude::wasm_bindgen;
+
 /// Start byte sequence for packet identification. This is in little-endian format.
 const START_BYTES: [u8; 2] = [0x5a, 0xa5];
 
@@ -29,6 +32,8 @@ const GRAVITY_METERS_PER_SECONDS_SQUARED: f32 = 9.80665;
 
 /// Represents a decoded FIRM telemetry packet with converted physical units.
 #[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "python", pyo3::pyclass)]
+#[cfg_attr(feature = "wasm", wasm_bindgen)]
 pub struct FIRMPacket {
     pub timestamp_seconds: f64,
 

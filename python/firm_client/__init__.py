@@ -4,6 +4,6 @@ Exports high-level `FIRM` plus low-level parser and packet types.
 """
 
 from .firm import FIRM
-from ._firm_client import PyFIRMParser, FIRMPacket
+from .firm_client import PyFIRMParser, FIRMPacket, FirmCommandBuilder
 
-__all__ = ["FIRM", "PyFIRMParser", "FIRMPacket"]
+__all__ = ["FIRM", "PyFIRMParser", "FIRMPacket", "FirmCommandBuilder"]

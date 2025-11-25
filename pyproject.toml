@@ -22,7 +22,11 @@ dev = [
 ]
 
 [tool.maturin]
-features = ["pyo3/extension-module"]
+features = ["python"]
+bindings = "pyo3"
+python-source = "python"
+module-name = "firm_client.firm_client"
 
 [tool.uv]
 package = false
+

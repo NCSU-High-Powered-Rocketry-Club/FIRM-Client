@@ -1,7 +1,7 @@
 #![cfg(feature = "python")]
 
 use crate::command_sender::FirmCommand;
-use crate::parser::{FIRMPacket, SerialParser};
+use crate::data_parser::{FIRMPacket, SerialParser};
 use pyo3::prelude::*;
 
 /// Python-facing wrapper around the FIRM serial parser.
@@ -98,7 +98,7 @@ impl FirmCommandBuilder {
 ///
 /// Registers the `PyFIRMParser` and `FIRMPacket` classes with the module.
 #[pymodule]
-fn _firm_client(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
+fn firm_client(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyFIRMParser>()?;
     m.add_class::<FIRMPacket>()?;
     m.add_class::<FirmCommandBuilder>()?;

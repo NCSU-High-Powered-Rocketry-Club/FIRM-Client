@@ -1,4 +1,4 @@
-from ._firm_client import FIRMPacket, PyFIRMParser
+from .firm_client import FIRMPacket, PyFIRMParser, FirmCommandBuilder
 import threading
 import serial
 import time
@@ -105,3 +105,23 @@ class FIRM:
             new_bytes = self._serial_port.read(self._serial_port.in_waiting)
             # Parse as many packets as possible
             self._parser.parse_bytes(new_bytes)
+
+    def send_ping(self):
+        """Send a Ping command to the device."""
+        cmd_bytes = FirmCommandBuilder.ping()
+        self._serial_port.write(bytes(cmd_bytes))
+
+    def send_reset(self):
+        """Send a Reset command to the device."""
+        cmd_bytes = FirmCommandBuilder.reset()
+        self._serial_port.write(bytes(cmd_bytes))
+
+    def set_rate(self, rate_hz: int):
+        """
+        Set the data reporting rate.
+
+        Args:
+            rate_hz: The desired rate in Hertz.
+        """
+        cmd_bytes = FirmCommandBuilder.set_rate(rate_hz)
+        self._serial_port.write(bytes(cmd_bytes))

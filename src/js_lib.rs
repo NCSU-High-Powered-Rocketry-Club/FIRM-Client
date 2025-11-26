@@ -1,7 +1,7 @@
 #![cfg(feature = "wasm")]
 
 use crate::command_sender::FirmCommand;
-use crate::parser::{FIRMPacket, SerialParser};
+use crate::data_parser::{FIRMPacket, SerialParser};
 use wasm_bindgen::prelude::*;
 
 /// JS-facing wrapper around the FIRM serial parser.

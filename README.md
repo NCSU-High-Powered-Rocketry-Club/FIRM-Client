@@ -1,110 +1,93 @@
-# FIRM Client
+# FIRM-Client
 
-The FIRM Client handles **parsing live FIRM data** and packing it into an easy-to-use format. Its core is written in **Rust**, with libraries for **Python, JavaScript/TypeScript, and (eventually) Arduino**.
+A modular Rust library for parsing FIRM data packets, with bindings for Python and WebAssembly.
 
----
+## Project Structure
 
-# 1. Getting Rust + The Project Set Up
+The project is organized as a Cargo workspace with the following crates:
 
-The Rust part of the FIRM Client is the core of this repo. It contains the binary parser, data structures, and utilities.
+- **`firm_core`**: The core `no_std` crate containing the packet parser, CRC logic, and data structures. This is the foundation for all other crates and can be used in embedded environments.
+- **`firm_rust`**: A high-level Rust API that uses `serialport` to read from a serial device and provides a threaded client for receiving packets.
+- **`firm_py`**: Python bindings for the Rust client.
+- **`firm_wasm`**: WebAssembly bindings and TypeScript code for using the parser in web applications.
 
-## Install Rust
+## Philosophy
 
-Follow this guide to get Rust set up in VS Code:
+The goal of FIRM-Client is to provide a single, efficient, and correct implementation of the FIRM protocol that can be used across different ecosystems (Rust, Python, Web/JS, Embedded). By centralizing the parsing logic in `firm_core`, we ensure consistency and reduce code duplication.
 
-https://www.geeksforgeeks.org/installation-guide/how-to-setup-rust-in-vscode/
+## Building
 
-## Build the Rust Library
+### Prerequisites
 
-```bash
-cargo build
-# If this worked, you should see "Finished `dev` profile [unoptimized + debuginfo] target(s)"
+- Rust (latest stable)
+- Python 3.10+ (for Python bindings)
+- `maturin` (for building Python wheels)
+- `wasm-pack` (for building WASM)
+- Node.js/npm (for TypeScript)
+
+### Build Instructions
+
+1.  **Build all Rust crates:**
+    ```bash
+    cargo build
+    ```
+
+2.  **Build Python bindings:**
+    ```bash
+    uv sync
+    # or to build a wheel
+    uv run maturin build --release
+    ```
+
+3.  **Build WASM/TypeScript:**
+    ```bash
+    cd firm_wasm
+    npm install
+    npm run build
+    ```
+
+## Usage
+
+### Rust
+
+Add `firm_rust` to your `Cargo.toml`.
+
+```rust
+use firm_rust::FirmClient;
+use std::{thread, time::Duration};
+
+fn main() {
+    let mut client = FirmClient::new("/dev/ttyUSB0", 115200);
+    client.start().expect("Failed to start client");
+
+    loop {
+        for packet in client.get_packets() {
+            println!("{:#?}", packet);
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
+}
 ```
 
----
+### Python
 
-# 2. Building the Python Library (PyPI Package)
+```python
+from firm_client import FirmClient
+import time
 
-We use **maturin** and **uv** to build the Python bindings.
-
-## Install uv
-
-uv is our preferred Python environment + package manager. Install it here:
-
-https://docs.astral.sh/uv/getting-started/installation/
-
-## Python Workflow
-
-First-time setup:
-
-```bash
-# Install all Python dependencies (including Maturin)
-uv sync --all-extras
+# Using context manager (automatically starts and stops)
+with FirmClient("/dev/ttyUSB0", 115200) as client:
+    while True:
+        packets = client.get_packets()
+        for packet in packets:
+            print(packet.timestamp_seconds, packet.accel_x_meters_per_s2)
+        time.sleep(0.01)
 ```
 
-Build the Python package:
+### Web (TypeScript)
 
-```bash
-uv run maturin develop --uv
-```
+TODO!
 
-Run the Python test code:
+## License
 
-```bash
-uv run examples/python/test.py
-```
-
-To build a PyPI wheel locally:
-
-```bash
-uv run maturin build --release
-```
-
-To publish:
-
-1. Make sure you have PyPI credentials set up.
-2. Run:
-
-```bash
-uv run maturin publish
-```
-
----
-
-# 3. Building the TypeScript / JavaScript Library (npm Package)
-
-The JS/TS bindings wrap the Rust core via wasm-bindgen, bundled through wasm-pack.
-
-## Install npm
-
-npm is our preffered web environment + package manager. Install it and Node.js here:
-
-https://nodejs.org/en/download/
-
-## TypeScript Workflow
-
-First-time setup:
-
-```bash
-npm install
-```
-
-Build the npm package:
-
-```bash
-npm run build
-```
-
-To publish:
-
-```bash
-# Login to npm
-npm login
-
-# Then publish it
-npm publish
-```
-
-(Ensure the version in `package.json` is bumped before publishing.)
-
----
+Licensed under the MIT License. See `LICENSE` file for details.

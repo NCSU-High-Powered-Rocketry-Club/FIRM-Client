@@ -1,31 +1,8 @@
-[package]
-name = "firm-client"
-version = "0.1.0"
-edition = "2024"
-
-[dependencies]
-# Core parser dependencies
-serde = { version = "1.0", features = ["derive"] }
-
-# Optional dependencies for bindings
-serialport = { version = "4.8.1", optional = true }
-wasm-bindgen = { version = "0.2", optional = true }
-pyo3 = { version = "0.27.1", optional = true, features = ["extension-module"] }
-
-[features]
-# No default features
-default = []
-
-# Feature enables serialport support (native CLI or other non-WASM builds)
-native = ["dep:serialport"]
-
-# Feature enables wasm-bindgen for JS/wasm builds
-wasm = ["dep:wasm-bindgen"]
-
-# Feature enables PyO3 for Python extension builds
-python = ["dep:pyo3"]
-
-[lib]
-name = "firm_client"
-path = "src/lib.rs"
-crate-type = ["cdylib", "rlib"]
+[workspace]
+members = [
+    "firm_core",
+    "firm_rust",
+    "firm_py",
+    "firm_wasm",
+]
+resolver = "2"

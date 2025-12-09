@@ -1,6 +1,7 @@
 use crate::crc::crc16_ccitt;
 use serde::Serialize;
-use std::collections::VecDeque;
+use alloc::collections::VecDeque;
+use alloc::vec::Vec;
 
 #[cfg(feature = "wasm")]
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -9,7 +10,7 @@ use wasm_bindgen::prelude::wasm_bindgen;
 const START_BYTES: [u8; 2] = [0x5a, 0xa5];
 
 /// Size of the packet header in bytes.
-const HEADER_SIZE: usize = std::mem::size_of_val(&START_BYTES);
+const HEADER_SIZE: usize = core::mem::size_of_val(&START_BYTES);
 
 /// Size of the length field in bytes.
 const LENGTH_FIELD_SIZE: usize = 2;

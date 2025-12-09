@@ -1,0 +1,9 @@
+[package]
+name = "firm_rust"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+firm_core = { path = "../firm_core" }
+serialport = { version = "4.8.1", default-features = false }
+anyhow = "1.0"

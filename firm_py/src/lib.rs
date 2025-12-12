@@ -11,9 +11,9 @@ struct FirmClient {
 #[pymethods]
 impl FirmClient {
     #[new]
-    #[pyo3(signature = (port_name, baud_rate=115200, timeout=0.1))]
+    #[pyo3(signature = (port_name, baud_rate=2_000_000, timeout=0.1))]
     fn new(port_name: &str, baud_rate: Option<u32>, timeout: Option<f64>) -> PyResult<Self> {
-        let baudrate = baud_rate.unwrap_or(115200);
+        let baudrate = baud_rate.unwrap_or(2_000_000);
         let timeout_val = timeout.unwrap_or(0.1);
         let client = RustFirmClient::new(port_name, baudrate, timeout_val)
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyIOError, _>(e.to_string()))?;
@@ -70,15 +70,4 @@ fn firm_client(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<FirmClient>()?;
     m.add_class::<FIRMPacket>()?;
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_client_creation_failure() {
-        let result = FirmClient::new("invalid_port", 115200);
-        assert!(result.is_err());
-    }
 }

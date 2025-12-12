@@ -1,6 +1,6 @@
 use firm_core::parser::{FIRMPacket, SerialParser};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::io::Read;
+use std::io::{self, Read};
 use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, channel};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
@@ -23,10 +23,14 @@ impl FirmClient {
         let (error_sender, error_receiver) = channel();
         
         let port = serialport::new(port_name, baud_rate)
+            .data_bits(serialport::DataBits::Eight)
+            .flow_control(serialport::FlowControl::None)
+            .parity(serialport::Parity::None)
+            .stop_bits(serialport::StopBits::One)
             .timeout(Duration::from_millis((timeout * 1000.0) as u64))
-            .open()?;
+            .open_native()
+            .map_err(io::Error::other)?;
         
-        // Double-box to satisfy Box<dyn Read + Send> since Box<dyn SerialPort> implements Read + Send
         let port: Box<dyn Read + Send> = Box::new(port);
 
         Ok(Self {

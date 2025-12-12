@@ -12,21 +12,18 @@ fn main() {
     let port_name = &ports[0].port_name;
     println!("Connecting to {}", port_name);
 
-    let mut client = match FirmClient::new(port_name, 115_200) {
+    let mut client = match FirmClient::new(port_name, 115_200, 0.1) {
         Ok(c) => c,
         Err(e) => {
             eprintln!("Failed to create client: {}", e);
             exit(1);
         }
     };
-    
-    if let Err(e) = client.start() {
-        eprintln!("Failed to start client: {}", e);
-        exit(1);
-    }
+
+    client.start();
 
     loop {
-        for packet in client.get_packets(false) {
+        while let Ok(packet) = client.get_packets(Some(Duration::from_millis(100))) {
             println!("{:#?}", packet);
         }
         

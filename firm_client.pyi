@@ -35,9 +35,11 @@ class FirmClient:
     
     Args:
         port_name (str): The name of the serial port to connect to.
-        baud_rate (int): The baud rate for the serial connection. Default is 115200
+        baud_rate (int): The baud rate for the serial connection. This must match the baud rate set
+            on FIRM. Default is 2,000,000.
+        timeout (float): The timeout for serial read operations in seconds. Default is 0.1.
     """
-    def __init__(self, port_name: str, baud_rate: int = 115200) -> None: ...
+    def __init__(self, port_name: str, baud_rate: int = 2_000_000, timeout: float = 0.1) -> None: ...
 
     def start(self) -> None: ...
     """Starts the client by starting a thread to read data from the FIRM device."""

@@ -1,6 +1,7 @@
 #![cfg(feature = "python")]
 
-use crate::parser::{FIRMPacket, SerialParser};
+use crate::command_sender::FirmCommand;
+use crate::data_parser::{FIRMPacket, SerialParser};
 use pyo3::prelude::*;
 
 /// Python-facing wrapper around the FIRM serial parser.
@@ -48,12 +49,58 @@ impl PyFIRMParser {
     }
 }
 
+/// Helper class to construct FIRM commands.
+#[pyclass]
+pub struct FirmCommandBuilder;
+
+#[pymethods]
+impl FirmCommandBuilder {
+    /// Creates a Ping command.
+    ///
+    /// Returns
+    /// -------
+    /// bytes
+    ///     The serialized command bytes.
+    #[staticmethod]
+    fn ping() -> Vec<u8> {
+        FirmCommand::Ping.to_bytes()
+    }
+
+    /// Creates a Reset command.
+    ///
+    /// Returns
+    /// -------
+    /// bytes
+    ///     The serialized command bytes.
+    #[staticmethod]
+    fn reset() -> Vec<u8> {
+        FirmCommand::Reset.to_bytes()
+    }
+
+    /// Creates a SetRate command.
+    ///
+    /// Parameters
+    /// ----------
+    /// rate_hz : int
+    ///     The desired rate in Hertz.
+    ///
+    /// Returns
+    /// -------
+    /// bytes
+    ///     The serialized command bytes.
+    #[staticmethod]
+    fn set_rate(rate_hz: u32) -> Vec<u8> {
+        FirmCommand::SetRate(rate_hz).to_bytes()
+    }
+}
+
 /// Python module entry point for `firm_client`.
 ///
 /// Registers the `PyFIRMParser` and `FIRMPacket` classes with the module.
 #[pymodule]
-fn _firm_client(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
+fn firm_client(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyFIRMParser>()?;
     m.add_class::<FIRMPacket>()?;
+    m.add_class::<FirmCommandBuilder>()?;
     Ok(())
 }

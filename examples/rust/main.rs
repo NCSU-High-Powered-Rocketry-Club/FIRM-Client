@@ -1,7 +1,7 @@
 use std::io::Read;
 use std::{process::exit, time::Duration};
 
-use firm_client::parser::SerialParser;
+use firm_client::data_parser::SerialParser;
 
 fn main() {
     let ports = serialport::available_ports().expect("No ports found!");

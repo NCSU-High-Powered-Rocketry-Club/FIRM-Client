@@ -30,7 +30,7 @@ class FIRMPacket:
     """Magnetic field along the Z-axis in microteslas."""
 
 
-class FirmClient:
+class FIRMClient:
     """Represents a client for communicating with the FIRM device.
     
     Args:
@@ -58,7 +58,7 @@ class FirmClient:
     def is_running(self) -> bool: ...
     """Return True if the client is currently running and reading data."""
 
-    def __enter__(self) -> "FirmClient": ...
+    def __enter__(self) -> "FIRMClient": ...
     """Context manager which simply calls .start()"""
 
     def __exit__(

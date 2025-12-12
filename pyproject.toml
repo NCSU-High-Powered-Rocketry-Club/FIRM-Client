@@ -44,4 +44,4 @@ cache-keys = [{file = "pyproject.toml"}, {file = "Cargo.toml"}, {file = "**/*.rs
 
 [tool.maturin]
 features = ["pyo3/extension-module"]
-manifest-path = "firm_py/Cargo.toml"
+manifest-path = "firm_python/Cargo.toml"

@@ -10,6 +10,5 @@ wasm-bindgen = { version = "0.2.106", optional = true }
 
 [features]
 default = []
-python = ["dep:pyo3", "std"]
+python = ["dep:pyo3"]
 wasm = ["dep:wasm-bindgen"]
-std = []

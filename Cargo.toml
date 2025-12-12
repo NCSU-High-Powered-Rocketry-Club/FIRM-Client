@@ -2,7 +2,10 @@
 members = [
     "firm_core",
     "firm_rust",
-    "firm_py",
+    "firm_python",
     "firm_wasm",
 ]
 resolver = "2"
+
+[profile.release]
+lto = "fat"

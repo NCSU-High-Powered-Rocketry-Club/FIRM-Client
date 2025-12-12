@@ -1,4 +1,4 @@
-use firm_rust::FirmClient;
+use firm_rust::FIRMClient;
 use std::{process::exit, thread, time::Duration};
 
 fn main() {
@@ -12,7 +12,7 @@ fn main() {
     let port_name = &ports[0].port_name;
     println!("Connecting to {}", port_name);
 
-    let mut client = match FirmClient::new(port_name, 115_200, 0.1) {
+    let mut client = match FIRMClient::new(port_name, 115_200, 0.1) {
         Ok(c) => c,
         Err(e) => {
             eprintln!("Failed to create client: {}", e);
@@ -23,7 +23,7 @@ fn main() {
     client.start();
 
     loop {
-        while let Ok(packet) = client.get_packets(Some(Duration::from_millis(100))) {
+        while let Ok(packet) = client.get_data_packets(Some(Duration::from_millis(100))) {
             println!("{:#?}", packet);
         }
         

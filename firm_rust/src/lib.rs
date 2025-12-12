@@ -7,7 +7,25 @@ use std::thread::{self, JoinHandle};
 use std::time::Duration;
 use anyhow::Result;
 
-pub struct FirmClient {
+/// Interface to the FIRM Client device.
+/// 
+/// # Example:
+/// 
+/// 
+/// use firm_rust::FIRMClient;
+/// use std::{thread, time::Duration};
+/// 
+/// fn main() {
+///    let mut client = FIRMClient::new("/dev/ttyUSB0", 2_000_000, 0.1);
+///    client.start();
+///
+///    loop {
+///         while let Ok(packet) = client.get_packets(Some(Duration::from_millis(100))) {
+///             println!("{:#?}", packet);
+///         }
+///     }
+/// }
+pub struct FIRMClient {
     packet_receiver: Receiver<FIRMPacket>,
     error_receiver: Receiver<String>,
     running: Arc<AtomicBool>,
@@ -17,7 +35,14 @@ pub struct FirmClient {
     port: Option<Box<dyn Read + Send>>,
 }
 
-impl FirmClient {
+impl FIRMClient {
+    /// Creates a new FIRMClient instance connected to the specified serial port.
+    /// 
+    /// # Arguments
+    /// 
+    /// - `port_name` (`&str`) - The name of the serial port to connect to (e.g., "/dev/ttyUSB0").
+    /// - `baud_rate` (`u32`) - The baud rate for the serial connection. Commonly 2,000,000 for FIRM devices.
+    /// - `timeout` (`f64`) - Read timeout in seconds for the serial port.
     pub fn new(port_name: &str, baud_rate: u32, timeout: f64) -> Result<Self> {
         let (sender, receiver) = channel();
         let (error_sender, error_receiver) = channel();
@@ -44,6 +69,7 @@ impl FirmClient {
         })
     }
 
+    /// Starts the background thread to read from the serial port and parse packets.
     pub fn start(&mut self) {
         if self.join_handle.is_some() {
             return;
@@ -56,17 +82,22 @@ impl FirmClient {
         };
 
         self.running.store(true, Ordering::Relaxed);
+        // Clone variables for the thread. This way we can move them in, and the original ones
+        // are still owned by self.
         let running_clone = self.running.clone();
         let sender = self.sender.clone();
         let error_sender = self.error_sender.clone();
 
         let handle: JoinHandle<Box<dyn Read + Send>> = thread::spawn(move || {
             let mut parser = SerialParser::new();
+            // Buffer for reading from serial port. 1024 bytes should be sufficient.
             let mut buffer: [u8; 1024] = [0; 1024];
 
             while running_clone.load(Ordering::Relaxed) {
+                // Read bytes from the serial port
                 match port.read(&mut buffer) {
                     Ok(bytes_read) if bytes_read > 0 => {
+                        // Feed the read bytes into the parser
                         parser.parse_bytes(&buffer[..bytes_read]);
                         while let Some(packet) = parser.get_packet() {
                             if sender.send(packet).is_err() {
@@ -75,7 +106,9 @@ impl FirmClient {
                         }
                     }
                     Ok(_) => {}
+                    // Timeouts might happen; just continue reading
                     Err(ref e) if e.kind() == std::io::ErrorKind::TimedOut => {}
+                    // Other errors should be reported and stop the thread:
                     Err(e) => {
                         let _ = error_sender.send(e.to_string());
                         running_clone.store(false, Ordering::Relaxed);
@@ -89,8 +122,10 @@ impl FirmClient {
         self.join_handle = Some(handle);
     }
 
+    /// Stops the background thread and closes the serial port.
     pub fn stop(&mut self) {
         self.running.store(false, Ordering::Relaxed);
+        // todo: explain this properly when I understand it better (it's mostly for restarting)
         if let Some(handle) = self.join_handle.take() {
             if let Ok(port) = handle.join() {
                 self.port = Some(port);
@@ -98,7 +133,12 @@ impl FirmClient {
         }
     }
 
-    pub fn get_packets(&self, timeout: Option<Duration>) -> Result<Vec<FIRMPacket>, RecvTimeoutError> {
+    /// Retrieves all available data packets, optionally blocking until at least one is available.
+    /// 
+    /// # Arguments
+    /// 
+    /// - `timeout` (`Option<Duration>`) - If `Some(duration)`, the method will block for up to `duration` waiting for a packet.
+    pub fn get_data_packets(&self, timeout: Option<Duration>) -> Result<Vec<FIRMPacket>, RecvTimeoutError> {
         let mut packets = Vec::new();
 
         // If blocking, wait for at most one packet. The next loop will drain any others.
@@ -113,20 +153,28 @@ impl FirmClient {
         Ok(packets)
     }
 
+    /// Retrieves all available data packets without blocking.
     pub fn get_all_packets(&self) -> Result<Vec<FIRMPacket>, RecvTimeoutError> {
-        self.get_packets(None)
+        self.get_data_packets(None)
     }
 
+    /// Checks for any errors that have occurred in the background thread.
+    /// 
+    /// # Returns
+    /// 
+    /// - `Option<String>` - `Some(error_message)` if an error has occurred, otherwise `None`.
     pub fn check_error(&self) -> Option<String> {
         self.error_receiver.try_recv().ok()
     }
 
+    /// Returns true if the client is currently running and reading data.
     pub fn is_running(&self) -> bool {
         self.running.load(Ordering::Relaxed)
     }
 }
 
-impl Drop for FirmClient {
+/// Ensures that the client is properly stopped when dropped, i.e. .stop() is called.
+impl Drop for FIRMClient {
     fn drop(&mut self) {
         self.stop();
     }
@@ -139,7 +187,7 @@ mod tests {
     #[test]
     fn test_new_failure() {
         // Test that creating a client with an invalid port fails immediately
-        let result = FirmClient::new("invalid_port_name", 115200, 0.1);
+        let result = FIRMClient::new("invalid_port_name", 115200, 0.1);
         assert!(result.is_err());
     }
 }

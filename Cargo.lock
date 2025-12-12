@@ -64,7 +64,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "firm_py"
+name = "firm_python"
 version = "0.1.0"
 dependencies = [
  "firm_core",

@@ -8,7 +8,7 @@ The project is organized as a Cargo workspace with the following crates:
 
 - **`firm_core`**: The core `no_std` crate containing the packet parser, CRC logic, and data structures. This is the foundation for all other crates and can be used in embedded environments.
 - **`firm_rust`**: A high-level Rust API that uses `serialport` to read from a serial device and provides a threaded client for receiving packets.
-- **`firm_py`**: Python bindings for the Rust client.
+- **`firm_python`**: Python bindings for the Rust client.
 - **`firm_wasm`**: WebAssembly bindings and TypeScript code for using the parser in web applications.
 
 ## Philosophy
@@ -28,6 +28,16 @@ By centralizing the parsing logic in `firm_core`, we ensure consistency and redu
 
 ### Build Instructions
 
+We assume that you are using a Unix-like environment (Linux or macOS).
+
+Windows users may need to adapt some commands (we will mention where this is the case), or use
+WSL (Windows Subsystem for Linux) for best compatibility.
+
+Make sure you have [Cargo](https://rustup.rs) and [uv](https://docs.astral.sh/uv/getting-started/installation/) installed.
+
+You would also need npm if you want to test the web/TypeScript bindings.
+Install it and Node.js here: https://nodejs.org/en/download/
+
 1.  **Build all Rust crates:**
     ```bash
     cargo build
@@ -35,6 +45,7 @@ By centralizing the parsing logic in `firm_core`, we ensure consistency and redu
 
 2.  **Build Python bindings:**
     ```bash
+    cargo build -p firm_python
     uv sync
     # or to build a wheel
     uv run maturin build --release
@@ -58,7 +69,7 @@ use firm_rust::FirmClient;
 use std::{thread, time::Duration};
 
 fn main() {
-    let mut client = FirmClient::new("/dev/ttyUSB0", 2_000_000, 0.1);
+    let mut client = FIRMClient::new("/dev/ttyUSB0", 2_000_000, 0.1);
     client.start();
 
     loop {
@@ -81,11 +92,11 @@ This library supports Python 3.10 and above, including Python 3.14 free threaded
 
 
 ```python
-from firm_client import FirmClient
+from firm_client import FIRMClient
 import time
 
 # Using context manager (automatically starts and stops)
-with FirmClient("/dev/ttyUSB0", baud_rate=2_000_000, timeout=0.1) as client:
+with FIRMClient("/dev/ttyUSB0", baud_rate=2_000_000, timeout=0.1) as client:
     while True:
         packets = client.get_data_packets()
         for packet in packets:
@@ -94,7 +105,63 @@ with FirmClient("/dev/ttyUSB0", baud_rate=2_000_000, timeout=0.1) as client:
 
 ### Web (TypeScript)
 
-TODO (later)!
+todo: Add usage example.
+
+## Publishing
+
+This is mostly for maintainers, but here are the steps to publish each crate to their respective package registries:
+
+### Rust API (crates.io)
+
+todo (idk actually know yet)
+
+### Python Bindings (PyPI)
+
+We need to to first build wheels for each platform, right now the workflow is to do this locally
+and then upload to PyPI. At the minimum, we build for Linux x86_64 and aarch64 for python versions
+3.10+, including free threaded wheels.
+
+1. We should always bump the version in `firm_python/Cargo.toml` and `pyproject.toml` before
+publishing. Make sure they match exactly.
+
+2. Build the wheels (.sh files can only run on Unix-like systems, so Windows users may simply open the file and run the commands manually):
+
+```bash
+./compile.sh
+```
+
+This will create wheels in the `target/wheels` directory, for Python versions 3.10 to 3.14, 
+for both x86_64 and aarch64.
+
+3. Make sure you also have a source distribution:
+
+```bash
+uv run maturin sdist --target-dir python-wheels/
+```
+
+3. We will use `uv` to publish these wheels to PyPI. Make sure you are part of the HPRC
+organization on PyPI, so you have access to the project and can publish new versions.
+
+```bash
+uv publish python-wheels/*
+```
+
+This will ask for PyPI credentials, make sure you get the token from the website.
+
+
+### TypeScript Package (npm)
+
+
+1. Login to npm
+
+```npm login```
+
+2. Publish it
+
+```npm publish```
+
+(Ensure the version in ``package.json`` is bumped before publishing.)
+
 
 ## License
 

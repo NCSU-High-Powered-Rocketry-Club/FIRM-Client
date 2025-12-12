@@ -138,14 +138,14 @@ for both x86_64 and aarch64.
 3. Make sure you also have a source distribution:
 
 ```bash
-uv run maturin sdist --target-dir python-wheels/
+uv run maturin sdist
 ```
 
 3. We will use `uv` to publish these wheels to PyPI. Make sure you are part of the HPRC
 organization on PyPI, so you have access to the project and can publish new versions.
 
 ```bash
-uv publish python-wheels/*
+uv publish target/wheels/*
 ```
 
 This will ask for PyPI credentials, make sure you get the token from the website.

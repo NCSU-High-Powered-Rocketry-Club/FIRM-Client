@@ -117,5 +117,6 @@ fn firm_client(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<FirmClient>()?;
     m.add_class::<FIRMPacket>()?;
     m.add_class::<FirmCommandBuilder>()?;
+    m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     Ok(())
 }

@@ -64,6 +64,9 @@ pub struct FIRMPacket {
     pub mag_y_microteslas: f32,
     #[cfg_attr(feature = "wasm", wasm_bindgen(readonly))]
     pub mag_z_microteslas: f32,
+
+    #[cfg_attr(feature = "wasm", wasm_bindgen(readonly))]
+    pub pressure_altitude_meters: f32,
 }
 
 impl FIRMPacket {
@@ -148,6 +151,7 @@ impl FIRMPacket {
             mag_x_microteslas,
             mag_y_microteslas,
             mag_z_microteslas,
+            pressure_altitude_meters: 0.0,
         }
     }
 }

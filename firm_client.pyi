@@ -29,6 +29,14 @@ class FIRMPacket:
     mag_z_microteslas: float
     """Magnetic field along the Z-axis in microteslas."""
 
+    pressure_altitude_meters: float
+    """
+    The pressure altitude based on the international standard atmosphere model.
+
+    Call `FIRMClient.zero_out_pressure_altitude` to get a new reference to calculate the pressure
+    altitude from.
+    """
+
 
 class FIRMClient:
     """Represents a client for communicating with the FIRM device.
@@ -54,6 +62,9 @@ class FIRMClient:
         block (bool): If True, blocks until at least one packet is available. Default is
             False.
     """
+
+    def zero_out_pressure_altitude(self) -> None: ...
+    """Zeros the pressure altitude based on the current pressure reading from the given packet."""
 
     def is_running(self) -> bool: ...
     """Return True if the client is currently running and reading data."""

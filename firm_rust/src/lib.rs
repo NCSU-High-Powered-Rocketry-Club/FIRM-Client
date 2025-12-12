@@ -33,6 +33,9 @@ pub struct FIRMClient {
     sender: Sender<FIRMPacket>,
     error_sender: Sender<String>,
     port: Option<Box<dyn Read + Send>>,
+    // Offset for zeroing pressure altitude readings.
+    pressure_altitude_offset_meters: f32,
+    current_altitude_meters: f32,
 }
 
 impl FIRMClient {
@@ -66,6 +69,8 @@ impl FIRMClient {
             sender,
             error_sender,
             port: Some(port),
+            pressure_altitude_offset_meters: 0.0,
+            current_altitude_meters: 0.0,
         })
     }
 
@@ -138,23 +143,39 @@ impl FIRMClient {
     /// # Arguments
     /// 
     /// - `timeout` (`Option<Duration>`) - If `Some(duration)`, the method will block for up to `duration` waiting for a packet.
-    pub fn get_data_packets(&self, timeout: Option<Duration>) -> Result<Vec<FIRMPacket>, RecvTimeoutError> {
+    pub fn get_data_packets(&mut self, timeout: Option<Duration>) -> Result<Vec<FIRMPacket>, RecvTimeoutError> {
         let mut packets = Vec::new();
 
         // If blocking, wait for at most one packet. The next loop will drain any others.
         if let Some(duration) = timeout {
-            let pkt = self.packet_receiver.recv_timeout(duration)?;
+            let mut pkt = self.packet_receiver.recv_timeout(duration)?;
+            pkt.pressure_altitude_meters = self.assign_pressure_altitude_meters(pkt.pressure_pascals);
+            self.current_altitude_meters = pkt.pressure_altitude_meters;
             packets.push(pkt);
         }
 
-        while let Ok(pkt) = self.packet_receiver.try_recv() {
+        while let Ok(mut pkt) = self.packet_receiver.try_recv() {
+            pkt.pressure_altitude_meters = self.assign_pressure_altitude_meters(pkt.pressure_pascals);
+            self.current_altitude_meters = pkt.pressure_altitude_meters;
             packets.push(pkt);
         }
         Ok(packets)
     }
 
+    /// Zeros the pressure altitude based on the current pressure reading.
+    /// Subsequent calls to `get_pressure_altitude_meters` will return altitude relative to
+    /// this offset.
+    /// 
+    /// # Arguments
+    /// 
+    /// - `packet` (`&FIRMPacket`) - The packet from which to read the current pressure altitude. 
+    ///    The pressure altitude from this packet will be used to set the offset.
+    pub fn zero_out_pressure_altitude(&mut self) {
+        self.pressure_altitude_offset_meters = self.current_altitude_meters;
+    }
+
     /// Retrieves all available data packets without blocking.
-    pub fn get_all_packets(&self) -> Result<Vec<FIRMPacket>, RecvTimeoutError> {
+    pub fn get_all_packets(&mut self) -> Result<Vec<FIRMPacket>, RecvTimeoutError> {
         self.get_data_packets(None)
     }
 
@@ -170,6 +191,16 @@ impl FIRMClient {
     /// Returns true if the client is currently running and reading data.
     pub fn is_running(&self) -> bool {
         self.running.load(Ordering::Relaxed)
+    }
+
+    /// Computes the pressure altitude in meters using the international standard atmosphere model.
+    /// The altitude is zeroed based on the initial pressure reading.
+    /// 
+    /// # Returns
+    /// 
+    /// - `f32` - Calculated pressure altitude in meters.
+    fn assign_pressure_altitude_meters(&self, pressure_pascals: f32) -> f32 {
+        (44330.0 * (1.0 - (pressure_pascals / 101325.0).powf(1.0 / 5.255))) - self.pressure_altitude_offset_meters
     }
 }
 

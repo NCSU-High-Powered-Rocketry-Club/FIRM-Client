@@ -97,6 +97,8 @@ import time
 
 # Using context manager (automatically starts and stops)
 with FIRMClient("/dev/ttyUSB0", baud_rate=2_000_000, timeout=0.1) as client:
+    client.get_data_packets(block=True)  # Clear initial packets
+    client.zero_out_pressure_altitude()
     while True:
         packets = client.get_data_packets()
         for packet in packets:

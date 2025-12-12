@@ -1,4 +1,4 @@
-use firm_core::parser::{FIRMPacket, SerialParser};
+use firm_core::data_parser::{FIRMPacket, SerialParser};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::io::{self, Read};
 use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, channel};

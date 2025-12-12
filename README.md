@@ -13,7 +13,8 @@ The project is organized as a Cargo workspace with the following crates:
 
 ## Philosophy
 
-The goal of FIRM-Client is to provide a single, efficient, and correct implementation of the FIRM protocol that can be used across different ecosystems (Rust, Python, Web/JS, Embedded). By centralizing the parsing logic in `firm_core`, we ensure consistency and reduce code duplication.
+The goal of FIRM-Client is to provide a single, efficient, and correct implementation of the FIRM parser that can be used across different ecosystems (Rust, Python, Web/JS, Embedded).
+By centralizing the parsing logic in `firm_core`, we ensure consistency and reduce code duplication.
 
 ## Building
 
@@ -57,36 +58,43 @@ use firm_rust::FirmClient;
 use std::{thread, time::Duration};
 
 fn main() {
-    let mut client = FirmClient::new("/dev/ttyUSB0", 115200);
-    client.start().expect("Failed to start client");
+    let mut client = FirmClient::new("/dev/ttyUSB0", 2_000_000, 0.1);
+    client.start();
 
     loop {
-        for packet in client.get_packets() {
+        while let Ok(packet) = client.get_packets(Some(Duration::from_millis(100))) {
             println!("{:#?}", packet);
         }
-        thread::sleep(Duration::from_millis(10));
     }
 }
 ```
 
 ### Python
 
+You can install the library via pip (once published) or build from source.
+
+```bash
+pip install firm-client
+```
+
+This library supports Python 3.10 and above, including Python 3.14 free threaded.
+
+
 ```python
 from firm_client import FirmClient
 import time
 
 # Using context manager (automatically starts and stops)
-with FirmClient("/dev/ttyUSB0", 115200) as client:
+with FirmClient("/dev/ttyUSB0", baud_rate=2_000_000, timeout=0.1) as client:
     while True:
-        packets = client.get_packets()
+        packets = client.get_data_packets()
         for packet in packets:
             print(packet.timestamp_seconds, packet.accel_x_meters_per_s2)
-        time.sleep(0.01)
 ```
 
 ### Web (TypeScript)
 
-TODO!
+TODO (later)!
 
 ## License
 

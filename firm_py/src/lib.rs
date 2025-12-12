@@ -5,31 +5,45 @@ use firm_core::parser::FIRMPacket;
 #[pyclass(unsendable)]
 struct FirmClient {
     inner: RustFirmClient,
+    timeout: f64
 }
 
 #[pymethods]
 impl FirmClient {
     #[new]
-    #[pyo3(signature = (port_name, baud_rate=115200))]
-    fn new(port_name: &str, baud_rate: u32) -> Self {
-        let client = RustFirmClient::new(port_name, baud_rate);
-        FirmClient { inner: client }
+    #[pyo3(signature = (port_name, baud_rate=115200, timeout=0.1))]
+    fn new(port_name: &str, baud_rate: Option<u32>, timeout: Option<f64>) -> PyResult<Self> {
+        let baudrate = baud_rate.unwrap_or(115200);
+        let timeout_val = timeout.unwrap_or(0.1);
+        let client = RustFirmClient::new(port_name, baudrate, timeout_val)
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyIOError, _>(e.to_string()))?;
+        Ok(FirmClient { inner: client , timeout: timeout_val })
     }
 
     fn start(&mut self) -> PyResult<()> {
-        self.inner.start()
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyIOError, _>(e.to_string()))
+        self.inner.start();
+        Ok(())
     }
 
     fn stop(&mut self) {
         self.inner.stop();
     }
 
-    fn get_packets(&self) -> PyResult<Vec<FIRMPacket>> {
+    #[pyo3(signature = (block=false))]
+    fn get_data_packets(&self, block: bool) -> PyResult<Vec<FIRMPacket>> {
         if let Some(err) = self.inner.check_error() {
             return Err(PyErr::new::<pyo3::exceptions::PyIOError, _>(err));
         }
-        Ok(self.inner.get_packets())
+
+        let timeout = if block {
+            Some(std::time::Duration::from_secs_f64(self.timeout))
+        } else {
+            None
+        };
+        // Get all packets, and return early if there's an error
+        let packets = self.inner.get_packets(timeout)
+                        .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))?;
+        Ok(packets)
     }
 
     fn is_running(&self) -> bool {
@@ -63,8 +77,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_client_creation() {
-        let client = FirmClient::new("test_port", 115200);
-        assert!(!client.is_running());
+    fn test_client_creation_failure() {
+        let result = FirmClient::new("invalid_port", 115200);
+        assert!(result.is_err());
     }
 }

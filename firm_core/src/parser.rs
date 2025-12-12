@@ -33,7 +33,7 @@ const GRAVITY_METERS_PER_SECONDS_SQUARED: f32 = 9.80665;
 
 /// Represents a decoded FIRM telemetry packet with converted physical units.
 #[derive(Debug, Clone, PartialEq, Serialize)]
-#[cfg_attr(feature = "python", pyo3::pyclass)]
+#[cfg_attr(feature = "python", pyo3::pyclass(get_all, freelist = 20, frozen))]
 #[cfg_attr(feature = "wasm", wasm_bindgen)]
 pub struct FIRMPacket {
     pub timestamp_seconds: f64,

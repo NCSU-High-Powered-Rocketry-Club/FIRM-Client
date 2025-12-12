@@ -8,4 +8,4 @@ crate-type = ["cdylib"]
 
 [dependencies]
 firm_core = { path = "../firm_core", features = ["wasm"] }
-wasm-bindgen = "0.2"
+wasm-bindgen = "0.2.106"

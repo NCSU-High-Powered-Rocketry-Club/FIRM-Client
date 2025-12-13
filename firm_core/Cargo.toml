@@ -2,6 +2,11 @@
 name = "firm_core"
 version = "0.1.0"
 edition = "2024"
+license = "MIT"
+readme = "../README.md"
+repository = "https://github.com/NCSU-High-Powered-Rocketry-Club/FIRM-Client"
+homepage = "https://ncsurocketry.org"
+description = "Core no_std library for FIRM Client in Rust"
 
 [dependencies]
 serde = { version = "1.0", default-features = false, features = ["derive"] }

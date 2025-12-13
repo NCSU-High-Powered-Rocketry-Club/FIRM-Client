@@ -1,7 +1,8 @@
 [package]
 name = "firm_rust"
 version = "0.1.0"
-readme = "README.md"
+readme = "../README.md"
+license = "MIT"
 description = "Official FIRM Client library in Rust"
 repository = "https://github.com/NCSU-High-Powered-Rocketry-Club/FIRM-Client"
 keywords = ["rocketry", "firm", "flight-computer", "no-std", "embedded"]

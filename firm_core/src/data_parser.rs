@@ -1,6 +1,7 @@
 use crate::crc::crc16_ccitt;
 use serde::Serialize;
-use std::collections::VecDeque;
+use alloc::collections::VecDeque;
+use alloc::vec::Vec;
 
 #[cfg(feature = "wasm")]
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -9,7 +10,7 @@ use wasm_bindgen::prelude::wasm_bindgen;
 const START_BYTES: [u8; 2] = [0x5a, 0xa5];
 
 /// Size of the packet header in bytes.
-const HEADER_SIZE: usize = std::mem::size_of_val(&START_BYTES);
+const HEADER_SIZE: usize = core::mem::size_of_val(&START_BYTES);
 
 /// Size of the length field in bytes.
 const LENGTH_FIELD_SIZE: usize = 2;
@@ -32,7 +33,7 @@ const GRAVITY_METERS_PER_SECONDS_SQUARED: f32 = 9.80665;
 
 /// Represents a decoded FIRM telemetry packet with converted physical units.
 #[derive(Debug, Clone, PartialEq, Serialize)]
-#[cfg_attr(feature = "python", pyo3::pyclass(get_all))]
+#[cfg_attr(feature = "python", pyo3::pyclass(get_all, freelist = 20, frozen))]
 #[cfg_attr(feature = "wasm", wasm_bindgen)]
 pub struct FIRMPacket {
     #[cfg_attr(feature = "wasm", wasm_bindgen(readonly))]
@@ -63,6 +64,9 @@ pub struct FIRMPacket {
     pub mag_y_microteslas: f32,
     #[cfg_attr(feature = "wasm", wasm_bindgen(readonly))]
     pub mag_z_microteslas: f32,
+
+    #[cfg_attr(feature = "wasm", wasm_bindgen(readonly))]
+    pub pressure_altitude_meters: f32,
 }
 
 impl FIRMPacket {
@@ -147,6 +151,7 @@ impl FIRMPacket {
             mag_x_microteslas,
             mag_y_microteslas,
             mag_z_microteslas,
+            pressure_altitude_meters: 0.0,
         }
     }
 }

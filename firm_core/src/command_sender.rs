@@ -1,3 +1,4 @@
+use alloc::vec::Vec;
 
 /// Represents a command that can be sent to the FIRM hardware.
 pub enum FirmCommand {

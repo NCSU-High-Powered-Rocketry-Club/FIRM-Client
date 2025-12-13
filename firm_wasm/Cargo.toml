@@ -1,0 +1,12 @@
+[package]
+name = "firm_wasm"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+firm_core = { path = "../firm_core", features = ["wasm"] }
+wasm-bindgen = "0.2.106"
+serde-wasm-bindgen = { version = "0.6", optional = true }

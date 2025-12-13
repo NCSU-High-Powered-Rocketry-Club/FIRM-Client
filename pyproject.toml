@@ -4,10 +4,11 @@ build-backend = "maturin"
 
 [project]
 name = "firm-client"
-version = "0.1.0"
+version = "0.1.2"
 readme = "README.md"  # Todo: Make a python readme.md file
 description = "Python bindings for FIRM Client using Rust"
 license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.10"
 classifiers = [
     "Development Status :: 4 - Beta",

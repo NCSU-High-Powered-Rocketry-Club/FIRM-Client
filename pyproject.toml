@@ -23,7 +23,7 @@ dependencies = []
 
 [project.urls]
 "Homepage" = "https://ncsurocketry.org"
-"Source" = "https://github.com/NCSU-High-Powered-Rocketry-Club/mscl_rs"
+"Source" = "https://github.com/NCSU-High-Powered-Rocketry-Club/FIRM-Client"
 
 [dependency-groups]
 dev = [

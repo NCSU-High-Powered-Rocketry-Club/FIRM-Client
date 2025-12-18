@@ -1,7 +1,4 @@
-import init, {
-  JSFIRMParser,
-  FIRMPacket,
-} from "../../pkg/firm_client.js";
+import init, { JSFIRMParser, FIRMPacket } from '../../pkg/firm_client.js';
 
 /**
  * Data packet received from FIRM.
@@ -52,11 +49,9 @@ export class FIRM {
    * Usage:
    *   const firm = await FIRM.connect({ baudRate: 115200 });
    */
-  static async connect(
-    options: FIRMConnectOptions = {},
-  ): Promise<FIRM> {
-    if (!("serial" in navigator)) {
-      throw new Error("Web Serial API not available in this browser");
+  static async connect(options: FIRMConnectOptions = {}): Promise<FIRM> {
+    if (!('serial' in navigator)) {
+      throw new Error('Web Serial API not available in this browser');
     }
 
     // Initialize the WASM module.
@@ -66,11 +61,11 @@ export class FIRM {
     const baudRate = options.baudRate ?? 115200;
 
     // Ask user for a serial device & open it.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const port = await (navigator as any).serial.requestPort();
     await port.open({ baudRate });
 
-    const reader: ReadableStreamDefaultReader<Uint8Array> =
-      port.readable.getReader();
+    const reader: ReadableStreamDefaultReader<Uint8Array> = port.readable.getReader();
 
     const firm = new FIRM(wasm);
     firm.reader = reader;
@@ -101,13 +96,13 @@ export class FIRM {
           // Drain all packets that are ready.
           while (true) {
             const pkt = this.wasm.get_packet(); // FIRMPacket | undefined
-            if (!pkt) break;                    // `None` -> `undefined`
+            if (!pkt) break; // `None` -> `undefined`
             this.enqueuePacket(pkt);
           }
         }
       }
     } catch (err) {
-      console.error("[FIRM] read loop error:", err);
+      console.error('[FIRM] read loop error:', err);
       this.flushWaitersWithNull();
     } finally {
       this.running = false;

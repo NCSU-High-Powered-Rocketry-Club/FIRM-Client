@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
@@ -11,7 +11,12 @@
       }
 
       body {
-        font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+        font-family:
+          system-ui,
+          -apple-system,
+          Segoe UI,
+          Roboto,
+          sans-serif;
         background: var(--bg-color);
         color: var(--text-color);
         display: flex;
@@ -73,64 +78,51 @@
     <div id="output">{ No packet data yet }</div>
 
     <script type="module">
-  // Use the same public API as npm consumers
-  import { FIRM } from "../../typescript/dist/index.js";
+      // Use the same public API as npm consumers
+      import { FIRM } from '../../typescript/dist/index.js';
 
-  const btn = document.getElementById("connect");
-  const output = document.getElementById("output");
-  const status = document.getElementById("status");
+      const btn = document.getElementById('connect');
+      const output = document.getElementById('output');
+      const status = document.getElementById('status');
 
-  function setStatus(msg) {
-    status.textContent = msg;
-  }
-
-  function showPacket(pkt) {
-    // Since 'pkt' is a WASM class instance, JSON.stringify won't see its fields.
-    // We must access the getters manually.
-    const data = {
-      timestamp: pkt.timestamp_seconds,
-      accel: [
-        pkt.accel_x_meters_per_s2,
-        pkt.accel_y_meters_per_s2,
-        pkt.accel_z_meters_per_s2,
-      ],
-      gyro: [
-        pkt.gyro_x_radians_per_s,
-        pkt.gyro_y_radians_per_s,
-        pkt.gyro_z_radians_per_s,
-      ],
-      mag: [
-        pkt.mag_x_microteslas,
-        pkt.mag_y_microteslas,
-        pkt.mag_z_microteslas,
-      ],
-      env: {
-        temp: pkt.temperature_celsius,
-        pressure: pkt.pressure_pascals,
-      },
-    };
-    output.textContent = JSON.stringify(data, null, 2);
-  }
-
-  btn.addEventListener("click", async () => {
-    setStatus("[UI] Connecting...");
-
-    try {
-      const firm = await FIRM.connect({ baudRate: 115200 });
-      setStatus("[UI] Connected. Streaming packets...");
-
-      // Use the async iterator exposed by your library
-      for await (const pkt of firm.getDataPackets()) {
-        showPacket(pkt);
+      function setStatus(msg) {
+        status.textContent = msg;
       }
 
-      setStatus("[UI] Stream ended.");
-    } catch (err) {
-      console.error(err);
-      setStatus("Error: " + (err?.message ?? err));
-    }
-  });
-</script>
+      function showPacket(pkt) {
+        // Since 'pkt' is a WASM class instance, JSON.stringify won't see its fields.
+        // We must access the getters manually.
+        const data = {
+          timestamp: pkt.timestamp_seconds,
+          accel: [pkt.accel_x_meters_per_s2, pkt.accel_y_meters_per_s2, pkt.accel_z_meters_per_s2],
+          gyro: [pkt.gyro_x_radians_per_s, pkt.gyro_y_radians_per_s, pkt.gyro_z_radians_per_s],
+          mag: [pkt.mag_x_microteslas, pkt.mag_y_microteslas, pkt.mag_z_microteslas],
+          env: {
+            temp: pkt.temperature_celsius,
+            pressure: pkt.pressure_pascals,
+          },
+        };
+        output.textContent = JSON.stringify(data, null, 2);
+      }
 
+      btn.addEventListener('click', async () => {
+        setStatus('[UI] Connecting...');
+
+        try {
+          const firm = await FIRM.connect({ baudRate: 115200 });
+          setStatus('[UI] Connected. Streaming packets...');
+
+          // Use the async iterator exposed by your library
+          for await (const pkt of firm.getDataPackets()) {
+            showPacket(pkt);
+          }
+
+          setStatus('[UI] Stream ended.');
+        } catch (err) {
+          console.error(err);
+          setStatus('Error: ' + (err?.message ?? err));
+        }
+      });
+    </script>
   </body>
 </html>

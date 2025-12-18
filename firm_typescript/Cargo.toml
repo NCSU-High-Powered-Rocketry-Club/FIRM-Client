@@ -1,5 +1,5 @@
 [package]
-name = "firm_wasm"
+name = "firm_typescript"
 version = "0.1.0"
 edition = "2024"
 
@@ -7,6 +7,10 @@ edition = "2024"
 crate-type = ["cdylib"]
 
 [dependencies]
-firm_core = { path = "../firm_core", features = ["wasm"] }
+firm_core = { path = "../firm_core" }
 wasm-bindgen = "0.2.106"
 serde-wasm-bindgen = { version = "0.6", optional = true }
+
+[features]
+default = ["wasm"]
+wasm = ["firm_core/wasm"]

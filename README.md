@@ -55,7 +55,11 @@ Install it and Node.js here: https://nodejs.org/en/download/
     ```bash
     cd firm_typescript
     npm install
+    npm run clean
     npm run build
+
+    # For testing the code with examples/index.html
+    npx serve .
     ```
 
 ## Usage

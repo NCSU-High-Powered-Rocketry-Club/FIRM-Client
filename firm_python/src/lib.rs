@@ -1,7 +1,6 @@
 use pyo3::prelude::*;
 use firm_rust::FIRMClient as RustFirmClient;
 use firm_core::data_parser::FIRMPacket;
-use firm_core::command_sender::FIRMCommand;
 
 #[pyclass(unsendable)]
 struct FIRMClient {
@@ -70,57 +69,10 @@ impl FIRMClient {
     }
 }
 
-/// Helper class to construct FIRM commands.
-#[pyclass]
-pub struct FirmCommandBuilder;
-
-#[pymethods]
-impl FirmCommandBuilder {
-    /// Creates a Ping command.
-    ///
-    /// Returns
-    /// -------
-    /// bytes
-    ///     The serialized command bytes.
-    #[staticmethod]
-    fn ping() -> Vec<u8> {
-        FIRMCommand::Ping.to_bytes()
-    }
-
-    /// Creates a Reset command.
-    ///
-    /// Returns
-    /// -------
-    /// bytes
-    ///     The serialized command bytes.
-    #[staticmethod]
-    fn reset() -> Vec<u8> {
-        FIRMCommand::Reset.to_bytes()
-    }
-
-    /// Creates a SetRate command.
-    ///
-    /// Parameters
-    /// ----------
-    /// rate_hz : int
-    ///     The desired rate in Hertz.
-    ///
-    /// Returns
-    /// -------
-    /// bytes
-    ///     The serialized command bytes.
-    #[staticmethod]
-    fn set_rate(rate_hz: u32) -> Vec<u8> {
-        FIRMCommand::SetRate(rate_hz).to_bytes()
-    }
-}
-
-
 #[pymodule(gil_used = false)]
 fn firm_client(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<FIRMClient>()?;
     m.add_class::<FIRMPacket>()?;
-    m.add_class::<FirmCommandBuilder>()?;
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     Ok(())
 }

@@ -3,4 +3,4 @@ extern crate alloc;
 
 pub mod crc;
 pub mod data_parser;
-pub mod command_sender;
+pub mod command_builder;

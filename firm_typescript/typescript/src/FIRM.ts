@@ -1,4 +1,4 @@
-import init, { JSFIRMParser, FIRMPacket } from '../../pkg/firm_client.js';
+import init, { FIRMParser, FIRMPacket, FIRMCommandBuilder } from '../../pkg/firm_client.js';
 
 /**
  * Data packet received from FIRM.
@@ -20,12 +20,15 @@ export interface FIRMConnectOptions {
  * - Streams raw bytes into the Rust parser (wasm).
  * - Exposes methods to read parsed telemetry packets.
  */
-export class FIRM {
+export class FIRMClient {
   /** Underlying WASM-backed streaming parser. */
-  private wasm: JSFIRMParser;
+  private dataParser: FIRMParser;
 
   /** Reader for the Web Serial stream. */
   private reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
+
+  /** Writer for the Web Serial stream. */
+  private writer: WritableStreamDefaultWriter<Uint8Array> | null = null;
 
   /** Whether the background read loop is currently running. */
   private running = false;
@@ -36,8 +39,8 @@ export class FIRM {
   /** Waiters that are pending the next available packet. */
   private packetWaiters: Array<(pkt: FIRMPacket | null) => void> = [];
 
-  private constructor(wasm: JSFIRMParser) {
-    this.wasm = wasm;
+  private constructor(wasm: FIRMParser) {
+    this.dataParser = wasm;
   }
 
   /**
@@ -49,7 +52,7 @@ export class FIRM {
    * Usage:
    *   const firm = await FIRM.connect({ baudRate: 115200 });
    */
-  static async connect(options: FIRMConnectOptions = {}): Promise<FIRM> {
+  static async connect(options: FIRMConnectOptions = {}): Promise<FIRMClient> {
     if (!('serial' in navigator)) {
       throw new Error('Web Serial API not available in this browser');
     }
@@ -57,7 +60,7 @@ export class FIRM {
     // Initialize the WASM module.
     await init();
 
-    const wasm = new JSFIRMParser();
+    const dataParser = new FIRMParser();
     const baudRate = options.baudRate ?? 115200;
 
     // Ask user for a serial device & open it.
@@ -66,9 +69,11 @@ export class FIRM {
     await port.open({ baudRate });
 
     const reader: ReadableStreamDefaultReader<Uint8Array> = port.readable.getReader();
+    const writer: WritableStreamDefaultWriter<Uint8Array> = port.writable.getWriter();
 
-    const firm = new FIRM(wasm);
+    const firm = new FIRMClient(dataParser);
     firm.reader = reader;
+    firm.writer = writer;
     firm.startReadLoop();
     return firm;
   }
@@ -91,11 +96,11 @@ export class FIRM {
 
         if (value && value.length > 0) {
           // Push raw bytes into the Rust/WASM parser.
-          this.wasm.parse_bytes(value);
+          this.dataParser.parse_bytes(value);
 
           // Drain all packets that are ready.
           while (true) {
-            const pkt = this.wasm.get_packet(); // FIRMPacket | undefined
+            const pkt = this.dataParser.get_packet(); // FIRMPacket | undefined
             if (!pkt) break; // `None` -> `undefined`
             this.enqueuePacket(pkt);
           }
@@ -113,6 +118,77 @@ export class FIRM {
       }
       this.reader?.releaseLock();
     }
+  }
+
+  /**
+   * Sends raw bytes to the device.
+   * @param bytes The bytes to send.
+   */
+  async sendBytes(bytes: Uint8Array): Promise<void> {
+    if (!this.writer) {
+      throw new Error('Writer not available');
+    }
+    await this.writer.write(bytes);
+  }
+
+  /**
+   * Sends a command to get device info.
+   */
+  async getDeviceInfo(): Promise<void> {
+    const bytes = FIRMCommandBuilder.build_get_device_info();
+    await this.sendBytes(bytes);
+  }
+
+  /**
+   * Sends a command to get device configuration.
+   */
+  async getDeviceConfig(): Promise<void> {
+    const bytes = FIRMCommandBuilder.build_get_device_config();
+    await this.sendBytes(bytes);
+  }
+
+  /**
+   * Sends a command to set device configuration.
+   * @param name Device name.
+   * @param frequency Frequency in Hz.
+   * @param protocol Protocol ID (1=USB, 2=UART, 3=I2C, 4=SPI).
+   */
+  async setDeviceConfig(name: string, frequency: number, protocol: number): Promise<void> {
+    const bytes = FIRMCommandBuilder.build_set_device_config(name, frequency, protocol);
+    await this.sendBytes(bytes);
+  }
+
+  /**
+   * Sends a command to run IMU calibration.
+   */
+  async runIMUCalibration(): Promise<void> {
+    const bytes = FIRMCommandBuilder.build_run_imu_calibration();
+    await this.sendBytes(bytes);
+  }
+
+  /**
+   * Sends a command to run Magnetometer calibration.
+   */
+  async runMagnetometerCalibration(): Promise<void> {
+    const bytes = FIRMCommandBuilder.build_run_magnetometer_calibration();
+    await this.sendBytes(bytes);
+  }
+
+  /**
+   * Sends a command to download a log file.
+   * @param fileId The ID of the file to download.
+   */
+  async downloadLogFile(fileId: number): Promise<void> {
+    const bytes = FIRMCommandBuilder.build_download_log_file(fileId);
+    await this.sendBytes(bytes);
+  }
+
+  /**
+   * Sends a command to reboot the device.
+   */
+  async reboot(): Promise<void> {
+    const bytes = FIRMCommandBuilder.build_reboot();
+    await this.sendBytes(bytes);
   }
 
   /**

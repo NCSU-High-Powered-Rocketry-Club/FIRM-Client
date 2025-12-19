@@ -1,1 +1,1 @@
-export { FIRM, FIRMPacket, type FIRMConnectOptions } from './FIRM.js';
+export { FIRMClient as FIRM, FIRMPacket, type FIRMConnectOptions } from './FIRM.js';

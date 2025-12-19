@@ -1,35 +1,65 @@
 use alloc::vec::Vec;
 
-/// Represents a command that can be sent to the FIRM hardware.
-pub enum FirmCommand {
-    /// Pings the device to check connectivity.
-    Ping,
-    /// Resets the device.
-    Reset,
-    /// Sets the data reporting rate in Hz.
-    /// 
-    /// # Arguments
-    /// * `rate_hz` - The desired rate in Hertz (e.g., 10, 100).
-    SetRate(u32),
+pub enum DeviceProtocol {
+    USB,
+    UART,
+    I2C,
+    SPI,
 }
 
-impl FirmCommand {
+pub struct DeviceConfig {
+    pub name: String,
+    pub frequency: u16,
+    pub protocol: DeviceProtocol,
+}
+
+/// Represents a command that can be sent to the FIRM hardware.
+pub enum FIRMCommand {
+    /// Gets info about the device including name, ID, firmware version, and port.
+    GetDeviceInfo,
+    GetDeviceConfig,
+    SetDeviceConfig(DeviceConfig),
+    RunIMUCalibration,
+    RunMagnetometerCalibration,
+    DownloadLogFile(u32),
+    Reboot,
+}
+
+impl FIRMCommand {
     /// Serializes the command into a byte vector ready to be sent over serial.
     pub fn to_bytes(&self) -> Vec<u8> {
         let mut bytes = Vec::new();
         
-        // TODO: Implement actual protocol serialization
-        // Example: [START_BYTE, CMD_ID, PAYLOAD..., CRC]
         match self {
-            FirmCommand::Ping => {
-                bytes.push(0x01); // Example ID
+            FIRMCommand::GetDeviceInfo => {
+                bytes.push(0x01);
             },
-            FirmCommand::Reset => {
+            FIRMCommand::GetDeviceConfig => {
                 bytes.push(0x02);
             },
-            FirmCommand::SetRate(rate) => {
+            FIRMCommand::SetDeviceConfig(config) => {
                 bytes.push(0x03);
-                bytes.extend_from_slice(&rate.to_le_bytes());
+                // Serialize DeviceConfig fields
+                bytes.extend_from_slice(&config.frequency.to_le_bytes());
+                match config.protocol {
+                    DeviceProtocol::USB => bytes.push(0x01),
+                    DeviceProtocol::UART => bytes.push(0x02),
+                    DeviceProtocol::I2C => bytes.push(0x03),
+                    DeviceProtocol::SPI => bytes.push(0x04),
+                }
+            },
+            FIRMCommand::RunIMUCalibration => {
+                bytes.push(0x04);
+            },
+            FIRMCommand::RunMagnetometerCalibration => {
+                bytes.push(0x05);
+            },
+            FIRMCommand::DownloadLogFile(file_id) => {
+                bytes.push(0x06);
+                bytes.extend_from_slice(&file_id.to_le_bytes());
+            },
+            FIRMCommand::Reboot => {
+                bytes.push(0x07);
             },
         }
         

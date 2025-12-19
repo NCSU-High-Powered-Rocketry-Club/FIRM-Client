@@ -1,6 +1,6 @@
 use firm_core::data_parser::{FIRMPacket, SerialParser};
 use wasm_bindgen::prelude::*;
-use firm_core::command_sender::FirmCommand;
+use firm_core::command_sender::FIRMCommand;
 
 #[wasm_bindgen(js_name = JSFIRMParser)]
 pub struct JSFIRMParser {
@@ -39,7 +39,7 @@ impl FirmCommandBuilder {
     ///
     /// * `Uint8Array` - The serialized command bytes.
     pub fn ping() -> Vec<u8> {
-        FirmCommand::Ping.to_bytes()
+        FIRMCommand::Ping.to_bytes()
     }
 
     /// Creates a Reset command.
@@ -48,7 +48,7 @@ impl FirmCommandBuilder {
     ///
     /// * `Uint8Array` - The serialized command bytes.
     pub fn reset() -> Vec<u8> {
-        FirmCommand::Reset.to_bytes()
+        FIRMCommand::Reset.to_bytes()
     }
 
     /// Creates a SetRate command.
@@ -61,6 +61,6 @@ impl FirmCommandBuilder {
     ///
     /// * `Uint8Array` - The serialized command bytes.
     pub fn set_rate(rate_hz: u32) -> Vec<u8> {
-        FirmCommand::SetRate(rate_hz).to_bytes()
+        FIRMCommand::SetRate(rate_hz).to_bytes()
     }
 }

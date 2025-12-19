@@ -19,6 +19,6 @@ export default [
     },
   },
   {
-    ignores: ['pkg/', 'typescript/dist/', 'node_modules/'],
+    ignores: ['firm_typescript/pkg/', 'firm_typescript/typescript/dist/', 'node_modules/'],
   },
 ];

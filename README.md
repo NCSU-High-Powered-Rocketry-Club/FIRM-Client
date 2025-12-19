@@ -9,7 +9,7 @@ The project is organized as a Cargo workspace with the following crates:
 - **`firm_core`**: The core `no_std` crate containing the packet parser, CRC logic, and data structures. This is the foundation for all other crates and can be used in embedded environments.
 - **`firm_rust`**: A high-level Rust API that uses `serialport` to read from a serial device and provides a threaded client for receiving packets.
 - **`firm_python`**: Python bindings for the Rust client.
-- **`firm_wasm`**: WebAssembly bindings and TypeScript code for using the parser in web applications.
+- **`firm_typescript`**: WebAssembly bindings and TypeScript code for using the parser in web applications.
 
 ## Philosophy
 
@@ -53,9 +53,13 @@ Install it and Node.js here: https://nodejs.org/en/download/
 
 3.  **Build WASM/TypeScript:**
     ```bash
-    cd firm_wasm
+    cd firm_typescript
     npm install
+    npm run clean
     npm run build
+
+    # For testing the code with examples/index.html
+    npx serve .
     ```
 
 ## Usage

@@ -3,7 +3,7 @@ members = [
     "firm_core",
     "firm_rust",
     "firm_python",
-    "firm_wasm",
+    "firm_typescript",
 ]
 resolver = "2"
 

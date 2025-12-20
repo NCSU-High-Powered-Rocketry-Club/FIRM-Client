@@ -1,8 +1,5 @@
 use serde::{Serialize, Deserialize};
 
-#[cfg(feature = "wasm")]
-use wasm_bindgen::prelude::wasm_bindgen;
-
 /// Standard gravity in m/s².
 const GRAVITY_METERS_PER_SECONDS_SQUARED: f32 = 9.80665;
 

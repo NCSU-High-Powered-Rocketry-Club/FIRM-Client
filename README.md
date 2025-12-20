@@ -39,11 +39,13 @@ You would also need npm if you want to test the web/TypeScript bindings.
 Install it and Node.js here: https://nodejs.org/en/download/
 
 1.  **Build all Rust crates:**
+
     ```bash
     cargo build
     ```
 
 2.  **Build Python bindings:**
+
     ```bash
     cargo build -p firm_python
     uv sync
@@ -52,6 +54,7 @@ Install it and Node.js here: https://nodejs.org/en/download/
     ```
 
 3.  **Build WASM/TypeScript:**
+
     ```bash
     cd firm_typescript
     npm install
@@ -94,7 +97,6 @@ pip install firm-client
 
 This library supports Python 3.10 and above, including Python 3.14 free threaded.
 
-
 ```python
 from firm_client import FIRMClient
 import time
@@ -128,7 +130,7 @@ and then upload to PyPI. At the minimum, we build for Linux x86_64 and aarch64 f
 3.10+, including free threaded wheels.
 
 1. We should always bump the version in `firm_python/Cargo.toml` and `pyproject.toml` before
-publishing. Make sure they match exactly.
+   publishing. Make sure they match exactly.
 
 2. Build the wheels (.sh files can only run on Unix-like systems, so Windows users may simply open the file and run the commands manually):
 
@@ -136,7 +138,7 @@ publishing. Make sure they match exactly.
 ./compile.sh
 ```
 
-This will create wheels in the `target/wheels` directory, for Python versions 3.10 to 3.14, 
+This will create wheels in the `target/wheels` directory, for Python versions 3.10 to 3.14,
 for both x86_64 and aarch64.
 
 3. Make sure you also have a source distribution:
@@ -146,7 +148,7 @@ uv run maturin sdist
 ```
 
 3. We will use `uv` to publish these wheels to PyPI. Make sure you are part of the HPRC
-organization on PyPI, so you have access to the project and can publish new versions.
+   organization on PyPI, so you have access to the project and can publish new versions.
 
 ```bash
 uv publish target/wheels/*
@@ -154,20 +156,17 @@ uv publish target/wheels/*
 
 This will ask for PyPI credentials, make sure you get the token from the website.
 
-
 ### TypeScript Package (npm)
-
 
 1. Login to npm
 
-```npm login```
+`npm login`
 
 2. Publish it
 
-```npm publish```
+`npm publish`
 
-(Ensure the version in ``package.json`` is bumped before publishing.)
-
+(Ensure the version in `package.json` is bumped before publishing.)
 
 ## License
 

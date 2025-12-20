@@ -1,5 +1,5 @@
 import init, { FIRMDataParser, FIRMCommandBuilder } from '../../pkg/firm_client.js';
-import { FIRMPacket, FIRMResponse } from './types.js';
+import { FIRMPacket, FIRMResponse, DeviceInfo, DeviceConfig, CalibrationStatus } from './types.js';
 
 /**
  * Data packet received from FIRM.
@@ -7,6 +7,8 @@ import { FIRMPacket, FIRMResponse } from './types.js';
  * This is the Rust `FIRMPacket` type exported via wasm-bindgen.
  */
 export { FIRMPacket, FIRMResponse };
+
+const RESPONSE_TIMEOUT_MS = 5000;
 
 /** Options for connecting to a FIRM device over Web Serial. */
 export interface FIRMConnectOptions {
@@ -147,18 +149,40 @@ export class FIRMClient {
 
   /**
    * Sends a command to get device info.
+   * @returns The device info, or null if the request timed out.
    */
-  async getDeviceInfo(): Promise<void> {
+  async getDeviceInfo(): Promise<DeviceInfo | null> {
     const bytes = FIRMCommandBuilder.build_get_device_info();
     await this.sendBytes(bytes);
+
+    try {
+      return await this.waitForResponse(
+        (res) => ('GetDeviceInfo' in res ? res.GetDeviceInfo : undefined),
+        RESPONSE_TIMEOUT_MS,
+      );
+    } catch (e) {
+      console.warn('Timeout waiting for GetDeviceInfo response');
+      return null;
+    }
   }
 
   /**
    * Sends a command to get device configuration.
+   * @returns The device configuration, or null if the request timed out.
    */
-  async getDeviceConfig(): Promise<void> {
+  async getDeviceConfig(): Promise<DeviceConfig | null> {
     const bytes = FIRMCommandBuilder.build_get_device_config();
     await this.sendBytes(bytes);
+
+    try {
+      return await this.waitForResponse(
+        (res) => ('GetDeviceConfig' in res ? res.GetDeviceConfig : undefined),
+        RESPONSE_TIMEOUT_MS,
+      );
+    } catch (e) {
+      console.warn('Timeout waiting for GetDeviceConfig response');
+      return null;
+    }
   }
 
   /**
@@ -175,7 +199,7 @@ export class FIRMClient {
     try {
       return await this.waitForResponse(
         (res) => ('SetDeviceConfig' in res ? res.SetDeviceConfig : undefined),
-        5000
+        RESPONSE_TIMEOUT_MS,
       );
     } catch (e) {
       console.warn('Timeout waiting for SetDeviceConfig response');
@@ -185,18 +209,40 @@ export class FIRMClient {
 
   /**
    * Sends a command to run IMU calibration.
+   * @returns The calibration status, or null if the request timed out.
    */
-  async runIMUCalibration(): Promise<void> {
+  async runIMUCalibration(): Promise<CalibrationStatus | null> {
     const bytes = FIRMCommandBuilder.build_run_imu_calibration();
     await this.sendBytes(bytes);
+
+    try {
+      return await this.waitForResponse(
+        (res) => ('RunIMUCalibration' in res ? res.RunIMUCalibration : undefined),
+        RESPONSE_TIMEOUT_MS,
+      );
+    } catch (e) {
+      console.warn('Timeout waiting for RunIMUCalibration response');
+      return null;
+    }
   }
 
   /**
    * Sends a command to run Magnetometer calibration.
+   * @returns The calibration status, or null if the request timed out.
    */
-  async runMagnetometerCalibration(): Promise<void> {
+  async runMagnetometerCalibration(): Promise<CalibrationStatus | null> {
     const bytes = FIRMCommandBuilder.build_run_magnetometer_calibration();
     await this.sendBytes(bytes);
+
+    try {
+      return await this.waitForResponse(
+        (res) => ('RunMagnetometerCalibration' in res ? res.RunMagnetometerCalibration : undefined),
+        RESPONSE_TIMEOUT_MS,
+      );
+    } catch (e) {
+      console.warn('Timeout waiting for RunMagnetometerCalibration response');
+      return null;
+    }
   }
 
   /**
@@ -240,7 +286,7 @@ export class FIRMClient {
    */
   private async waitForResponse<T>(
     matcher: (res: FIRMResponse) => T | undefined,
-    timeoutMs: number
+    timeoutMs: number,
   ): Promise<T> {
     // 1. Check existing queue
     for (let i = 0; i < this.responseQueue.length; i++) {

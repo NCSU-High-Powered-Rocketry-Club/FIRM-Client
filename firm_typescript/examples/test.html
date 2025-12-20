@@ -52,17 +52,40 @@
 
       #output {
         width: 100%;
-        min-height: 250px;
+        height: 150px;
         background: #f9f9f9;
         border: 2px solid var(--theme-color);
         border-radius: 10px;
         padding: 1rem;
         font-family: monospace;
-        font-size: 0.95rem;
+        font-size: 0.8rem;
         white-space: pre-wrap;
-        overflow: hidden;
+        overflow-y: auto;
         color: #333;
         text-align: left;
+      }
+
+      .controls {
+        display: none;
+        flex-direction: column;
+        gap: 1rem;
+        width: 100%;
+        padding: 1rem;
+        background: #f0f0f0;
+        border-radius: 8px;
+      }
+
+      .control-row {
+        display: flex;
+        gap: 0.5rem;
+        align-items: center;
+      }
+
+      input[type='text'] {
+        padding: 0.7rem;
+        border-radius: 5px;
+        border: 1px solid #ccc;
+        flex-grow: 1;
       }
 
       .status {
@@ -75,6 +98,31 @@
     <h1>FIRM Client Test</h1>
     <button id="connect">Connect to Device</button>
     <div class="status" id="status">Waiting for connection...</div>
+
+    <div id="controls" class="controls">
+      <div class="control-row">
+        <input type="text" id="deviceNameInput" placeholder="New Device Name" />
+        <button id="setConfigBtn">Set Name</button>
+      </div>
+      <div class="control-row">
+        <button id="getConfigBtn">Get Device Config</button>
+      </div>
+      <div
+        id="configOutput"
+        style="
+          background: #fff;
+          padding: 0.5rem;
+          border: 1px solid #ddd;
+          border-radius: 4px;
+          min-height: 20px;
+          font-family: monospace;
+        "
+      >
+        Config output...
+      </div>
+    </div>
+
+    <h3>Latest Packet:</h3>
     <div id="output">{ No packet data yet }</div>
 
     <script type="module">
@@ -84,33 +132,64 @@
       const btn = document.getElementById('connect');
       const output = document.getElementById('output');
       const status = document.getElementById('status');
+      const controls = document.getElementById('controls');
+      const deviceNameInput = document.getElementById('deviceNameInput');
+      const setConfigBtn = document.getElementById('setConfigBtn');
+      const getConfigBtn = document.getElementById('getConfigBtn');
+      const configOutput = document.getElementById('configOutput');
+
+      let firmInstance = null;
 
       function setStatus(msg) {
         status.textContent = msg;
       }
 
       function showPacket(pkt) {
-        // Since 'pkt' is a WASM class instance, JSON.stringify won't see its fields.
-        // We must access the getters manually.
-        const data = {
-          timestamp: pkt.timestamp_seconds,
-          accel: [pkt.accel_x_meters_per_s2, pkt.accel_y_meters_per_s2, pkt.accel_z_meters_per_s2],
-          gyro: [pkt.gyro_x_radians_per_s, pkt.gyro_y_radians_per_s, pkt.gyro_z_radians_per_s],
-          mag: [pkt.mag_x_microteslas, pkt.mag_y_microteslas, pkt.mag_z_microteslas],
-          env: {
-            temp: pkt.temperature_celsius,
-            pressure: pkt.pressure_pascals,
-          },
-        };
-        output.textContent = JSON.stringify(data, null, 2);
+        // pkt is now a plain JS object thanks to serde-wasm-bindgen
+        output.textContent = JSON.stringify(pkt, null, 2);
       }
+
+      setConfigBtn.addEventListener('click', async () => {
+        if (!firmInstance) return;
+        const name = deviceNameInput.value;
+        if (!name) {
+          alert('Please enter a name');
+          return;
+        }
+        setStatus('[UI] Setting device name...');
+        // Defaulting frequency to 100 and protocol to 1 (USB) for this test
+        const success = await firmInstance.setDeviceConfig(name, 100, 1);
+        if (success) {
+          setStatus('[UI] Device name set successfully!');
+          configOutput.textContent = `Success: Name set to "${name}"`;
+        } else {
+          setStatus('[UI] Failed to set device name (timeout).');
+          configOutput.textContent = 'Error: Timeout waiting for response.';
+        }
+      });
+
+      getConfigBtn.addEventListener('click', async () => {
+        if (!firmInstance) return;
+        setStatus('[UI] Getting device config...');
+        const config = await firmInstance.getDeviceConfig();
+        if (config) {
+          setStatus('[UI] Config received.');
+          configOutput.textContent = JSON.stringify(config, null, 2);
+        } else {
+          setStatus('[UI] Failed to get config (timeout).');
+          configOutput.textContent = 'Error: Timeout waiting for response.';
+        }
+      });
 
       btn.addEventListener('click', async () => {
         setStatus('[UI] Connecting...');
 
         try {
           const firm = await FIRM.connect({ baudRate: 115200 });
+          firmInstance = firm;
           setStatus('[UI] Connected. Streaming packets...');
+          controls.style.display = 'flex';
+          btn.disabled = true;
 
           // Use the async iterator exposed by your library
           for await (const pkt of firm.getDataPackets()) {

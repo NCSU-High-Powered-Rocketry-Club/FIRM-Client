@@ -16,7 +16,7 @@ impl FIRMCommandBuilder {
         FIRMCommand::GetDeviceConfig.to_bytes()
     }
 
-    pub fn build_set_device_config(name: String, frequency: u16, protocol: u8) -> Vec<u8> {
+    pub fn build_set_device_config(frequency: u16, protocol: u8, name: String) -> Vec<u8> {
         let protocol_enum: DeviceProtocol = match protocol {
             1 => DeviceProtocol::USB,
             2 => DeviceProtocol::UART,
@@ -25,11 +25,7 @@ impl FIRMCommandBuilder {
             _ => DeviceProtocol::USB, // Default
         };
         
-        let config = DeviceConfig {
-            frequency,
-            protocol: protocol_enum,
-            name: name.as_bytes().try_into().unwrap_or([0; 32]) ,
-        };
+        let config = DeviceConfig::new(frequency, protocol_enum, &name);
         
         FIRMCommand::SetDeviceConfig(config).to_bytes()
     }

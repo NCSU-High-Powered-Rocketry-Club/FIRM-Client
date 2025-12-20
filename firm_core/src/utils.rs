@@ -52,7 +52,6 @@ pub(crate) fn crc16_ccitt(data: &[u8]) -> u16 {
 /// # Returns
 /// 
 /// - `[u8; N]` - The fixed-size byte array representing the string, padded with zeros if necessary.
-/// 
 pub(crate) fn str_to_bytes<const N: usize>(string: &str) -> [u8; N] {
     let mut out = [0u8; N];
     let bytes = string.as_bytes();
@@ -71,7 +70,6 @@ pub(crate) fn str_to_bytes<const N: usize>(string: &str) -> [u8; N] {
 /// # Returns
 /// 
 /// - `String` - The resulting string, stopping at the first zero byte.
-/// 
 pub(crate) fn bytes_to_str(bytes: &[u8]) -> String {
     let mut end = bytes.len();
     for (i, &b) in bytes.iter().enumerate() {

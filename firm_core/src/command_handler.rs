@@ -84,36 +84,8 @@ pub enum FIRMResponse {
 /// which you parse using this parser. This response can contain data
 /// requested by the command.
 impl FIRMResponse {
-    pub fn from_bytes(data: &[u8]) -> Option<FIRMResponse> {
-        if data.is_empty() {
-            return None;
-        }
-        
-        match data[0] {
-            0x81 => {
-                // DeviceInfo response
-                // Parsing logic here...
-                Some(FIRMResponse::DeviceInfo {
-                    name: "FIRM Device".to_string(),
-                    id: 12345,
-                    firmware_version: "1.0.0".to_string(),
-                    port: "/dev/ttyUSB0".to_string(),
-                })
-            },
-            0x82 => {
-                // DeviceConfig response
-                // Parsing logic here...
-                Some(FIRMResponse::DeviceConfig(DeviceConfig {
-                    name: "FIRM Device".to_string(),
-                    frequency: 100,
-                    protocol: DeviceProtocol::USB,
-                }))
-            },
-            0xFF => {
-                // Error response
-                Some(FIRMResponse::Error("An error occurred".to_string()))
-            },
-            _ => None,
-        }
+    pub fn from_bytes(data: &[u8]) -> Self {
+        // TODO: implement this
+        FIRMResponse::Acknowledgement
     }
 }

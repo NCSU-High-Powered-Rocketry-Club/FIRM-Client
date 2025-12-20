@@ -4,3 +4,4 @@ extern crate alloc;
 pub mod crc;
 pub mod data_parser;
 pub mod command_handler;
+pub mod firm_packet;

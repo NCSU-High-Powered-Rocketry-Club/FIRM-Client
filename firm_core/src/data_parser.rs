@@ -181,7 +181,10 @@ impl SerialParser {
         }
     }
 
-    /// Feeds new bytes into the parser and queues any fully decoded packets.
+    /// Feeds new bytes into the parser and queues any fully decoded packets or command
+    /// responses. How this function works is that it appends incoming bytes to an internal
+    /// buffer, then scans through that buffer looking for valid packets or responses. When
+    /// it finds one, it extracts and decodes it and then queues it for later retrieval.
     /// 
     /// # Arguments
     /// 

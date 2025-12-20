@@ -1,4 +1,4 @@
-import init, { FIRMParser, FIRMPacket, FIRMCommandBuilder } from '../../pkg/firm_client.js';
+import init, { FIRMDataParser, FIRMPacket, FIRMCommandBuilder } from '../../pkg/firm_client.js';
 
 /**
  * Data packet received from FIRM.
@@ -22,7 +22,7 @@ export interface FIRMConnectOptions {
  */
 export class FIRMClient {
   /** Underlying WASM-backed streaming parser. */
-  private dataParser: FIRMParser;
+  private dataParser: FIRMDataParser;
 
   /** Reader for the Web Serial stream. */
   private reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
@@ -39,7 +39,7 @@ export class FIRMClient {
   /** Waiters that are pending the next available packet. */
   private packetWaiters: Array<(pkt: FIRMPacket | null) => void> = [];
 
-  private constructor(wasm: FIRMParser) {
+  private constructor(wasm: FIRMDataParser) {
     this.dataParser = wasm;
   }
 
@@ -60,7 +60,7 @@ export class FIRMClient {
     // Initialize the WASM module.
     await init();
 
-    const dataParser = new FIRMParser();
+    const dataParser = new FIRMDataParser();
     const baudRate = options.baudRate ?? 115200;
 
     // Ask user for a serial device & open it.

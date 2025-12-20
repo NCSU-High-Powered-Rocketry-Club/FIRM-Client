@@ -1,5 +1,5 @@
 use firm_core::data_parser::{FIRMPacket, SerialParser};
-use firm_core::command_builder::{FIRMCommand, DeviceConfig, DeviceProtocol};
+use firm_core::command_handler::{FIRMCommand, DeviceConfig, DeviceProtocol};
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
@@ -50,16 +50,16 @@ impl FIRMCommandBuilder {
     }
 }
 
-#[wasm_bindgen(js_name = FIRMParser)]
-pub struct FIRMParser {
+#[wasm_bindgen(js_name = FIRMDataParser)]
+pub struct FIRMDataParser {
     inner: SerialParser,
 }
 
-#[wasm_bindgen(js_class = FIRMParser)]
-impl FIRMParser {
+#[wasm_bindgen(js_class = FIRMDataParser)]
+impl FIRMDataParser {
     #[wasm_bindgen(constructor)]
-    pub fn new() -> FIRMParser {
-        FIRMParser {
+    pub fn new() -> FIRMDataParser {
+        FIRMDataParser {
             inner: SerialParser::new(),
         }
     }

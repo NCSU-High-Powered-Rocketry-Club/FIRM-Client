@@ -26,9 +26,9 @@ impl FIRMCommandBuilder {
         };
         
         let config = DeviceConfig {
-            name,
             frequency,
             protocol: protocol_enum,
+            name: name.as_bytes().try_into().unwrap_or([0; 32]) ,
         };
         
         FIRMCommand::SetDeviceConfig(config).to_bytes()
@@ -40,10 +40,6 @@ impl FIRMCommandBuilder {
 
     pub fn build_run_magnetometer_calibration() -> Vec<u8> {
         FIRMCommand::RunMagnetometerCalibration.to_bytes()
-    }
-
-    pub fn build_download_log_file(file_id: u32) -> Vec<u8> {
-        FIRMCommand::DownloadLogFile(file_id).to_bytes()
     }
 
     pub fn build_reboot() -> Vec<u8> {

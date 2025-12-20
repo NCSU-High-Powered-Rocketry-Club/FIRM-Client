@@ -1,5 +1,23 @@
 use alloc::vec::Vec;
 
+use crate::utils::crc16_ccitt;
+
+const COMMAND_LENGTH: u8 = 64;
+
+const COMMAND_START_BYTES: [u8; 2] = [0x55, 0xAA];
+
+const DEVICE_INFO_MARKER: u8 = 0x01;
+const DEVICE_CONFIG_MARKER: u8 = 0x02;
+const SET_DEVICE_CONFIG_MARKER: u8 = 0x03;
+const RUN_IMU_CALIBRATION_MARKER: u8 = 0x04;
+const RUN_MAGNETOMETER_CALIBRATION_MARKER: u8 = 0x05;
+const REBOOT_MARKER: u8 = 0x06;
+
+const PADDING_BYTE: u8 = 0x00;
+
+/// Size of the CRC field in bytes.
+const CRC_SIZE: usize = 2;
+
 pub enum DeviceProtocol {
     USB,
     UART,
@@ -8,9 +26,9 @@ pub enum DeviceProtocol {
 }
 
 pub struct DeviceConfig {
-    pub name: String,
     pub frequency: u16,
     pub protocol: DeviceProtocol,
+    pub name: [u8; 32],  // Fixed-size array for device name
 }
 
 /// Represents a command that can be sent to the FIRM hardware.
@@ -21,49 +39,70 @@ pub enum FIRMCommand {
     SetDeviceConfig(DeviceConfig),
     RunIMUCalibration,
     RunMagnetometerCalibration,
-    DownloadLogFile(u32),
     Reboot,
+    // TODO: figure out how to implement log file downloads DownloadLogFile(u32),
 }
 
 impl FIRMCommand {
-    /// Serializes the command into a byte vector ready to be sent over serial.
+    /// Serializes the command into a byte vector ready to be sent over serial. This
+    /// makes the command in the following format:
+    /// [START_MARKER][COMMAND_PAYLOAD][PADDING][CRC]
+    /// 
+    /// # Arguments
+    /// 
+    /// - `&self` (`undefined`) - The command to be serialized.
+    /// 
+    /// # Returns
+    /// 
+    /// - `Vec<u8>` - The command serialized into bytes ready to be sent over serial.
+    /// 
     pub fn to_bytes(&self) -> Vec<u8> {
-        let mut bytes = Vec::new();
-        
+        let mut command_bytes = Vec::new();
+
+        // Adds the start marker for the command
+        command_bytes.extend_from_slice(&COMMAND_START_BYTES);
+
+        // This match adds the payload for the command
         match self {
             FIRMCommand::GetDeviceInfo => {
-                bytes.push(0x01);
+                command_bytes.push(DEVICE_INFO_MARKER);
             },
             FIRMCommand::GetDeviceConfig => {
-                bytes.push(0x02);
+                command_bytes.push(DEVICE_CONFIG_MARKER);   
             },
             FIRMCommand::SetDeviceConfig(config) => {
-                bytes.push(0x03);
-                // Serialize DeviceConfig fields
-                bytes.extend_from_slice(&config.frequency.to_le_bytes());
+                // The device config command payload is in the following format:
+                // [SET_DEVICE_CONFIG_MARKER][FREQUENCY (2 bytes)][PROTOCOL (1 byte)][NAME (32 bytes)][PADDING]
+                command_bytes.push(SET_DEVICE_CONFIG_MARKER);
+                command_bytes.extend_from_slice(&config.frequency.to_le_bytes());
                 match config.protocol {
-                    DeviceProtocol::USB => bytes.push(0x01),
-                    DeviceProtocol::UART => bytes.push(0x02),
-                    DeviceProtocol::I2C => bytes.push(0x03),
-                    DeviceProtocol::SPI => bytes.push(0x04),
+                    DeviceProtocol::USB => command_bytes.push(0x01),
+                    DeviceProtocol::UART => command_bytes.push(0x02),
+                    DeviceProtocol::I2C => command_bytes.push(0x03),
+                    DeviceProtocol::SPI => command_bytes.push(0x04),
                 }
             },
             FIRMCommand::RunIMUCalibration => {
-                bytes.push(0x04);
+                command_bytes.push(RUN_IMU_CALIBRATION_MARKER);
             },
             FIRMCommand::RunMagnetometerCalibration => {
-                bytes.push(0x05);
-            },
-            FIRMCommand::DownloadLogFile(file_id) => {
-                bytes.push(0x06);
-                bytes.extend_from_slice(&file_id.to_le_bytes());
+                command_bytes.push(RUN_MAGNETOMETER_CALIBRATION_MARKER);
             },
             FIRMCommand::Reboot => {
-                bytes.push(0x07);
+                command_bytes.push(REBOOT_MARKER);
             },
         }
+
+        // Now add padding bytes to reach COMMAND_LENGTH - CRC size
+        while command_bytes.len() < (COMMAND_LENGTH as usize - CRC_SIZE) {
+            command_bytes.push(PADDING_BYTE);
+        }
+
+        // Finally, compute and append CRC
+        let data_crc = crc16_ccitt(&command_bytes[COMMAND_START_BYTES.len()..]);
+        command_bytes.extend_from_slice(&data_crc.to_le_bytes());
         
-        bytes
+        command_bytes
     }
 }
 
@@ -78,6 +117,7 @@ pub enum FIRMResponse {
     Acknowledgement,
     Error(String),
 }
+
 
 /// Parses incoming bytes from FIRM into command responses. Basically how
 /// commands work is you send a command to FIRM, then it sends back a response

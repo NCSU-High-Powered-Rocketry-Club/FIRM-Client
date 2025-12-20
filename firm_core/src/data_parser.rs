@@ -1,15 +1,15 @@
 use crate::commands::FIRMResponse;
 use crate::firm_packet::FIRMPacket;
-use crate::crc::crc16_ccitt;
+use crate::utils::crc16_ccitt;
 use alloc::collections::VecDeque;
 use alloc::vec::Vec;
 
 
 /// Start byte sequence for packet identification. This is in little-endian format.
-const PACKET_START_BYTES: [u8; 2] = [0x5a, 0xa5];
+const PACKET_START_BYTES: [u8; 2] = [0x5A, 0xA5];
 
 /// Start byte sequence for response identification. This is in little-endian format.
-const RESPONSE_START_BYTES: [u8; 2] = [0xeb, 0x90];
+const RESPONSE_START_BYTES: [u8; 2] = [0xA5, 0x5A];
 
 /// Size of the packet header in bytes.
 const HEADER_SIZE: usize = core::mem::size_of_val(&PACKET_START_BYTES);

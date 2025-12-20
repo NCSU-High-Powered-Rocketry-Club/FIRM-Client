@@ -1,6 +1,7 @@
 use std::mem;
 
 use alloc::vec::Vec;
+use serde::{Serialize, Deserialize};
 
 use crate::utils::{bytes_to_str, crc16_ccitt, str_to_bytes};
 
@@ -26,6 +27,7 @@ const FIRMWARE_VERSION_LENGTH: usize = 8;
 const PORT_LENGTH: usize = 16;
 const FREQUENCY_LENGTH: usize = mem::size_of::<u16>();
 
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum DeviceProtocol {
     USB,
     UART,
@@ -33,14 +35,15 @@ pub enum DeviceProtocol {
     SPI,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DeviceInfo {
-    pub name: String, // Max 32 characters
     pub firmware_version: String, // Max 8 characters
     pub port: String, // Max 16 characters
     pub id: u64,
 }
 
 /// Represents the configuration settings of the FIRM device.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DeviceConfig {
     pub name: String, // Max 32 characters
     pub frequency: u16,
@@ -48,6 +51,7 @@ pub struct DeviceConfig {
 }
 
 /// Represents the status of a calibration process.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct CalibrationStatus {
     /// True if the calibration is complete, false otherwise.
     pub calibration_complete: bool,
@@ -96,8 +100,11 @@ impl FIRMCommand {
             },
             FIRMCommand::SetDeviceConfig(config) => {
                 // The device config command payload is in the following format:
-                // [SET_DEVICE_CONFIG_MARKER][FREQUENCY (2 bytes)][PROTOCOL (1 byte)][NAME (32 bytes)][PADDING]
+                // [SET_DEVICE_CONFIG_MARKER][NAME (32 bytes)][FREQUENCY (2 bytes)][PROTOCOL (1 byte)]]
                 command_bytes.push(SET_DEVICE_CONFIG_MARKER);
+                // Add the name
+                let name_bytes = str_to_bytes::<DEVICE_NAME_LENGTH>(&config.name);
+                command_bytes.extend_from_slice(&name_bytes);
                 // Add the frequency
                 command_bytes.extend_from_slice(&config.frequency.to_le_bytes());
                 // Add the protocol
@@ -107,9 +114,6 @@ impl FIRMCommand {
                     DeviceProtocol::I2C => command_bytes.push(0x03),
                     DeviceProtocol::SPI => command_bytes.push(0x04),
                 }
-                // Add the name
-                let name_bytes = str_to_bytes::<DEVICE_NAME_LENGTH>(&config.name);
-                command_bytes.extend_from_slice(&name_bytes);
             },
             FIRMCommand::RunIMUCalibration => {
                 command_bytes.push(RUN_IMU_CALIBRATION_MARKER);
@@ -137,6 +141,7 @@ impl FIRMCommand {
 
 /// Represents a response received from the FIRM hardware after sending a command.
 /// It can contain anything from a simple status to actual data requested by the command.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum FIRMResponse {
     GetDeviceInfo(DeviceInfo),
     GetDeviceConfig(DeviceConfig),
@@ -167,19 +172,15 @@ impl FIRMResponse {
         match data[0] {
             DEVICE_INFO_MARKER => {
                 // Parse device info response, which is in the following format:
-                // [DEVICE_INFO_MARKER][NAME (32 bytes)][ID (8 bytes)][FIRMWARE_VERSION (8 bytes)][PORT (16 bytes)]
-                let name_bytes = &data[1..DEVICE_NAME_LENGTH + 1];
-                let id_bytes = &data[DEVICE_NAME_LENGTH + 1..DEVICE_NAME_LENGTH + 1 + DEVICE_ID_LENGTH];
-                let firmware_version_bytes = &data[DEVICE_NAME_LENGTH + 1 + DEVICE_ID_LENGTH..DEVICE_NAME_LENGTH + 1 + DEVICE_ID_LENGTH + FIRMWARE_VERSION_LENGTH];
-                let port_bytes = &data[DEVICE_NAME_LENGTH + 1 + DEVICE_ID_LENGTH + FIRMWARE_VERSION_LENGTH..DEVICE_NAME_LENGTH + 1 + DEVICE_ID_LENGTH + FIRMWARE_VERSION_LENGTH + PORT_LENGTH];
-
-                let name = bytes_to_str(name_bytes);
+                // [DEVICE_INFO_MARKER][ID (8 bytes)][FIRMWARE_VERSION (8 bytes)][PORT (16 bytes)]
+                let id_bytes = &data[1..1 + DEVICE_ID_LENGTH];
+                let firmware_version_bytes = &data[1 + DEVICE_ID_LENGTH..1 + DEVICE_ID_LENGTH + FIRMWARE_VERSION_LENGTH];
+                let port_bytes = &data[1 + DEVICE_ID_LENGTH + FIRMWARE_VERSION_LENGTH..1 + DEVICE_ID_LENGTH + FIRMWARE_VERSION_LENGTH + PORT_LENGTH];
                 let id = u64::from_le_bytes(id_bytes.try_into().unwrap());
                 let firmware_version = bytes_to_str(firmware_version_bytes);
                 let port = bytes_to_str(port_bytes);
 
                 let info = DeviceInfo {
-                    name,
                     id,
                     firmware_version,
                     port,

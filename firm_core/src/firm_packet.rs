@@ -1,4 +1,4 @@
-use serde::Serialize;
+use serde::{Serialize, Deserialize};
 
 #[cfg(feature = "wasm")]
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -7,40 +7,26 @@ use wasm_bindgen::prelude::wasm_bindgen;
 const GRAVITY_METERS_PER_SECONDS_SQUARED: f32 = 9.80665;
 
 /// Represents a decoded FIRM telemetry packet with converted physical units.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "python", pyo3::pyclass(get_all, freelist = 20, frozen))]
-#[cfg_attr(feature = "wasm", wasm_bindgen)]
 pub struct FIRMPacket {
-    #[cfg_attr(feature = "wasm", wasm_bindgen(readonly))]
     pub timestamp_seconds: f64,
 
-    #[cfg_attr(feature = "wasm", wasm_bindgen(readonly))]
     pub accel_x_meters_per_s2: f32,
-    #[cfg_attr(feature = "wasm", wasm_bindgen(readonly))]
     pub accel_y_meters_per_s2: f32,
-    #[cfg_attr(feature = "wasm", wasm_bindgen(readonly))]
     pub accel_z_meters_per_s2: f32,
 
-    #[cfg_attr(feature = "wasm", wasm_bindgen(readonly))]
     pub gyro_x_radians_per_s: f32,
-    #[cfg_attr(feature = "wasm", wasm_bindgen(readonly))]
     pub gyro_y_radians_per_s: f32,
-    #[cfg_attr(feature = "wasm", wasm_bindgen(readonly))]
     pub gyro_z_radians_per_s: f32,
 
-    #[cfg_attr(feature = "wasm", wasm_bindgen(readonly))]
     pub pressure_pascals: f32,
-    #[cfg_attr(feature = "wasm", wasm_bindgen(readonly))]
     pub temperature_celsius: f32,
 
-    #[cfg_attr(feature = "wasm", wasm_bindgen(readonly))]
     pub mag_x_microteslas: f32,
-    #[cfg_attr(feature = "wasm", wasm_bindgen(readonly))]
     pub mag_y_microteslas: f32,
-    #[cfg_attr(feature = "wasm", wasm_bindgen(readonly))]
     pub mag_z_microteslas: f32,
 
-    #[cfg_attr(feature = "wasm", wasm_bindgen(readonly))]
     pub pressure_altitude_meters: f32,
 }
 

@@ -1,11 +1,12 @@
-import init, { FIRMDataParser, FIRMPacket, FIRMCommandBuilder } from '../../pkg/firm_client.js';
+import init, { FIRMDataParser, FIRMCommandBuilder } from '../../pkg/firm_client.js';
+import { FIRMPacket, FIRMResponse } from './types.js';
 
 /**
  * Data packet received from FIRM.
  *
  * This is the Rust `FIRMPacket` type exported via wasm-bindgen.
  */
-export { FIRMPacket };
+export { FIRMPacket, FIRMResponse };
 
 /** Options for connecting to a FIRM device over Web Serial. */
 export interface FIRMConnectOptions {
@@ -38,6 +39,12 @@ export class FIRMClient {
 
   /** Waiters that are pending the next available packet. */
   private packetWaiters: Array<(pkt: FIRMPacket | null) => void> = [];
+
+  /** Queue of parsed responses waiting to be consumed. */
+  private responseQueue: FIRMResponse[] = [];
+
+  /** Waiters that are pending a specific response. */
+  private responseWaiters: Array<(res: FIRMResponse) => void> = [];
 
   private constructor(wasm: FIRMDataParser) {
     this.dataParser = wasm;
@@ -100,9 +107,16 @@ export class FIRMClient {
 
           // Drain all packets that are ready.
           while (true) {
-            const pkt = this.dataParser.get_packet(); // FIRMPacket | undefined
-            if (!pkt) break; // `None` -> `undefined`
+            const pkt = this.dataParser.get_packet() as FIRMPacket | null; // FIRMPacket | null
+            if (!pkt) break; // `None` -> `null`
             this.enqueuePacket(pkt);
+          }
+
+          // Drain all responses that are ready.
+          while (true) {
+            const res = this.dataParser.get_response() as FIRMResponse | null;
+            if (!res) break;
+            this.enqueueResponse(res);
           }
         }
       }
@@ -152,10 +166,21 @@ export class FIRMClient {
    * @param name Device name.
    * @param frequency Frequency in Hz.
    * @param protocol Protocol ID (1=USB, 2=UART, 3=I2C, 4=SPI).
+   * @returns True if the configuration was set successfully, false otherwise.
    */
-  async setDeviceConfig(name: string, frequency: number, protocol: number): Promise<void> {
+  async setDeviceConfig(name: string, frequency: number, protocol: number): Promise<boolean> {
     const bytes = FIRMCommandBuilder.build_set_device_config(name, frequency, protocol);
     await this.sendBytes(bytes);
+
+    try {
+      return await this.waitForResponse(
+        (res) => ('SetDeviceConfig' in res ? res.SetDeviceConfig : undefined),
+        5000
+      );
+    } catch (e) {
+      console.warn('Timeout waiting for SetDeviceConfig response');
+      return false;
+    }
   }
 
   /**
@@ -171,15 +196,6 @@ export class FIRMClient {
    */
   async runMagnetometerCalibration(): Promise<void> {
     const bytes = FIRMCommandBuilder.build_run_magnetometer_calibration();
-    await this.sendBytes(bytes);
-  }
-
-  /**
-   * Sends a command to download a log file.
-   * @param fileId The ID of the file to download.
-   */
-  async downloadLogFile(fileId: number): Promise<void> {
-    const bytes = FIRMCommandBuilder.build_download_log_file(fileId);
     await this.sendBytes(bytes);
   }
 
@@ -203,6 +219,68 @@ export class FIRMClient {
     } else {
       this.packetQueue.push(dataPacket);
     }
+  }
+
+  /**
+   * Enqueues a newly parsed response and notifies waiters.
+   *
+   * @param response Parsed FIRM response.
+   */
+  private enqueueResponse(response: FIRMResponse): void {
+    this.responseQueue.push(response);
+    // Notify all waiters so they can check if this is the response they want.
+    [...this.responseWaiters].forEach((waiter) => waiter(response));
+  }
+
+  /**
+   * Waits for a specific response that matches the predicate.
+   *
+   * @param matcher Function that returns the desired value if the response matches, or undefined.
+   * @param timeoutMs Max time to wait in milliseconds.
+   */
+  private async waitForResponse<T>(
+    matcher: (res: FIRMResponse) => T | undefined,
+    timeoutMs: number
+  ): Promise<T> {
+    // 1. Check existing queue
+    for (let i = 0; i < this.responseQueue.length; i++) {
+      const match = matcher(this.responseQueue[i]);
+      if (match !== undefined) {
+        this.responseQueue.splice(i, 1); // Consume it
+        return match;
+      }
+    }
+
+    // 2. Wait for new responses
+    return new Promise<T>((resolve, reject) => {
+      const timeoutId = setTimeout(() => {
+        cleanup();
+        reject(new Error('Timeout waiting for response'));
+      }, timeoutMs);
+
+      const onResponse = (res: FIRMResponse) => {
+        const match = matcher(res);
+        if (match !== undefined) {
+          // We found it! Remove from queue.
+          const idx = this.responseQueue.indexOf(res);
+          if (idx !== -1) {
+            this.responseQueue.splice(idx, 1);
+          }
+          cleanup();
+          resolve(match);
+        }
+      };
+
+      const cleanup = () => {
+        clearTimeout(timeoutId);
+        const idx = this.responseWaiters.indexOf(onResponse);
+        if (idx !== -1) {
+          this.responseWaiters.splice(idx, 1);
+        }
+      };
+
+      this.responseWaiters.push(onResponse);
+    });
   }
 
   /**

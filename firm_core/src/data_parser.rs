@@ -158,4 +158,8 @@ impl SerialParser {
     pub fn get_packet(&mut self) -> Option<FIRMPacket> {
         self.parsed_packets.pop_front()
     }
+
+    pub fn get_response(&mut self) -> Option<FIRMResponse> {
+        self.parsed_responses.pop_front()
+    }
 }

@@ -43,7 +43,8 @@ pub(crate) fn crc16_ccitt(data: &[u8]) -> u16 {
     crc
 }
 
-/// Converts a string to a fixed-size byte array, padding with zeros if necessary.
+/// Converts a string to a fixed-size byte array, padding with zeros if necessary or
+/// truncating if too long.
 /// 
 /// # Arguments
 /// 

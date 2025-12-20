@@ -1,3 +1,5 @@
+use std::mem;
+
 use alloc::vec::Vec;
 
 use crate::utils::{bytes_to_str, crc16_ccitt, str_to_bytes};
@@ -19,6 +21,10 @@ const PADDING_BYTE: u8 = 0x00;
 const CRC_SIZE: usize = 2;
 
 const DEVICE_NAME_LENGTH: usize = 32;
+const DEVICE_ID_LENGTH: usize = mem::size_of::<u64>();
+const FIRMWARE_VERSION_LENGTH: usize = 8;
+const PORT_LENGTH: usize = 16;
+const FREQUENCY_LENGTH: usize = mem::size_of::<u16>();
 
 pub enum DeviceProtocol {
     USB,
@@ -27,24 +33,26 @@ pub enum DeviceProtocol {
     SPI,
 }
 
-pub struct DeviceConfig {
-    pub frequency: u16,
-    pub protocol: DeviceProtocol,
-    pub name: [u8; DEVICE_NAME_LENGTH],  // Fixed-size array for device name
+pub struct DeviceInfo {
+    pub name: String, // Max 32 characters
+    pub firmware_version: String, // Max 8 characters
+    pub port: String, // Max 16 characters
+    pub id: u64,
 }
 
-impl DeviceConfig {
-    pub fn new(
-        frequency: u16,
-        protocol: DeviceProtocol,
-        name: &str,
-    ) -> Self {
-        Self {
-            frequency,
-            protocol,
-            name: str_to_bytes::<DEVICE_NAME_LENGTH>(name),
-        }
-    }
+/// Represents the configuration settings of the FIRM device.
+pub struct DeviceConfig {
+    pub name: String, // Max 32 characters
+    pub frequency: u16,
+    pub protocol: DeviceProtocol,
+}
+
+/// Represents the status of a calibration process.
+pub struct CalibrationStatus {
+    /// True if the calibration is complete, false otherwise.
+    pub calibration_complete: bool,
+    /// Progress percentage of the calibration process (0-100).
+    pub progress_percentage: u8,
 }
 
 /// Represents a command that can be sent to the FIRM hardware.
@@ -100,7 +108,8 @@ impl FIRMCommand {
                     DeviceProtocol::SPI => command_bytes.push(0x04),
                 }
                 // Add the name
-                command_bytes.extend_from_slice(&config.name);
+                let name_bytes = str_to_bytes::<DEVICE_NAME_LENGTH>(&config.name);
+                command_bytes.extend_from_slice(&name_bytes);
             },
             FIRMCommand::RunIMUCalibration => {
                 command_bytes.push(RUN_IMU_CALIBRATION_MARKER);
@@ -126,15 +135,14 @@ impl FIRMCommand {
     }
 }
 
+/// Represents a response received from the FIRM hardware after sending a command.
+/// It can contain anything from a simple status to actual data requested by the command.
 pub enum FIRMResponse {
-    DeviceInfo {
-        name: String,
-        id: u32,
-        firmware_version: String,
-        port: String,
-    },
-    DeviceConfig(DeviceConfig),
-    Acknowledgement,
+    GetDeviceInfo(DeviceInfo),
+    GetDeviceConfig(DeviceConfig),
+    SetDeviceConfig(bool),
+    RunIMUCalibration(CalibrationStatus),
+    RunMagnetometerCalibration(CalibrationStatus),
     Error(String),
 }
 
@@ -142,7 +150,8 @@ pub enum FIRMResponse {
 /// Parses incoming bytes from FIRM into command responses. Basically how
 /// commands work is you send a command to FIRM, then it sends back a response
 /// which you parse using this parser. This response can contain data
-/// requested by the command.
+/// requested by the command. To see the format of each response, look at the
+/// match statement below.
 impl FIRMResponse {
     /// Constructs a `FIRMResponse` from a raw payload byte slice. The format of this
     /// payload byte slice is as follows: [COMMAND MARKER][DATA...]
@@ -157,43 +166,74 @@ impl FIRMResponse {
     pub fn from_bytes(data: &[u8]) -> Self {
         match data[0] {
             DEVICE_INFO_MARKER => {
-                // Parse device info response
-                let name_bytes = &data[1..33];
-                let id_bytes = &data[33..37];
-                let firmware_version_bytes = &data[37..49];
-                let port_bytes = &data[49..61];
+                // Parse device info response, which is in the following format:
+                // [DEVICE_INFO_MARKER][NAME (32 bytes)][ID (8 bytes)][FIRMWARE_VERSION (8 bytes)][PORT (16 bytes)]
+                let name_bytes = &data[1..DEVICE_NAME_LENGTH + 1];
+                let id_bytes = &data[DEVICE_NAME_LENGTH + 1..DEVICE_NAME_LENGTH + 1 + DEVICE_ID_LENGTH];
+                let firmware_version_bytes = &data[DEVICE_NAME_LENGTH + 1 + DEVICE_ID_LENGTH..DEVICE_NAME_LENGTH + 1 + DEVICE_ID_LENGTH + FIRMWARE_VERSION_LENGTH];
+                let port_bytes = &data[DEVICE_NAME_LENGTH + 1 + DEVICE_ID_LENGTH + FIRMWARE_VERSION_LENGTH..DEVICE_NAME_LENGTH + 1 + DEVICE_ID_LENGTH + FIRMWARE_VERSION_LENGTH + PORT_LENGTH];
 
                 let name = bytes_to_str(name_bytes);
-                let id = u32::from_le_bytes(id_bytes.try_into().unwrap());
+                let id = u64::from_le_bytes(id_bytes.try_into().unwrap());
                 let firmware_version = bytes_to_str(firmware_version_bytes);
                 let port = bytes_to_str(port_bytes);
 
-                FIRMResponse::DeviceInfo {
+                let info = DeviceInfo {
                     name,
                     id,
                     firmware_version,
                     port,
-                }
+                };
+
+                FIRMResponse::GetDeviceInfo(info)
             },
             DEVICE_CONFIG_MARKER => {
-                // Parse device config response
-                let frequency = u16::from_le_bytes(data[1..3].try_into().unwrap());
-                let protocol = match data[3] {
+                // Parse GetDeviceConfig response, which is in the following format:
+                // [DEVICE_CONFIG_MARKER][NAME (32 bytes)][FREQUENCY (2 bytes)][PROTOCOL (1 byte)]
+                let name_bytes: [u8; DEVICE_NAME_LENGTH] = data[1..DEVICE_NAME_LENGTH + 1].try_into().unwrap();
+                let name = bytes_to_str(&name_bytes);
+                let frequency = u16::from_le_bytes(data[DEVICE_NAME_LENGTH + 1..DEVICE_NAME_LENGTH + 1 + FREQUENCY_LENGTH].try_into().unwrap());
+                let protocol = match data[DEVICE_NAME_LENGTH + 1 + FREQUENCY_LENGTH] {
                     0x01 => DeviceProtocol::USB,
                     0x02 => DeviceProtocol::UART,
                     0x03 => DeviceProtocol::I2C,
                     0x04 => DeviceProtocol::SPI,
                     _ => DeviceProtocol::USB, // Default
                 };
-                let name_bytes: [u8; DEVICE_NAME_LENGTH] = data[4..36].try_into().unwrap();
 
                 let config = DeviceConfig {
                     frequency,
                     protocol,
-                    name: name_bytes,
+                    name,
                 };
 
-                FIRMResponse::DeviceConfig(config)
+                FIRMResponse::GetDeviceConfig(config)
+            },
+            SET_DEVICE_CONFIG_MARKER => {
+                // Parsing the SetDeviceConfig acknowledgement response is just checking if the
+                // first byte after the marker is 1 (success) or 0 (failure).
+                let success = data[1] == 1;
+                FIRMResponse::SetDeviceConfig(success)
+            },
+            RUN_IMU_CALIBRATION_MARKER => {
+                // Parse the IMU calibration status response, which is in the following format:
+                // [RUN_IMU_CALIBRATION_MARKER][CALIBRATION_COMPLETE (1 byte)][PROGRESS_PERCENTAGE (1 byte)]
+                let calibration_complete = data[1] == 1;
+                let progress_percentage = data[2];
+                FIRMResponse::RunIMUCalibration(CalibrationStatus {
+                    calibration_complete,
+                    progress_percentage,
+                })
+            },
+            RUN_MAGNETOMETER_CALIBRATION_MARKER => {
+                // Parse the Magnetometer calibration status response, which is in the following format:
+                // [RUN_MAGNETOMETER_CALIBRATION_MARKER][CALIBRATION_COMPLETE (1 byte)][PROGRESS_PERCENTAGE (1 byte)]
+                let calibration_complete = data[1] == 1;
+                let progress_percentage = data[2];
+                FIRMResponse::RunMagnetometerCalibration(CalibrationStatus {
+                    calibration_complete,
+                    progress_percentage,
+                })
             },
             _ => FIRMResponse::Error("Unknown response marker".to_string()),
         }

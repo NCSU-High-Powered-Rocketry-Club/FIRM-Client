@@ -25,7 +25,11 @@ impl FIRMCommandBuilder {
             _ => DeviceProtocol::USB, // Default
         };
         
-        let config = DeviceConfig::new(frequency, protocol_enum, &name);
+        let config = DeviceConfig {
+            frequency,
+            protocol: protocol_enum,
+            name,
+        };
         
         FIRMCommand::SetDeviceConfig(config).to_bytes()
     }

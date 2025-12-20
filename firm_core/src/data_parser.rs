@@ -1,4 +1,4 @@
-use crate::command_handler::FIRMResponse;
+use crate::commands::FIRMResponse;
 use crate::firm_packet::FIRMPacket;
 use crate::crc::crc16_ccitt;
 use alloc::collections::VecDeque;

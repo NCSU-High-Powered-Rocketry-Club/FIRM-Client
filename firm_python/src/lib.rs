@@ -1,6 +1,6 @@
+use firm_core::firm_packet::FIRMPacket;
 use pyo3::prelude::*;
 use firm_rust::FIRMClient as RustFirmClient;
-use firm_core::data_parser::FIRMPacket;
 
 #[pyclass(unsendable)]
 struct FIRMClient {

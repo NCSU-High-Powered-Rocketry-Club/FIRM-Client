@@ -1,5 +1,6 @@
-use firm_core::data_parser::{FIRMPacket, SerialParser};
-use firm_core::command_handler::{FIRMCommand, DeviceConfig, DeviceProtocol};
+use firm_core::data_parser::{SerialParser};
+use firm_core::commands::{FIRMCommand, DeviceConfig, DeviceProtocol};
+use firm_core::firm_packet::FIRMPacket;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]

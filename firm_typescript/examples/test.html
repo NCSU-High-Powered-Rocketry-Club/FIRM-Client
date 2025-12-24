@@ -65,6 +65,21 @@
         text-align: left;
       }
 
+      #rawBytes {
+        width: 100%;
+        height: 140px;
+        background: #f9f9f9;
+        border: 2px solid var(--theme-color);
+        border-radius: 10px;
+        padding: 1rem;
+        font-family: monospace;
+        font-size: 0.8rem;
+        white-space: pre;
+        overflow-y: auto;
+        color: #333;
+        resize: vertical;
+      }
+
       .controls {
         display: none;
         flex-direction: column;
@@ -125,6 +140,9 @@
     <h3>Latest Packet:</h3>
     <div id="output">{ No packet data yet }</div>
 
+    <h3>Incoming Serial Bytes:</h3>
+    <textarea id="rawBytes" readonly>{ No raw bytes yet }</textarea>
+
     <script type="module">
       // Use the same public API as npm consumers
       import { FIRM } from '/firm_typescript/typescript/dist/index.js';
@@ -137,6 +155,7 @@
       const setConfigBtn = document.getElementById('setConfigBtn');
       const getConfigBtn = document.getElementById('getConfigBtn');
       const configOutput = document.getElementById('configOutput');
+      const rawBytesEl = document.getElementById('rawBytes');
 
       let firmInstance = null;
 
@@ -147,6 +166,13 @@
       function showPacket(pkt) {
         // pkt is now a plain JS object thanks to serde-wasm-bindgen
         output.textContent = JSON.stringify(pkt, null, 2);
+      }
+
+      function bytesToHex(bytes) {
+        // Space-separated 2-digit hex
+        return Array.from(bytes)
+          .map((b) => b.toString(16).padStart(2, '0'))
+          .join(' ');
       }
 
       setConfigBtn.addEventListener('click', async () => {
@@ -190,6 +216,18 @@
           setStatus('[UI] Connected. Streaming packets...');
           controls.style.display = 'flex';
           btn.disabled = true;
+
+          // Show raw incoming serial bytes.
+          let rawLog = '';
+          const MAX_CHARS = 20000;
+          firm.onRawBytes((bytes) => {
+            rawLog += bytesToHex(bytes) + '\n';
+            if (rawLog.length > MAX_CHARS) {
+              rawLog = rawLog.slice(rawLog.length - MAX_CHARS);
+            }
+            rawBytesEl.value = rawLog;
+            rawBytesEl.scrollTop = rawBytesEl.scrollHeight;
+          });
 
           // Use the async iterator exposed by your library
           for await (const pkt of firm.getDataPackets()) {

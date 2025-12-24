@@ -27,6 +27,9 @@ export class FIRMClient {
   /** Underlying WASM-backed streaming parser. */
   private dataParser: FIRMDataParser;
 
+  /** Subscribers for raw incoming serial bytes. */
+  private rawBytesListeners: Array<(bytes: Uint8Array) => void> = [];
+
   /** Reader for the Web Serial stream. */
   private reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
 
@@ -104,6 +107,17 @@ export class FIRMClient {
         }
 
         if (value && value.length > 0) {
+          // Notify listeners of raw incoming bytes.
+          if (this.rawBytesListeners.length > 0) {
+            for (const listener of this.rawBytesListeners) {
+              try {
+                listener(value);
+              } catch (e) {
+                console.warn('[FIRM] raw bytes listener error:', e);
+              }
+            }
+          }
+
           // Push raw bytes into the Rust/WASM parser.
           this.dataParser.parse_bytes(value);
 
@@ -145,6 +159,22 @@ export class FIRMClient {
       throw new Error('Writer not available');
     }
     await this.writer.write(bytes);
+  }
+
+  /**
+   * Subscribes to raw incoming serial bytes from the device.
+   *
+   * @param listener Callback invoked with each incoming chunk.
+   * @returns Unsubscribe function.
+   */
+  onRawBytes(listener: (bytes: Uint8Array) => void): () => void {
+    this.rawBytesListeners.push(listener);
+    return () => {
+      const idx = this.rawBytesListeners.indexOf(listener);
+      if (idx !== -1) {
+        this.rawBytesListeners.splice(idx, 1);
+      }
+    };
   }
 
   /**

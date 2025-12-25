@@ -15,6 +15,7 @@ const SET_DEVICE_CONFIG_MARKER: u8 = 0x03;
 const RUN_IMU_CALIBRATION_MARKER: u8 = 0x04;
 const RUN_MAGNETOMETER_CALIBRATION_MARKER: u8 = 0x05;
 const REBOOT_MARKER: u8 = 0x06;
+const CANCEL_MARKER: u8 = 0x07;
 
 const PADDING_BYTE: u8 = 0x00;
 
@@ -57,15 +58,6 @@ pub struct DeviceConfig {
     pub protocol: DeviceProtocol,
 }
 
-/// Represents the status of a calibration process.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-pub struct CalibrationStatus {
-    /// True if the calibration is complete, false otherwise.
-    pub calibration_complete: bool,
-    /// Progress percentage of the calibration process (0-100).
-    pub progress_percentage: u8,
-}
-
 /// Represents a command that can be sent to the FIRM hardware.
 pub enum FIRMCommand {
     /// Gets info about the device including ID and firmware version.
@@ -74,6 +66,7 @@ pub enum FIRMCommand {
     SetDeviceConfig(DeviceConfig),
     RunIMUCalibration,
     RunMagnetometerCalibration,
+    Cancel,
     Reboot,
     // TODO: figure out how to implement log file downloads DownloadLogFile(u32),
 }
@@ -128,6 +121,9 @@ impl FIRMCommand {
             FIRMCommand::RunMagnetometerCalibration => {
                 command_bytes.push(RUN_MAGNETOMETER_CALIBRATION_MARKER);
             },
+            FIRMCommand::Cancel => {
+                command_bytes.push(CANCEL_MARKER);
+            },
             FIRMCommand::Reboot => {
                 command_bytes.push(REBOOT_MARKER);
             },
@@ -153,8 +149,9 @@ pub enum FIRMResponse {
     GetDeviceInfo(DeviceInfo),
     GetDeviceConfig(DeviceConfig),
     SetDeviceConfig(bool),
-    RunIMUCalibration(CalibrationStatus),
-    RunMagnetometerCalibration(CalibrationStatus),
+    RunIMUCalibration(bool),
+    RunMagnetometerCalibration(bool),
+    Cancel(bool),
     Error(String),
 }
 
@@ -221,24 +218,21 @@ impl FIRMResponse {
                 FIRMResponse::SetDeviceConfig(success)
             },
             RUN_IMU_CALIBRATION_MARKER => {
-                // Parse the IMU calibration status response, which is in the following format:
-                // [RUN_IMU_CALIBRATION_MARKER][CALIBRATION_COMPLETE (1 byte)][PROGRESS_PERCENTAGE (1 byte)]
-                let calibration_complete = data[1] == 1;
-                let progress_percentage = data[2];
-                FIRMResponse::RunIMUCalibration(CalibrationStatus {
-                    calibration_complete,
-                    progress_percentage,
-                })
+                // Firmware now responds with a simple ACK:
+                // [RUN_IMU_CALIBRATION_MARKER][SUCCESS (1 byte)]
+                let success = data[1] == 1;
+                FIRMResponse::RunIMUCalibration(success)
             },
             RUN_MAGNETOMETER_CALIBRATION_MARKER => {
-                // Parse the Magnetometer calibration status response, which is in the following format:
-                // [RUN_MAGNETOMETER_CALIBRATION_MARKER][CALIBRATION_COMPLETE (1 byte)][PROGRESS_PERCENTAGE (1 byte)]
-                let calibration_complete = data[1] == 1;
-                let progress_percentage = data[2];
-                FIRMResponse::RunMagnetometerCalibration(CalibrationStatus {
-                    calibration_complete,
-                    progress_percentage,
-                })
+                // Firmware now responds with a simple ACK:
+                // [RUN_MAGNETOMETER_CALIBRATION_MARKER][SUCCESS (1 byte)]
+                let success = data[1] == 1;
+                FIRMResponse::RunMagnetometerCalibration(success)
+            },
+            CANCEL_MARKER => {
+                // [CANCEL_MARKER][ACK (1 byte)]
+                let ack = data[1] == 1;
+                FIRMResponse::Cancel(ack)
             },
             _ => FIRMResponse::Error("Unknown response marker".to_string()),
         }

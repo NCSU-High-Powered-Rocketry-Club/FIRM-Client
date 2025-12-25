@@ -39,4 +39,5 @@ export type FIRMResponse =
   | { SetDeviceConfig: boolean }
   | { RunIMUCalibration: CalibrationStatus }
   | { RunMagnetometerCalibration: CalibrationStatus }
+  | { Cancel: boolean }
   | { Error: string };

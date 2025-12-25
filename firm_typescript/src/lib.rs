@@ -41,6 +41,10 @@ impl FIRMCommandBuilder {
         FIRMCommand::RunMagnetometerCalibration.to_bytes()
     }
 
+    pub fn build_cancel() -> Vec<u8> {
+        FIRMCommand::Cancel.to_bytes()
+    }
+
     pub fn build_reboot() -> Vec<u8> {
         FIRMCommand::Reboot.to_bytes()
     }

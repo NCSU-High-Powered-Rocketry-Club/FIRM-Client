@@ -123,6 +123,11 @@
         <button id="getConfigBtn">Get Device Config</button>
         <button id="getInfoBtn">Get Device Info</button>
       </div>
+      <div class="control-row">
+        <button id="runMagCalBtn">Run Mag Calibration</button>
+        <button id="cancelBtn">Cancel</button>
+        <button id="rebootBtn">Reboot</button>
+      </div>
       <div
         id="configOutput"
         style="
@@ -156,10 +161,14 @@
       const setConfigBtn = document.getElementById('setConfigBtn');
       const getConfigBtn = document.getElementById('getConfigBtn');
       const getInfoBtn = document.getElementById('getInfoBtn');
+      const runMagCalBtn = document.getElementById('runMagCalBtn');
+      const cancelBtn = document.getElementById('cancelBtn');
+      const rebootBtn = document.getElementById('rebootBtn');
       const configOutput = document.getElementById('configOutput');
       const rawBytesEl = document.getElementById('rawBytes');
 
       let firmInstance = null;
+      let unsubscribeRawBytes = null;
 
       function setStatus(msg) {
         status.textContent = msg;
@@ -222,20 +231,87 @@
         }
       });
 
+      runMagCalBtn.addEventListener('click', async () => {
+        if (!firmInstance) return;
+        setStatus('[UI] Running magnetometer calibration...');
+        const res = await firmInstance.runMagnetometerCalibration();
+        if (res) {
+          setStatus('[UI] Magnetometer calibration response received.');
+          configOutput.textContent = JSON.stringify(res, null, 2);
+        } else {
+          setStatus('[UI] Magnetometer calibration timed out.');
+          configOutput.textContent = 'Error: Timeout waiting for response.';
+        }
+      });
+
+      cancelBtn.addEventListener('click', async () => {
+        if (!firmInstance) return;
+        setStatus('[UI] Sending cancel command...');
+        const ack = await firmInstance.sendCancelCommand();
+        if (ack === null) {
+          setStatus('[UI] Cancel timed out.');
+          configOutput.textContent = 'Error: Timeout waiting for response.';
+        } else if (ack) {
+          setStatus('[UI] Cancel acknowledged.');
+          configOutput.textContent = 'Cancel acknowledged.';
+        } else {
+          setStatus('[UI] Cancel not acknowledged.');
+          configOutput.textContent = 'Cancel not acknowledged.';
+        }
+      });
+
+      rebootBtn.addEventListener('click', async () => {
+        if (!firmInstance) return;
+        setStatus('[UI] Sending reboot command...');
+        try {
+          await firmInstance.reboot();
+          setStatus('[UI] Reboot command sent.');
+          configOutput.textContent = 'Reboot command sent.';
+        } catch (err) {
+          console.error(err);
+          setStatus('[UI] Failed to send reboot command.');
+          configOutput.textContent = 'Error: Failed to send reboot command.';
+        }
+      });
+
       btn.addEventListener('click', async () => {
+        btn.disabled = true;
         setStatus('[UI] Connecting...');
 
+        const cleanupDisconnectedUI = async () => {
+          try {
+            unsubscribeRawBytes?.();
+          } catch {
+            // ignore
+          }
+          unsubscribeRawBytes = null;
+
+          try {
+            await firmInstance?.close?.();
+          } catch {
+            // ignore
+          }
+
+          firmInstance = null;
+          controls.style.display = 'none';
+          btn.disabled = false;
+        };
+
         try {
+          // If we somehow had a previous instance, close it first.
+          if (firmInstance) {
+            await cleanupDisconnectedUI();
+          }
+
           const firm = await FIRM.connect({ baudRate: 115200 });
           firmInstance = firm;
           setStatus('[UI] Connected. Streaming packets...');
           controls.style.display = 'flex';
-          btn.disabled = true;
 
           // Show raw incoming serial bytes.
           let rawLog = '';
           const MAX_CHARS = 20000;
-          firm.onRawBytes((bytes) => {
+          unsubscribeRawBytes = firm.onRawBytes((bytes) => {
             rawLog += bytesToHex(bytes) + '\n';
             if (rawLog.length > MAX_CHARS) {
               rawLog = rawLog.slice(rawLog.length - MAX_CHARS);
@@ -244,15 +320,24 @@
             rawBytesEl.scrollTop = rawBytesEl.scrollHeight;
           });
 
-          // Use the async iterator exposed by your library
-          for await (const pkt of firm.getDataPackets()) {
-            showPacket(pkt);
-          }
-
-          setStatus('[UI] Stream ended.');
+          // Stream packets in the background; if it ends/errors, restore UI so reconnect works.
+          (async () => {
+            try {
+              for await (const pkt of firm.getDataPackets()) {
+                showPacket(pkt);
+              }
+              setStatus('[UI] Stream ended.');
+            } catch (err) {
+              console.error(err);
+              setStatus('Error: ' + (err?.message ?? err));
+            } finally {
+              await cleanupDisconnectedUI();
+            }
+          })();
         } catch (err) {
           console.error(err);
           setStatus('Error: ' + (err?.message ?? err));
+          btn.disabled = false;
         }
       });
     </script>

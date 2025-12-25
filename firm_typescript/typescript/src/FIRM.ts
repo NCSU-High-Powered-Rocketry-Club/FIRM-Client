@@ -9,6 +9,7 @@ import { FIRMPacket, FIRMResponse, DeviceInfo, DeviceConfig, CalibrationStatus }
 export { FIRMPacket, FIRMResponse };
 
 const RESPONSE_TIMEOUT_MS = 5000;
+const CALIBRATION_TIMEOUT_MS = 20000;
 
 /** Options for connecting to a FIRM device over Web Serial. */
 export interface FIRMConnectOptions {
@@ -26,6 +27,10 @@ export interface FIRMConnectOptions {
 export class FIRMClient {
   /** Underlying WASM-backed streaming parser. */
   private dataParser: FIRMDataParser;
+
+  /** Serial port (Web Serial API). Kept so we can close/reconnect cleanly. */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private port: any | null = null;
 
   /** Subscribers for raw incoming serial bytes. */
   private rawBytesListeners: Array<(bytes: Uint8Array) => void> = [];
@@ -84,6 +89,7 @@ export class FIRMClient {
     const writer: WritableStreamDefaultWriter<Uint8Array> = port.writable.getWriter();
 
     const firm = new FIRMClient(dataParser);
+    firm.port = port;
     firm.reader = reader;
     firm.writer = writer;
     firm.startReadLoop();
@@ -147,6 +153,23 @@ export class FIRMClient {
         // ignore
       }
       this.reader?.releaseLock();
+
+      try {
+        await this.writer?.close();
+      } catch {
+        // ignore
+      }
+      try {
+        this.writer?.releaseLock();
+      } catch {
+        // ignore
+      }
+
+      try {
+        await this.port?.close();
+      } catch {
+        // ignore
+      }
     }
   }
 
@@ -248,7 +271,7 @@ export class FIRMClient {
     try {
       return await this.waitForResponse(
         (res) => ('RunIMUCalibration' in res ? res.RunIMUCalibration : undefined),
-        RESPONSE_TIMEOUT_MS,
+        CALIBRATION_TIMEOUT_MS,
       );
     } catch (e) {
       console.warn('Timeout waiting for RunIMUCalibration response');
@@ -267,10 +290,29 @@ export class FIRMClient {
     try {
       return await this.waitForResponse(
         (res) => ('RunMagnetometerCalibration' in res ? res.RunMagnetometerCalibration : undefined),
-        RESPONSE_TIMEOUT_MS,
+        CALIBRATION_TIMEOUT_MS,
       );
     } catch (e) {
       console.warn('Timeout waiting for RunMagnetometerCalibration response');
+      return null;
+    }
+  }
+
+  /**
+   * Sends a cancel command to the device (e.g., to abort a calibration).
+   * @returns True if the device acknowledged the cancel, or null if the request timed out.
+   */
+  async sendCancelCommand(): Promise<boolean | null> {
+    const bytes = FIRMCommandBuilder.build_cancel();
+    await this.sendBytes(bytes);
+
+    try {
+      return await this.waitForResponse(
+        (res) => ('Cancel' in res ? res.Cancel : undefined),
+        RESPONSE_TIMEOUT_MS,
+      );
+    } catch (e) {
+      console.warn('Timeout waiting for Cancel response');
       return null;
     }
   }
@@ -443,6 +485,31 @@ export class FIRMClient {
       }
       this.reader.releaseLock();
     }
+
+    if (this.writer) {
+      try {
+        await this.writer.close();
+      } catch {
+        // ignore
+      }
+      try {
+        this.writer.releaseLock();
+      } catch {
+        // ignore
+      }
+    }
+
+    if (this.port) {
+      try {
+        await this.port.close();
+      } catch {
+        // ignore
+      }
+    }
+
+    this.reader = null;
+    this.writer = null;
+    this.port = null;
     this.flushWaitersWithNull();
   }
 }

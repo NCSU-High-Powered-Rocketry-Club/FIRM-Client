@@ -121,6 +121,7 @@
       </div>
       <div class="control-row">
         <button id="getConfigBtn">Get Device Config</button>
+        <button id="getInfoBtn">Get Device Info</button>
       </div>
       <div
         id="configOutput"
@@ -154,6 +155,7 @@
       const deviceNameInput = document.getElementById('deviceNameInput');
       const setConfigBtn = document.getElementById('setConfigBtn');
       const getConfigBtn = document.getElementById('getConfigBtn');
+      const getInfoBtn = document.getElementById('getInfoBtn');
       const configOutput = document.getElementById('configOutput');
       const rawBytesEl = document.getElementById('rawBytes');
 
@@ -203,6 +205,19 @@
           configOutput.textContent = JSON.stringify(config, null, 2);
         } else {
           setStatus('[UI] Failed to get config (timeout).');
+          configOutput.textContent = 'Error: Timeout waiting for response.';
+        }
+      });
+
+      getInfoBtn.addEventListener('click', async () => {
+        if (!firmInstance) return;
+        setStatus('[UI] Getting device info...');
+        const info = await firmInstance.getDeviceInfo();
+        if (info) {
+          setStatus('[UI] Info received.');
+          configOutput.textContent = JSON.stringify(info, null, 2);
+        } else {
+          setStatus('[UI] Failed to get info (timeout).');
           configOutput.textContent = 'Error: Timeout waiting for response.';
         }
       });

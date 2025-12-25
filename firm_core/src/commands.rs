@@ -24,7 +24,6 @@ const CRC_SIZE: usize = 2;
 const DEVICE_NAME_LENGTH: usize = 32;
 const DEVICE_ID_LENGTH: usize = mem::size_of::<u64>();
 const FIRMWARE_VERSION_LENGTH: usize = 8;
-const PORT_LENGTH: usize = 16;
 const FREQUENCY_LENGTH: usize = mem::size_of::<u16>();
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -38,8 +37,16 @@ pub enum DeviceProtocol {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DeviceInfo {
     pub firmware_version: String, // Max 8 characters
-    pub port: String, // Max 16 characters
+    #[cfg_attr(feature = "wasm", serde(serialize_with = "serialize_u64_as_string"))]
     pub id: u64,
+}
+
+#[cfg(feature = "wasm")]
+fn serialize_u64_as_string<S>(value: &u64, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    serializer.serialize_str(&value.to_string())
 }
 
 /// Represents the configuration settings of the FIRM device.
@@ -61,7 +68,7 @@ pub struct CalibrationStatus {
 
 /// Represents a command that can be sent to the FIRM hardware.
 pub enum FIRMCommand {
-    /// Gets info about the device including name, ID, firmware version, and port.
+    /// Gets info about the device including ID and firmware version.
     GetDeviceInfo,
     GetDeviceConfig,
     SetDeviceConfig(DeviceConfig),
@@ -172,18 +179,15 @@ impl FIRMResponse {
         match data[0] {
             DEVICE_INFO_MARKER => {
                 // Parse device info response, which is in the following format:
-                // [DEVICE_INFO_MARKER][ID (8 bytes)][FIRMWARE_VERSION (8 bytes)][PORT (16 bytes)]
+                // [DEVICE_INFO_MARKER][ID (8 bytes)][FIRMWARE_VERSION (8 bytes)][PADDING (16 bytes)]
                 let id_bytes = &data[1..1 + DEVICE_ID_LENGTH];
                 let firmware_version_bytes = &data[1 + DEVICE_ID_LENGTH..1 + DEVICE_ID_LENGTH + FIRMWARE_VERSION_LENGTH];
-                let port_bytes = &data[1 + DEVICE_ID_LENGTH + FIRMWARE_VERSION_LENGTH..1 + DEVICE_ID_LENGTH + FIRMWARE_VERSION_LENGTH + PORT_LENGTH];
                 let id = u64::from_le_bytes(id_bytes.try_into().unwrap());
                 let firmware_version = bytes_to_str(firmware_version_bytes);
-                let port = bytes_to_str(port_bytes);
 
                 let info = DeviceInfo {
                     id,
                     firmware_version,
-                    port,
                 };
 
                 FIRMResponse::GetDeviceInfo(info)

@@ -1,6 +1,5 @@
 use firm_core::data_parser::{SerialParser};
 use firm_core::commands::{DeviceConfig, DeviceProtocol, FIRMCommand, FIRMResponse};
-use firm_core::firm_packet::FIRMPacket;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]

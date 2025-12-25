@@ -18,9 +18,8 @@ export type DeviceProtocol = 'USB' | 'UART' | 'I2C' | 'SPI';
 
 export interface DeviceInfo {
   name: string;
-  id: number;
+  id: string;
   firmware_version: string;
-  port: string;
 }
 
 export interface DeviceConfig {

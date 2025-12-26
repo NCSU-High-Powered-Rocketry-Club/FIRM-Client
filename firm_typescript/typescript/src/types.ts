@@ -28,16 +28,11 @@ export interface DeviceConfig {
   protocol: DeviceProtocol;
 }
 
-export interface CalibrationStatus {
-  calibration_complete: boolean;
-  progress_percentage: number;
-}
-
 export type FIRMResponse =
   | { GetDeviceInfo: DeviceInfo }
   | { GetDeviceConfig: DeviceConfig }
   | { SetDeviceConfig: boolean }
-  | { RunIMUCalibration: CalibrationStatus }
-  | { RunMagnetometerCalibration: CalibrationStatus }
+  | { RunIMUCalibration: boolean }
+  | { RunMagnetometerCalibration: boolean }
   | { Cancel: boolean }
   | { Error: string };

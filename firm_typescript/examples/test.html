@@ -267,6 +267,10 @@
           await firmInstance.reboot();
           setStatus('[UI] Reboot command sent.');
           configOutput.textContent = 'Reboot command sent.';
+
+          // Reboot will drop the serial connection; proactively reset UI.
+          await cleanupDisconnectedUI();
+          setStatus('[UI] Disconnected (reboot).');
         } catch (err) {
           console.error(err);
           setStatus('[UI] Failed to send reboot command.');
@@ -274,39 +278,42 @@
         }
       });
 
+      async function cleanupDisconnectedUI() {
+        // Idempotent; never throws.
+        btn.disabled = true;
+
+        const instanceToClose = firmInstance;
+        firmInstance = null;
+
+        try {
+          unsubscribeRawBytes?.();
+        } catch {
+          // ignore
+        }
+        unsubscribeRawBytes = null;
+
+        try {
+          await instanceToClose?.close?.();
+        } catch (e) {
+          console.warn('[UI] close() failed (ignored):', e);
+        }
+
+        controls.style.display = 'none';
+        btn.textContent = 'Connect to Device';
+        btn.disabled = false;
+      }
+
       btn.addEventListener('click', async () => {
         btn.disabled = true;
         setStatus('[UI] Connecting...');
 
-        const cleanupDisconnectedUI = async () => {
-          try {
-            unsubscribeRawBytes?.();
-          } catch {
-            // ignore
-          }
-          unsubscribeRawBytes = null;
-
-          try {
-            await firmInstance?.close?.();
-          } catch {
-            // ignore
-          }
-
-          firmInstance = null;
-          controls.style.display = 'none';
-          btn.disabled = false;
-        };
-
         try {
-          // If we somehow had a previous instance, close it first.
-          if (firmInstance) {
-            await cleanupDisconnectedUI();
-          }
-
           const firm = await FIRM.connect({ baudRate: 115200 });
           firmInstance = firm;
           setStatus('[UI] Connected. Streaming packets...');
           controls.style.display = 'flex';
+          btn.textContent = 'Connect to Device';
+          btn.disabled = true;
 
           // Show raw incoming serial bytes.
           let rawLog = '';
@@ -333,10 +340,13 @@
             } finally {
               await cleanupDisconnectedUI();
             }
-          })();
+          })().catch((e) => {
+            console.error('[UI] stream task error:', e);
+          });
         } catch (err) {
           console.error(err);
           setStatus('Error: ' + (err?.message ?? err));
+          btn.textContent = 'Connect to Device';
           btn.disabled = false;
         }
       });

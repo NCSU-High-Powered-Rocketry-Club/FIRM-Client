@@ -1,13 +1,6 @@
 import init, { FIRMDataParser, FIRMCommandBuilder } from '../../pkg/firm_client.js';
 import { FIRMPacket, FIRMResponse, DeviceInfo, DeviceConfig } from './types.js';
 
-/**
- * Data packet received from FIRM.
- *
- * This is the Rust `FIRMPacket` type exported via wasm-bindgen.
- */
-export { FIRMPacket, FIRMResponse };
-
 const RESPONSE_TIMEOUT_MS = 5000;
 const CALIBRATION_TIMEOUT_MS = 20000;
 

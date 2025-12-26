@@ -3,6 +3,13 @@
   <head>
     <meta charset="UTF-8" />
     <title>FIRM Client Test</title>
+    <script type="importmap">
+      {
+        "imports": {
+          "firm-client": "../typescript/dist/index.js"
+        }
+      }
+    </script>
     <style>
       :root {
         --theme-color: #f85e39;
@@ -150,8 +157,8 @@
     <textarea id="rawBytes" readonly>{ No raw bytes yet }</textarea>
 
     <script type="module">
-      // Use the same public API as npm consumers
-      import { FIRM } from '/firm_typescript/typescript/dist/index.js';
+      // 2. USE THE MAPPED NAME HERE
+      import { FIRM } from 'firm-client';
 
       const btn = document.getElementById('connect');
       const output = document.getElementById('output');
@@ -175,12 +182,10 @@
       }
 
       function showPacket(pkt) {
-        // pkt is now a plain JS object thanks to serde-wasm-bindgen
         output.textContent = JSON.stringify(pkt, null, 2);
       }
 
       function bytesToHex(bytes) {
-        // Space-separated 2-digit hex
         return Array.from(bytes)
           .map((b) => b.toString(16).padStart(2, '0'))
           .join(' ');
@@ -194,7 +199,6 @@
           return;
         }
         setStatus('[UI] Setting device name...');
-        // Defaulting frequency to 100 and protocol to 1 (USB) for this test
         const success = await firmInstance.setDeviceConfig(name, 100, 1);
         if (success) {
           setStatus('[UI] Device name set successfully!');
@@ -268,7 +272,6 @@
           setStatus('[UI] Reboot command sent.');
           configOutput.textContent = 'Reboot command sent.';
 
-          // Reboot will drop the serial connection; proactively reset UI.
           await cleanupDisconnectedUI();
           setStatus('[UI] Disconnected (reboot).');
         } catch (err) {
@@ -279,7 +282,6 @@
       });
 
       async function cleanupDisconnectedUI() {
-        // Idempotent; never throws.
         btn.disabled = true;
 
         const instanceToClose = firmInstance;
@@ -287,9 +289,7 @@
 
         try {
           unsubscribeRawBytes?.();
-        } catch {
-          // ignore
-        }
+        } catch {}
         unsubscribeRawBytes = null;
 
         try {
@@ -315,7 +315,6 @@
           btn.textContent = 'Connect to Device';
           btn.disabled = true;
 
-          // Show raw incoming serial bytes.
           let rawLog = '';
           const MAX_CHARS = 20000;
           unsubscribeRawBytes = firm.onRawBytes((bytes) => {
@@ -327,7 +326,6 @@
             rawBytesEl.scrollTop = rawBytesEl.scrollHeight;
           });
 
-          // Stream packets in the background; if it ends/errors, restore UI so reconnect works.
           (async () => {
             try {
               for await (const pkt of firm.getDataPackets()) {

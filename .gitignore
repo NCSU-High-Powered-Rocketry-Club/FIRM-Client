@@ -63,3 +63,5 @@ node_modules/
 
 firm_typescript/pkg/
 firm_typescript/typescript/dist/
+firm_typescript/examples/temp_install/
+firm_typescript/examples/test_packed.html

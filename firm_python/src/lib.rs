@@ -1,4 +1,4 @@
-use firm_core::firm_packet::FIRMPacket;
+use firm_core::firm_packets::FIRMDataPacket;
 use pyo3::prelude::*;
 use firm_rust::FIRMClient as RustFirmClient;
 
@@ -30,7 +30,7 @@ impl FIRMClient {
     }
 
     #[pyo3(signature = (block=false))]
-    fn get_data_packets(&mut self, block: bool) -> PyResult<Vec<FIRMPacket>> {
+    fn get_data_packets(&mut self, block: bool) -> PyResult<Vec<FIRMDataPacket>> {
         if let Some(err) = self.inner.check_error() {
             return Err(PyErr::new::<pyo3::exceptions::PyIOError, _>(err));
         }
@@ -72,7 +72,7 @@ impl FIRMClient {
 #[pymodule(gil_used = false)]
 fn firm_client(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<FIRMClient>()?;
-    m.add_class::<FIRMPacket>()?;
+    m.add_class::<FIRMDataPacket>()?;
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     Ok(())
 }

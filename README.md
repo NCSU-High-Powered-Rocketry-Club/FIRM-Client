@@ -147,7 +147,7 @@ for both x86_64 and aarch64.
 uv run maturin sdist
 ```
 
-3. We will use `uv` to publish these wheels to PyPI. Make sure you are part of the HPRC
+4. We will use `uv` to publish these wheels to PyPI. Make sure you are part of the HPRC
    organization on PyPI, so you have access to the project and can publish new versions.
 
 ```bash

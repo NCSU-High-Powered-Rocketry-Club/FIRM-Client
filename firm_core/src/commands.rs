@@ -1,13 +1,10 @@
-use std::mem;
-
 use alloc::vec::Vec;
-use serde::{Serialize, Deserialize};
 
-use crate::utils::{bytes_to_str, crc16_ccitt, str_to_bytes};
-
-const COMMAND_LENGTH: u8 = 64;
+use crate::firm_packets::{DeviceConfig, DeviceProtocol};
+use crate::utils::{crc16_ccitt, str_to_bytes};
 
 const COMMAND_START_BYTES: [u8; 2] = [0x55, 0xAA];
+const PADDING_BYTE: u8 = 0x00;
 
 const DEVICE_INFO_MARKER: u8 = 0x01;
 const DEVICE_CONFIG_MARKER: u8 = 0x02;
@@ -17,50 +14,12 @@ const RUN_MAGNETOMETER_CALIBRATION_MARKER: u8 = 0x05;
 const REBOOT_MARKER: u8 = 0x06;
 const CANCEL_MARKER: u8 = 0x07;
 
-const PADDING_BYTE: u8 = 0x00;
-
-/// Size of the CRC field in bytes.
-const CRC_SIZE: usize = 2;
-
+const COMMAND_LENGTH: u8 = 64;
+const CRC_LENGTH: usize = 2;
 const DEVICE_NAME_LENGTH: usize = 32;
-const DEVICE_ID_LENGTH: usize = mem::size_of::<u64>();
-const FIRMWARE_VERSION_LENGTH: usize = 8;
-const FREQUENCY_LENGTH: usize = mem::size_of::<u16>();
-
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-pub enum DeviceProtocol {
-    USB,
-    UART,
-    I2C,
-    SPI,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct DeviceInfo {
-    pub firmware_version: String, // Max 8 characters
-    #[cfg_attr(feature = "wasm", serde(serialize_with = "serialize_u64_as_string"))]
-    pub id: u64,
-}
-
-#[cfg(feature = "wasm")]
-fn serialize_u64_as_string<S>(value: &u64, serializer: S) -> Result<S::Ok, S::Error>
-where
-    S: serde::Serializer,
-{
-    serializer.serialize_str(&value.to_string())
-}
-
-/// Represents the configuration settings of the FIRM device.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct DeviceConfig {
-    pub name: String, // Max 32 characters
-    pub frequency: u16,
-    pub protocol: DeviceProtocol,
-}
 
 /// Represents a command that can be sent to the FIRM hardware.
 pub enum FIRMCommand {
-    /// Gets info about the device including ID and firmware version.
     GetDeviceInfo,
     GetDeviceConfig,
     SetDeviceConfig(DeviceConfig),
@@ -68,7 +27,6 @@ pub enum FIRMCommand {
     RunMagnetometerCalibration,
     Cancel,
     Reboot,
-    // TODO: figure out how to implement log file downloads DownloadLogFile(u32),
 }
 
 impl FIRMCommand {
@@ -130,7 +88,7 @@ impl FIRMCommand {
         }
 
         // Now add padding bytes to reach COMMAND_LENGTH - CRC size
-        while command_bytes.len() < (COMMAND_LENGTH as usize - CRC_SIZE) {
+        while command_bytes.len() < (COMMAND_LENGTH as usize - CRC_LENGTH) {
             command_bytes.push(PADDING_BYTE);
         }
 
@@ -142,99 +100,4 @@ impl FIRMCommand {
     }
 }
 
-/// Represents a response received from the FIRM hardware after sending a command.
-/// It can contain anything from a simple status to actual data requested by the command.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum FIRMResponse {
-    GetDeviceInfo(DeviceInfo),
-    GetDeviceConfig(DeviceConfig),
-    SetDeviceConfig(bool),
-    RunIMUCalibration(bool),
-    RunMagnetometerCalibration(bool),
-    Cancel(bool),
-    Error(String),
-}
 
-
-/// Parses incoming bytes from FIRM into command responses. Basically how
-/// commands work is you send a command to FIRM, then it sends back a response
-/// which you parse using this parser. This response can contain data
-/// requested by the command. To see the format of each response, look at the
-/// match statement below.
-impl FIRMResponse {
-    /// Constructs a `FIRMResponse` from a raw payload byte slice. The format of this
-    /// payload byte slice is as follows: [COMMAND MARKER][DATA...]
-    /// 
-    /// # Arguments
-    /// 
-    /// - `data` (`&[u8]`) - The raw payload byte slice to parse into a `FIRMResponse`.
-    /// 
-    /// # Returns
-    /// 
-    /// - `Self` - The constructed `FIRMResponse` from the given byte slice.
-    pub fn from_bytes(data: &[u8]) -> Self {
-        match data[0] {
-            DEVICE_INFO_MARKER => {
-                // Parse device info response, which is in the following format:
-                // [DEVICE_INFO_MARKER][ID (8 bytes)][FIRMWARE_VERSION (8 bytes)][PADDING (16 bytes)]
-                let id_bytes = &data[1..1 + DEVICE_ID_LENGTH];
-                let firmware_version_bytes = &data[1 + DEVICE_ID_LENGTH..1 + DEVICE_ID_LENGTH + FIRMWARE_VERSION_LENGTH];
-                let id = u64::from_le_bytes(id_bytes.try_into().unwrap());
-                let firmware_version = bytes_to_str(firmware_version_bytes);
-
-                let info = DeviceInfo {
-                    id,
-                    firmware_version,
-                };
-
-                FIRMResponse::GetDeviceInfo(info)
-            },
-            DEVICE_CONFIG_MARKER => {
-                // Parse GetDeviceConfig response, which is in the following format:
-                // [DEVICE_CONFIG_MARKER][NAME (32 bytes)][FREQUENCY (2 bytes)][PROTOCOL (1 byte)]
-                let name_bytes: [u8; DEVICE_NAME_LENGTH] = data[1..DEVICE_NAME_LENGTH + 1].try_into().unwrap();
-                let name = bytes_to_str(&name_bytes);
-                let frequency = u16::from_le_bytes(data[DEVICE_NAME_LENGTH + 1..DEVICE_NAME_LENGTH + 1 + FREQUENCY_LENGTH].try_into().unwrap());
-                let protocol = match data[DEVICE_NAME_LENGTH + 1 + FREQUENCY_LENGTH] {
-                    0x01 => DeviceProtocol::USB,
-                    0x02 => DeviceProtocol::UART,
-                    0x03 => DeviceProtocol::I2C,
-                    0x04 => DeviceProtocol::SPI,
-                    _ => DeviceProtocol::USB, // Default
-                };
-
-                let config = DeviceConfig {
-                    frequency,
-                    protocol,
-                    name,
-                };
-
-                FIRMResponse::GetDeviceConfig(config)
-            },
-            SET_DEVICE_CONFIG_MARKER => {
-                // Parsing the SetDeviceConfig acknowledgement response is just checking if the
-                // first byte after the marker is 1 (success) or 0 (failure).
-                let success = data[1] == 1;
-                FIRMResponse::SetDeviceConfig(success)
-            },
-            RUN_IMU_CALIBRATION_MARKER => {
-                // Firmware now responds with a simple ACK:
-                // [RUN_IMU_CALIBRATION_MARKER][SUCCESS (1 byte)]
-                let success = data[1] == 1;
-                FIRMResponse::RunIMUCalibration(success)
-            },
-            RUN_MAGNETOMETER_CALIBRATION_MARKER => {
-                // Firmware now responds with a simple ACK:
-                // [RUN_MAGNETOMETER_CALIBRATION_MARKER][SUCCESS (1 byte)]
-                let success = data[1] == 1;
-                FIRMResponse::RunMagnetometerCalibration(success)
-            },
-            CANCEL_MARKER => {
-                // [CANCEL_MARKER][ACK (1 byte)]
-                let ack = data[1] == 1;
-                FIRMResponse::Cancel(ack)
-            },
-            _ => FIRMResponse::Error("Unknown response marker".to_string()),
-        }
-    }
-}

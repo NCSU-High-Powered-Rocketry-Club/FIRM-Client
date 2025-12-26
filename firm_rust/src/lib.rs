@@ -1,5 +1,5 @@
 use firm_core::data_parser::{SerialParser};
-use firm_core::firm_packet::FIRMPacket;
+use firm_core::firm_packets::FIRMDataPacket;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::io::{self, Read};
 use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, channel};
@@ -27,11 +27,11 @@ use anyhow::Result;
 ///     }
 /// }
 pub struct FIRMClient {
-    packet_receiver: Receiver<FIRMPacket>,
+    packet_receiver: Receiver<FIRMDataPacket>,
     error_receiver: Receiver<String>,
     running: Arc<AtomicBool>,
     join_handle: Option<JoinHandle<Box<dyn Read + Send>>>,
-    sender: Sender<FIRMPacket>,
+    sender: Sender<FIRMDataPacket>,
     error_sender: Sender<String>,
     port: Option<Box<dyn Read + Send>>,
     // Offset for zeroing pressure altitude readings.
@@ -144,7 +144,7 @@ impl FIRMClient {
     /// # Arguments
     /// 
     /// - `timeout` (`Option<Duration>`) - If `Some(duration)`, the method will block for up to `duration` waiting for a packet.
-    pub fn get_data_packets(&mut self, timeout: Option<Duration>) -> Result<Vec<FIRMPacket>, RecvTimeoutError> {
+    pub fn get_data_packets(&mut self, timeout: Option<Duration>) -> Result<Vec<FIRMDataPacket>, RecvTimeoutError> {
         let mut packets = Vec::new();
 
         // If blocking, wait for at most one packet. The next loop will drain any others.
@@ -176,7 +176,7 @@ impl FIRMClient {
     }
 
     /// Retrieves all available data packets without blocking.
-    pub fn get_all_packets(&mut self) -> Result<Vec<FIRMPacket>, RecvTimeoutError> {
+    pub fn get_all_packets(&mut self) -> Result<Vec<FIRMDataPacket>, RecvTimeoutError> {
         self.get_data_packets(None)
     }
 

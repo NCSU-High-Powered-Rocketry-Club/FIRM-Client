@@ -34,14 +34,6 @@ impl FIRMCommandBuilder {
         FIRMCommand::SetDeviceConfig(config).to_bytes()
     }
 
-    pub fn build_run_imu_calibration() -> Vec<u8> {
-        FIRMCommand::RunIMUCalibration.to_bytes()
-    }
-
-    pub fn build_run_magnetometer_calibration() -> Vec<u8> {
-        FIRMCommand::RunMagnetometerCalibration.to_bytes()
-    }
-
     pub fn build_cancel() -> Vec<u8> {
         FIRMCommand::Cancel.to_bytes()
     }

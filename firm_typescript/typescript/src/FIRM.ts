@@ -1,5 +1,5 @@
 import init, { FIRMDataParser, FIRMCommandBuilder } from '../../pkg/firm_client.js';
-import { FIRMPacket, FIRMResponse, DeviceInfo, DeviceConfig } from './types.js';
+import { FIRMPacket, FIRMResponse, DeviceInfo, DeviceConfig, DeviceProtocol } from './types.js';
 
 const RESPONSE_TIMEOUT_MS = 5000;
 const CALIBRATION_TIMEOUT_MS = 20000;
@@ -168,34 +168,10 @@ export class FIRMClient {
    * @param protocol the communication protocol.
    * @returns True if the configuration was set successfully, false otherwise.
    */
-  async setDeviceConfig(name: string, frequency: number, protocol: number): Promise<boolean> {
-    return (await this.sendAndWait(
+async setDeviceConfig(name: string, frequency: number, protocol: DeviceProtocol): Promise<boolean> {    
+  return (await this.sendAndWait(
       () => FIRMCommandBuilder.build_set_device_config(name, frequency, protocol),
       res => ('SetDeviceConfig' in res ? res.SetDeviceConfig : undefined)
-    )) ?? false;
-  }
-
-  /**
-   * Starts IMU calibration on the FIRM device.
-   * @returns True if acknowledged, false if timeout or not acknowledged.
-   */
-  async runIMUCalibration(): Promise<boolean> {
-    return (await this.sendAndWait(
-      () => FIRMCommandBuilder.build_run_imu_calibration(),
-      res => ('RunIMUCalibration' in res ? res.RunIMUCalibration : undefined),
-      CALIBRATION_TIMEOUT_MS
-    )) ?? false;
-  }
-
-  /**
-   * Starts magnetometer calibration on the FIRM device.
-   * @returns True if acknowledged, false if timeout or not acknowledged.
-   */
-  async runMagnetometerCalibration(): Promise<boolean> {
-    return (await this.sendAndWait(
-      () => FIRMCommandBuilder.build_run_magnetometer_calibration(),
-      res => ('RunMagnetometerCalibration' in res ? res.RunMagnetometerCalibration : undefined),
-      CALIBRATION_TIMEOUT_MS
     )) ?? false;
   }
 

@@ -14,10 +14,14 @@ export interface FIRMPacket {
   pressure_altitude_meters: number;
 }
 
-export type DeviceProtocol = 'USB' | 'UART' | 'I2C' | 'SPI';
+export enum DeviceProtocol {
+  USB = 1,
+  UART = 2,
+  I2C = 3,
+  SPI = 4
+}
 
 export interface DeviceInfo {
-  name: string;
   id: string;
   firmware_version: string;
 }
@@ -32,7 +36,5 @@ export type FIRMResponse =
   | { GetDeviceInfo: DeviceInfo }
   | { GetDeviceConfig: DeviceConfig }
   | { SetDeviceConfig: boolean }
-  | { RunIMUCalibration: boolean }
-  | { RunMagnetometerCalibration: boolean }
   | { Cancel: boolean }
   | { Error: string };

@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
-
 use crate::utils::bytes_to_str;
+
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum DeviceProtocol {
@@ -35,21 +35,19 @@ pub struct DeviceConfig {
     pub protocol: DeviceProtocol,
 }
 
-/// Standard gravity in m/s².
+pub const DEVICE_INFO_MARKER: u8 = 0x01;
+pub const DEVICE_CONFIG_MARKER: u8 = 0x02;
+pub const SET_DEVICE_CONFIG_MARKER: u8 = 0x03;
+pub const REBOOT_MARKER: u8 = 0x04;
+pub const CANCEL_MARKER: u8 = 0xFF;
+pub const COMMAND_LENGTH: u8 = 64;
+pub const CRC_LENGTH: usize = 2;
+pub const DEVICE_NAME_LENGTH: usize = 32;
+pub const DEVICE_ID_LENGTH: usize = 8;
+pub const FIRMWARE_VERSION_LENGTH: usize = 8;
+pub const FREQUENCY_LENGTH: usize = 2;
+
 const GRAVITY_METERS_PER_SECONDS_SQUARED: f32 = 9.80665;
-
-/// Response markers.
-const DEVICE_INFO_MARKER: u8 = 0x01;
-const DEVICE_CONFIG_MARKER: u8 = 0x02;
-const SET_DEVICE_CONFIG_MARKER: u8 = 0x03;
-const RUN_IMU_CALIBRATION_MARKER: u8 = 0x04;
-const RUN_MAGNETOMETER_CALIBRATION_MARKER: u8 = 0x05;
-const CANCEL_MARKER: u8 = 0x07;
-
-const DEVICE_NAME_LENGTH: usize = 32;
-const DEVICE_ID_LENGTH: usize = 8;
-const FIRMWARE_VERSION_LENGTH: usize = 8;
-const FREQUENCY_LENGTH: usize = 2;
 
 /// Represents a decoded FIRM telemetry packet with converted physical units.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

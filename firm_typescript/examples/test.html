@@ -238,7 +238,8 @@
       runMagCalBtn.addEventListener('click', async () => {
         if (!firmInstance) return;
         setStatus('[UI] Running magnetometer calibration...');
-        const res = await firmInstance.runMagnetometerCalibration();
+        // TODO: add code to run magnetometer calibration when implemented
+        let res = true;
         if (res) {
           setStatus('[UI] Magnetometer calibration response received.');
           configOutput.textContent = JSON.stringify(res, null, 2);

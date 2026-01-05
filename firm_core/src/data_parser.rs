@@ -28,9 +28,9 @@ pub struct SerialParser {
     /// Rolling buffer of unprocessed serial bytes.
     serial_bytes: Vec<u8>,
     /// Queue of fully decoded packets ready to be consumed.
-    parsed_packets: VecDeque<FIRMDataPacket>,
+    parsed_data_packets: VecDeque<FIRMDataPacket>,
     /// Queue of fully decoded command responses ready to be consumed.
-    parsed_responses: VecDeque<FIRMResponsePacket>,
+    parsed_response_packets: VecDeque<FIRMResponsePacket>,
 }
 
 impl SerialParser {
@@ -46,14 +46,14 @@ impl SerialParser {
     pub fn new() -> Self {
         SerialParser {
             serial_bytes: Vec::new(),
-            parsed_packets: VecDeque::new(),
-            parsed_responses: VecDeque::new(),
+            parsed_data_packets: VecDeque::new(),
+            parsed_response_packets: VecDeque::new(),
         }
     }
 
-    /// Feeds new bytes into the parser and queues any fully decoded packets or command
+    /// Feeds new bytes into the parser and queues any fully decoded data packets or command
     /// responses. How this function works is that it appends incoming bytes to an internal
-    /// buffer, then scans through that buffer looking for valid packets or responses. When
+    /// buffer, then scans through that buffer looking for data packets or responses. When
     /// it finds one, it extracts and decodes it and then queues it for later retrieval.
     /// 
     /// Additionally, command responses have the same amount of bytes as data packets, so
@@ -125,10 +125,10 @@ impl SerialParser {
 
             if is_parsing_data_packet {
                 let packet = FIRMDataPacket::from_bytes(payload_slice);
-                self.parsed_packets.push_back(packet);
+                self.parsed_data_packets.push_back(packet);
             } else if is_parsing_response_packet {
                 let response = FIRMResponsePacket::from_bytes(payload_slice);
-                self.parsed_responses.push_back(response);
+                self.parsed_response_packets.push_back(response);
             }
 
             // Advance past this full packet and continue scanning.
@@ -147,9 +147,9 @@ impl SerialParser {
     /// 
     /// # Returns
     /// 
-    /// - `Option<FIRMPacket>` - `Some(packet)` if a packet is available, otherwise `None`.
-    pub fn get_packet(&mut self) -> Option<FIRMDataPacket> {
-        self.parsed_packets.pop_front()
+    /// - `Option<FIRMDataPacket>` - `Some(packet)` if a packet is available, otherwise `None`.
+    pub fn get_data_packet(&mut self) -> Option<FIRMDataPacket> {
+        self.parsed_data_packets.pop_front()
     }
 
     /// Pops the next parsed command response from the internal queue, if available.
@@ -160,8 +160,8 @@ impl SerialParser {
     /// 
     /// # Returns
     /// 
-    /// - `Option<FIRMResponse>` - `Some(response)` if a response is available, otherwise `None`.
-    pub fn get_response(&mut self) -> Option<FIRMResponsePacket> {
-        self.parsed_responses.pop_front()
+    /// - `Option<FIRMResponsePacket>` - `Some(response)` if a response is available, otherwise `None`.
+    pub fn get_response_packet(&mut self) -> Option<FIRMResponsePacket> {
+        self.parsed_response_packets.pop_front()
     }
 }

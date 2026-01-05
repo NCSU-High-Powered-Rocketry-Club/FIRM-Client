@@ -9,15 +9,6 @@ struct FIRMClient {
     timeout: f64
 }
 
-fn protocol_to_u8(protocol: &DeviceProtocol) -> u8 {
-    match protocol {
-        DeviceProtocol::USB => 1,
-        DeviceProtocol::UART => 2,
-        DeviceProtocol::I2C => 3,
-        DeviceProtocol::SPI => 4,
-    }
-}
-
 fn response_to_pydict(py: Python<'_>, res: &FIRMResponsePacket) -> Py<PyAny> {
     let outer = PyDict::new(py);
     match res {

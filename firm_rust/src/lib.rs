@@ -139,13 +139,13 @@ impl FIRMClient {
                     Ok(bytes_read) if bytes_read > 0 => {
                         // Feed the read bytes into the parser
                         parser.parse_bytes(&buffer[..bytes_read]);
-                        while let Some(packet) = parser.get_packet() {
+                        while let Some(packet) = parser.get_data_packet() {
                             if sender.send(packet).is_err() {
                                 return port; // Receiver dropped
                             }
                         }
 
-                        while let Some(response) = parser.get_response() {
+                        while let Some(response) = parser.get_response_packet() {
                             if response_sender.send(response).is_err() {
                                 return port; // Receiver dropped
                             }

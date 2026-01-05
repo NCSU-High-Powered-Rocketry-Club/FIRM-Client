@@ -68,7 +68,9 @@ export class FIRMClient {
     firm.port = port;
     firm.reader = reader;
     firm.writer = writer;
-    firm.startReadLoop().catch((err) => console.warn('[FIRM] read loop task failed (ignored):', err));
+    firm
+      .startReadLoop()
+      .catch((err) => console.warn('[FIRM] read loop task failed (ignored):', err));
     return firm;
   }
 
@@ -84,10 +86,19 @@ export class FIRMClient {
         const { value, done } = await this.reader.read();
         if (done || !this.running) break;
         if (value?.length) {
-          this.rawBytesListeners.forEach(fn => { try { fn(value); } catch (e) { console.warn('[FIRM] raw bytes listener error:', e); } });
+          this.rawBytesListeners.forEach((fn) => {
+            try {
+              fn(value);
+            } catch (e) {
+              console.warn('[FIRM] raw bytes listener error:', e);
+            }
+          });
           this.dataParser.parse_bytes(value);
-          let pkt; while ((pkt = this.dataParser.get_packet() as FIRMPacket | null)) this.enqueuePacket(pkt);
-          let res; while ((res = this.dataParser.get_response() as FIRMResponse | null)) this.enqueueResponse(res);
+          let pkt;
+          while ((pkt = this.dataParser.get_packet() as FIRMPacket | null)) this.enqueuePacket(pkt);
+          let res;
+          while ((res = this.dataParser.get_response() as FIRMResponse | null))
+            this.enqueueResponse(res);
         }
       }
     } catch (err) {
@@ -96,8 +107,18 @@ export class FIRMClient {
     } finally {
       this.running = false;
       this.flushWaitersWithNull();
-      for (const [obj, fn] of [[this.reader, 'cancel'], [this.reader, 'releaseLock'], [this.writer, 'close'], [this.writer, 'releaseLock'], [this.port, 'close']]) {
-        try { obj && typeof obj[fn] === 'function' && (fn === 'close' || fn === 'cancel' ? await obj[fn]() : obj[fn]()); } catch {}
+      for (const [obj, fn] of [
+        [this.reader, 'cancel'],
+        [this.reader, 'releaseLock'],
+        [this.writer, 'close'],
+        [this.writer, 'releaseLock'],
+        [this.port, 'close'],
+      ]) {
+        try {
+          obj &&
+            typeof obj[fn] === 'function' &&
+            (fn === 'close' || fn === 'cancel' ? await obj[fn]() : obj[fn]());
+        } catch {}
       }
       this.reader = this.writer = this.port = null;
     }
@@ -130,7 +151,11 @@ export class FIRMClient {
    * Sends a command to get device info.
    * @returns The device info, or null if the request timed out.
    */
-  private async sendAndWait<T>(buildCmd: () => Uint8Array, matcher: (res: FIRMResponse) => T | undefined, timeout = RESPONSE_TIMEOUT_MS): Promise<T | null> {
+  private async sendAndWait<T>(
+    buildCmd: () => Uint8Array,
+    matcher: (res: FIRMResponse) => T | undefined,
+    timeout = RESPONSE_TIMEOUT_MS,
+  ): Promise<T | null> {
     await this.sendBytes(buildCmd());
     try {
       return await this.waitForResponse(matcher, timeout);
@@ -146,7 +171,7 @@ export class FIRMClient {
   async getDeviceInfo(): Promise<DeviceInfo | null> {
     return this.sendAndWait(
       () => FIRMCommandBuilder.build_get_device_info(),
-      res => ('GetDeviceInfo' in res ? res.GetDeviceInfo : undefined)
+      (res) => ('GetDeviceInfo' in res ? res.GetDeviceInfo : undefined),
     );
   }
 
@@ -157,7 +182,7 @@ export class FIRMClient {
   async getDeviceConfig(): Promise<DeviceConfig | null> {
     return this.sendAndWait(
       () => FIRMCommandBuilder.build_get_device_config(),
-      res => ('GetDeviceConfig' in res ? res.GetDeviceConfig : undefined)
+      (res) => ('GetDeviceConfig' in res ? res.GetDeviceConfig : undefined),
     );
   }
 
@@ -168,11 +193,17 @@ export class FIRMClient {
    * @param protocol the communication protocol.
    * @returns True if the configuration was set successfully, false otherwise.
    */
-async setDeviceConfig(name: string, frequency: number, protocol: DeviceProtocol): Promise<boolean> {    
-  return (await this.sendAndWait(
-      () => FIRMCommandBuilder.build_set_device_config(name, frequency, protocol),
-      res => ('SetDeviceConfig' in res ? res.SetDeviceConfig : undefined)
-    )) ?? false;
+  async setDeviceConfig(
+    name: string,
+    frequency: number,
+    protocol: DeviceProtocol,
+  ): Promise<boolean> {
+    return (
+      (await this.sendAndWait(
+        () => FIRMCommandBuilder.build_set_device_config(name, frequency, protocol),
+        (res) => ('SetDeviceConfig' in res ? res.SetDeviceConfig : undefined),
+      )) ?? false
+    );
   }
 
   /**
@@ -180,10 +211,12 @@ async setDeviceConfig(name: string, frequency: number, protocol: DeviceProtocol)
    * @returns True if acknowledged, false if timeout or not acknowledged.
    */
   async sendCancelCommand(): Promise<boolean> {
-    return (await this.sendAndWait(
-      () => FIRMCommandBuilder.build_cancel(),
-      res => ('Cancel' in res ? res.Cancel : undefined)
-    )) ?? false;
+    return (
+      (await this.sendAndWait(
+        () => FIRMCommandBuilder.build_cancel(),
+        (res) => ('Cancel' in res ? res.Cancel : undefined),
+      )) ?? false
+    );
   }
 
   /**
@@ -209,7 +242,7 @@ async setDeviceConfig(name: string, frequency: number, protocol: DeviceProtocol)
    */
   private enqueueResponse(response: FIRMResponse): void {
     this.responseQueue.push(response);
-    this.responseWaiters.forEach(waiter => waiter(response));
+    this.responseWaiters.forEach((waiter) => waiter(response));
   }
 
   /**
@@ -267,7 +300,8 @@ async setDeviceConfig(name: string, frequency: number, protocol: DeviceProtocol)
    * Resolves all pending waiters with null (used on shutdown/error).
    */
   private flushWaitersWithNull(): void {
-    while (this.packetWaiters.length) (this.packetWaiters.shift() as (pkt: FIRMPacket | null) => void)(null);
+    while (this.packetWaiters.length)
+      (this.packetWaiters.shift() as (pkt: FIRMPacket | null) => void)(null);
   }
 
   /**

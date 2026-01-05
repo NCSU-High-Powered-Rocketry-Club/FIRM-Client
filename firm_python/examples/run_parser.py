@@ -1,5 +1,6 @@
 from firm_client import FIRMClient
 
+
 def main() -> None:
     port_name = "/dev/ttyACM0"  # Update this to your actual port
     baud_rate = 2_000_000
@@ -34,6 +35,7 @@ def main() -> None:
                 f"{(packets[-1].timestamp_seconds - initial_dt) * 1e3:.9f} ms"
             )
             initial_dt = packets[-1].timestamp_seconds
+
 
 if __name__ == "__main__":
     main()

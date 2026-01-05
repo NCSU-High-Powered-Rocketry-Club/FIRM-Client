@@ -18,7 +18,7 @@ export enum DeviceProtocol {
   USB = 1,
   UART = 2,
   I2C = 3,
-  SPI = 4
+  SPI = 4,
 }
 
 export interface DeviceInfo {

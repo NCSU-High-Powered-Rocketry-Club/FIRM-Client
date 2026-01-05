@@ -1,22 +1,26 @@
 use serde::{Deserialize, Serialize};
 use crate::utils::bytes_to_str;
+
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
+#[cfg(feature = "wasm")]
+use wasm_bindgen::prelude::*;
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq, eq_int))]
+#[cfg_attr(feature = "wasm", wasm_bindgen)]
 pub enum DeviceProtocol {
-    USB,
-    UART,
-    I2C,
-    SPI,
+    USB = 1,
+    UART = 2,
+    I2C = 3,
+    SPI = 4
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "python", pyclass(get_all, set_all))]
 pub struct DeviceInfo {
     pub firmware_version: String, // Max 8 characters
-    #[cfg_attr(feature = "wasm", serde(serialize_with = "serialize_u64_as_string"))]
+    #[cfg_attr(feature = "wasm", serde(serialize_with = "serialize_u64_as_string"))] // We need this because JS can't handle u64
     pub id: u64,
 }
 
@@ -44,6 +48,7 @@ pub const DEVICE_CONFIG_MARKER: u8 = 0x02;
 pub const SET_DEVICE_CONFIG_MARKER: u8 = 0x03;
 pub const REBOOT_MARKER: u8 = 0x04;
 pub const CANCEL_MARKER: u8 = 0xFF;
+
 pub const COMMAND_LENGTH: u8 = 64;
 pub const CRC_LENGTH: usize = 2;
 pub const DEVICE_NAME_LENGTH: usize = 32;

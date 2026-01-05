@@ -16,19 +16,11 @@ impl FIRMCommandBuilder {
         FIRMCommand::GetDeviceConfig.to_bytes()
     }
 
-    pub fn build_set_device_config(name: String, frequency: u16, protocol: u8) -> Vec<u8> {
-        let protocol_enum: DeviceProtocol = match protocol {
-            1 => DeviceProtocol::USB,
-            2 => DeviceProtocol::UART,
-            3 => DeviceProtocol::I2C,
-            4 => DeviceProtocol::SPI,
-            _ => DeviceProtocol::USB, // Default
-        };
-        
+    pub fn build_set_device_config(name: String, frequency: u16, protocol: DeviceProtocol) -> Vec<u8> { 
         let config = DeviceConfig {
             name,
             frequency,
-            protocol: protocol_enum,
+            protocol,
         };
         
         FIRMCommand::SetDeviceConfig(config).to_bytes()
@@ -64,7 +56,7 @@ impl FIRMDataParser {
 
     #[wasm_bindgen]
     pub fn get_packet(&mut self) -> JsValue {
-        match self.inner.get_packet() {
+        match self.inner.get_data_packet() {
             Some(packet) => serde_wasm_bindgen::to_value(&packet).unwrap(),
             None => JsValue::NULL,
         }
@@ -72,7 +64,7 @@ impl FIRMDataParser {
 
     #[wasm_bindgen]
     pub fn get_response(&mut self) -> JsValue {
-        match self.inner.get_response() {
+        match self.inner.get_response_packet() {
             Some(response) => serde_wasm_bindgen::to_value(&response).unwrap(),
             None => JsValue::NULL,
         }

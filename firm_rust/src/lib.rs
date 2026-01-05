@@ -1,7 +1,10 @@
-use firm_core::data_parser::{SerialParser};
-use firm_core::firm_packets::FIRMDataPacket;
+use firm_core::commands::FIRMCommand;
+use firm_core::data_parser::SerialParser;
+use firm_core::firm_packets::{DeviceConfig, DeviceInfo, DeviceProtocol, FIRMDataPacket, FIRMResponsePacket};
+use serialport::SerialPort;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::io::{self, Read};
+use std::collections::VecDeque;
+use std::io::{self, Read, Write};
 use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, channel};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
@@ -28,15 +31,21 @@ use anyhow::Result;
 /// }
 pub struct FIRMClient {
     packet_receiver: Receiver<FIRMDataPacket>,
+    response_receiver: Receiver<FIRMResponsePacket>,
     error_receiver: Receiver<String>,
     running: Arc<AtomicBool>,
-    join_handle: Option<JoinHandle<Box<dyn Read + Send>>>,
+    join_handle: Option<JoinHandle<Box<dyn SerialPort>>>,
     sender: Sender<FIRMDataPacket>,
+    response_sender: Sender<FIRMResponsePacket>,
     error_sender: Sender<String>,
-    port: Option<Box<dyn Read + Send>>,
+    command_sender: Sender<Vec<u8>>,
+    command_receiver: Option<Receiver<Vec<u8>>>,
+    port: Option<Box<dyn SerialPort>>,
     // Offset for zeroing pressure altitude readings.
     pressure_altitude_offset_meters: f32,
     current_altitude_meters: f32,
+
+    response_buffer: VecDeque<FIRMResponsePacket>,
 }
 
 impl FIRMClient {
@@ -49,29 +58,34 @@ impl FIRMClient {
     /// - `timeout` (`f64`) - Read timeout in seconds for the serial port.
     pub fn new(port_name: &str, baud_rate: u32, timeout: f64) -> Result<Self> {
         let (sender, receiver) = channel();
+        let (response_sender, response_receiver) = channel();
         let (error_sender, error_receiver) = channel();
+        let (command_sender, command_receiver) = channel();
         
-        let port = serialport::new(port_name, baud_rate)
+        let port: Box<dyn SerialPort> = serialport::new(port_name, baud_rate)
             .data_bits(serialport::DataBits::Eight)
             .flow_control(serialport::FlowControl::None)
             .parity(serialport::Parity::None)
             .stop_bits(serialport::StopBits::One)
             .timeout(Duration::from_millis((timeout * 1000.0) as u64))
-            .open_native()
+            .open()
             .map_err(io::Error::other)?;
-        
-        let port: Box<dyn Read + Send> = Box::new(port);
 
         Ok(Self {
             packet_receiver: receiver,
+            response_receiver,
             error_receiver: error_receiver,
             running: Arc::new(AtomicBool::new(false)),
             join_handle: None,
             sender,
+            response_sender,
             error_sender,
+            command_sender,
+            command_receiver: Some(command_receiver),
             port: Some(port),
             pressure_altitude_offset_meters: 0.0,
             current_altitude_meters: 0.0,
+            response_buffer: VecDeque::new(),
         })
     }
 
@@ -81,10 +95,19 @@ impl FIRMClient {
             return;
         }
 
-        // Get the port: either the one from new(), or open a new one (restart)
+        // Get the port and command receiver: either the ones from new(), or none (restart)
         let mut port = match self.port.take() {
             Some(s) => s,
             None => return,
+        };
+
+        let command_receiver = match self.command_receiver.take() {
+            Some(r) => r,
+            None => {
+                let (new_sender, new_receiver) = channel();
+                self.command_sender = new_sender;
+                new_receiver
+            }
         };
 
         self.running.store(true, Ordering::Relaxed);
@@ -92,14 +115,25 @@ impl FIRMClient {
         // are still owned by self.
         let running_clone = self.running.clone();
         let sender = self.sender.clone();
+        let response_sender = self.response_sender.clone();
         let error_sender = self.error_sender.clone();
 
-        let handle: JoinHandle<Box<dyn Read + Send>> = thread::spawn(move || {
+        let handle: JoinHandle<Box<dyn SerialPort>> = thread::spawn(move || {
             let mut parser = SerialParser::new();
             // Buffer for reading from serial port. 1024 bytes should be sufficient.
             let mut buffer: [u8; 1024] = [0; 1024];
 
             while running_clone.load(Ordering::Relaxed) {
+                // Drain pending commands and write them to the port.
+                while let Ok(cmd_bytes) = command_receiver.try_recv() {
+                    if let Err(e) = port.write_all(&cmd_bytes) {
+                        let _ = error_sender.send(e.to_string());
+                        running_clone.store(false, Ordering::Relaxed);
+                        return port;
+                    }
+                    let _ = port.flush();
+                }
+
                 // Read bytes from the serial port
                 match port.read(&mut buffer) {
                     Ok(bytes_read) if bytes_read > 0 => {
@@ -107,6 +141,12 @@ impl FIRMClient {
                         parser.parse_bytes(&buffer[..bytes_read]);
                         while let Some(packet) = parser.get_packet() {
                             if sender.send(packet).is_err() {
+                                return port; // Receiver dropped
+                            }
+                        }
+
+                        while let Some(response) = parser.get_response() {
+                            if response_sender.send(response).is_err() {
                                 return port; // Receiver dropped
                             }
                         }
@@ -137,6 +177,14 @@ impl FIRMClient {
                 self.port = Some(port);
             }
         }
+
+        // The command receiver is moved into the background thread on start(); recreate the
+        // channel after stopping so the client can be restarted.
+        if self.command_receiver.is_none() {
+            let (new_sender, new_receiver) = channel();
+            self.command_sender = new_sender;
+            self.command_receiver = Some(new_receiver);
+        }
     }
 
     /// Retrieves all available data packets, optionally blocking until at least one is available.
@@ -163,6 +211,31 @@ impl FIRMClient {
         Ok(packets)
     }
 
+    /// Retrieves all available response packets, optionally blocking until at least one is available.
+    ///
+    /// # Arguments
+    ///
+    /// - `timeout` (`Option<Duration>`) - If `Some(duration)`, the method will block for up to `duration` waiting for a response.
+    pub fn get_response_packets(
+        &mut self,
+        timeout: Option<Duration>,
+    ) -> Result<Vec<FIRMResponsePacket>, RecvTimeoutError> {
+        let mut responses: Vec<FIRMResponsePacket> = self.response_buffer.drain(..).collect();
+
+        // If blocking and we have nothing buffered, wait for one response.
+        if responses.is_empty() {
+            if let Some(duration) = timeout {
+                responses.push(self.response_receiver.recv_timeout(duration)?);
+            }
+        }
+
+        while let Ok(res) = self.response_receiver.try_recv() {
+            responses.push(res);
+        }
+
+        Ok(responses)
+    }
+
     /// Zeros the pressure altitude based on the current pressure reading.
     /// Subsequent calls to `get_pressure_altitude_meters` will return altitude relative to
     /// this offset.
@@ -178,6 +251,136 @@ impl FIRMClient {
     /// Retrieves all available data packets without blocking.
     pub fn get_all_packets(&mut self) -> Result<Vec<FIRMDataPacket>, RecvTimeoutError> {
         self.get_data_packets(None)
+    }
+
+    /// Retrieves all available response packets without blocking.
+    pub fn get_all_responses(&mut self) -> Result<Vec<FIRMResponsePacket>, RecvTimeoutError> {
+        self.get_response_packets(None)
+    }
+
+    /// Sends a high-level command to the device.
+    pub fn send_command(&self, command: FIRMCommand) -> Result<()> {
+        self.send_command_bytes(command.to_bytes())
+    }
+
+    /// Sends raw command bytes to the device.
+    pub fn send_command_bytes(&self, bytes: Vec<u8>) -> Result<()> {
+        self.command_sender
+            .send(bytes)
+            .map_err(|_| io::Error::other("Command channel closed"))?;
+        Ok(())
+    }
+
+    fn wait_for_response(&mut self, timeout: Duration) -> Result<Option<FIRMResponsePacket>> {
+        // Prefer already-buffered responses.
+        if let Some(res) = self.response_buffer.pop_front() {
+            return Ok(Some(res));
+        }
+
+        match self.response_receiver.recv_timeout(timeout) {
+            Ok(res) => Ok(Some(res)),
+            Err(RecvTimeoutError::Timeout) => Ok(None),
+            Err(RecvTimeoutError::Disconnected) => Err(io::Error::other("Response channel closed").into()),
+        }
+    }
+
+    fn wait_for_matching_response<T>(
+        &mut self,
+        timeout: Duration,
+        mut matcher: impl FnMut(&FIRMResponsePacket) -> Option<T>,
+    ) -> Result<Option<T>> {
+        // Pull any immediately-available responses into our buffer.
+        while let Ok(res) = self.response_receiver.try_recv() {
+            self.response_buffer.push_back(res);
+        }
+
+        // First, search the buffer.
+        if let Some((idx, value)) = self
+            .response_buffer
+            .iter()
+            .enumerate()
+            .find_map(|(i, res)| matcher(res).map(|v| (i, v)))
+        {
+            self.response_buffer.remove(idx);
+            return Ok(Some(value));
+        }
+
+        let deadline = std::time::Instant::now() + timeout;
+
+        loop {
+            let now = std::time::Instant::now();
+            if now >= deadline {
+                return Ok(None);
+            }
+
+            let remaining = deadline - now;
+            let Some(next) = self.wait_for_response(remaining)? else {
+                return Ok(None);
+            };
+            self.response_buffer.push_back(next);
+
+            if let Some((idx, value)) = self
+                .response_buffer
+                .iter()
+                .enumerate()
+                .find_map(|(i, res)| matcher(res).map(|v| (i, v)))
+            {
+                self.response_buffer.remove(idx);
+                return Ok(Some(value));
+            }
+        }
+    }
+
+    /// Requests device info and waits for the response.
+    pub fn get_device_info(&mut self, timeout: Duration) -> Result<Option<DeviceInfo>> {
+        self.send_command(FIRMCommand::GetDeviceInfo)?;
+        self.wait_for_matching_response(timeout, |res| match res {
+            FIRMResponsePacket::GetDeviceInfo(info) => Some(info.clone()),
+            _ => None,
+        })
+    }
+
+    /// Requests device configuration and waits for the response.
+    pub fn get_device_config(&mut self, timeout: Duration) -> Result<Option<DeviceConfig>> {
+        self.send_command(FIRMCommand::GetDeviceConfig)?;
+        self.wait_for_matching_response(timeout, |res| match res {
+            FIRMResponsePacket::GetDeviceConfig(cfg) => Some(cfg.clone()),
+            _ => None,
+        })
+    }
+
+    /// Sets device configuration and waits for acknowledgement.
+    pub fn set_device_config(
+        &mut self,
+        name: String,
+        frequency: u16,
+        protocol: DeviceProtocol,
+        timeout: Duration,
+    ) -> Result<Option<bool>> {
+        let config = DeviceConfig {
+            name,
+            frequency,
+            protocol,
+        };
+        self.send_command(FIRMCommand::SetDeviceConfig(config))?;
+        self.wait_for_matching_response(timeout, |res| match res {
+            FIRMResponsePacket::SetDeviceConfig(ok) => Some(*ok),
+            _ => None,
+        })
+    }
+
+    /// Sends a cancel command and waits for acknowledgement.
+    pub fn cancel(&mut self, timeout: Duration) -> Result<Option<bool>> {
+        self.send_command(FIRMCommand::Cancel)?;
+        self.wait_for_matching_response(timeout, |res| match res {
+            FIRMResponsePacket::Cancel(ok) => Some(*ok),
+            _ => None,
+        })
+    }
+
+    /// Sends a reboot command.
+    pub fn reboot(&self) -> Result<()> {
+        self.send_command(FIRMCommand::Reboot)
     }
 
     /// Checks for any errors that have occurred in the background thread.

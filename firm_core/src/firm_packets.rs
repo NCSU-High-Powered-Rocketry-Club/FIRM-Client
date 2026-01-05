@@ -1,8 +1,10 @@
 use serde::{Deserialize, Serialize};
 use crate::utils::bytes_to_str;
-
+#[cfg(feature = "python")]
+use pyo3::prelude::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "python", pyclass(eq, eq_int))]
 pub enum DeviceProtocol {
     USB,
     UART,
@@ -11,6 +13,7 @@ pub enum DeviceProtocol {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "python", pyclass(get_all, set_all))]
 pub struct DeviceInfo {
     pub firmware_version: String, // Max 8 characters
     #[cfg_attr(feature = "wasm", serde(serialize_with = "serialize_u64_as_string"))]
@@ -29,6 +32,7 @@ where
 
 /// Represents the configuration settings of the FIRM device.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "python", pyclass(get_all, set_all))]
 pub struct DeviceConfig {
     pub name: String, // Max 32 characters
     pub frequency: u16,
@@ -149,8 +153,6 @@ pub enum FIRMResponsePacket {
     GetDeviceInfo(DeviceInfo),
     GetDeviceConfig(DeviceConfig),
     SetDeviceConfig(bool),
-    RunIMUCalibration(bool),
-    RunMagnetometerCalibration(bool),
     Cancel(bool),
     Error(String),
 }
@@ -200,14 +202,6 @@ impl FIRMResponsePacket {
             SET_DEVICE_CONFIG_MARKER => {
                 let success = data[1] == 1;
                 FIRMResponsePacket::SetDeviceConfig(success)
-            }
-            RUN_IMU_CALIBRATION_MARKER => {
-                let success = data[1] == 1;
-                FIRMResponsePacket::RunIMUCalibration(success)
-            }
-            RUN_MAGNETOMETER_CALIBRATION_MARKER => {
-                let success = data[1] == 1;
-                FIRMResponsePacket::RunMagnetometerCalibration(success)
             }
             CANCEL_MARKER => {
                 let acknowledgement = data[1] == 1;

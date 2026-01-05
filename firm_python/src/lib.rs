@@ -1,11 +1,43 @@
-use firm_core::firm_packets::FIRMDataPacket;
+use firm_core::firm_packets::{DeviceConfig, DeviceInfo, DeviceProtocol, FIRMDataPacket, FIRMResponsePacket};
 use pyo3::prelude::*;
 use firm_rust::FIRMClient as RustFirmClient;
+use pyo3::types::PyDict;
 
 #[pyclass(unsendable)]
 struct FIRMClient {
     inner: RustFirmClient,
     timeout: f64
+}
+
+fn protocol_to_u8(protocol: &DeviceProtocol) -> u8 {
+    match protocol {
+        DeviceProtocol::USB => 1,
+        DeviceProtocol::UART => 2,
+        DeviceProtocol::I2C => 3,
+        DeviceProtocol::SPI => 4,
+    }
+}
+
+fn response_to_pydict(py: Python<'_>, res: &FIRMResponsePacket) -> Py<PyAny> {
+    let outer = PyDict::new(py);
+    match res {
+        FIRMResponsePacket::GetDeviceInfo(info) => {
+            let _ = outer.set_item("GetDeviceInfo", info.clone()); 
+        }
+        FIRMResponsePacket::GetDeviceConfig(cfg) => {
+            let _ = outer.set_item("GetDeviceConfig", cfg.clone()); 
+        }
+        FIRMResponsePacket::SetDeviceConfig(ok) => {
+            let _ = outer.set_item("SetDeviceConfig", *ok);
+        }
+        FIRMResponsePacket::Cancel(ok) => {
+            let _ = outer.set_item("Cancel", *ok);
+        }
+        FIRMResponsePacket::Error(msg) => {
+            let _ = outer.set_item("Error", msg.clone());
+        }
+    }
+    outer.into()
 }
 
 #[pymethods]
@@ -46,6 +78,117 @@ impl FIRMClient {
         Ok(packets)
     }
 
+    /// Sends raw command bytes to the device.
+    fn send_command_bytes(&mut self, command_bytes: Vec<u8>) -> PyResult<()> {
+        if let Some(err) = self.inner.check_error() {
+            return Err(PyErr::new::<pyo3::exceptions::PyIOError, _>(err));
+        }
+
+        self.inner
+            .send_command_bytes(command_bytes)
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyIOError, _>(e.to_string()))?;
+        Ok(())
+    }
+
+    /// Retrieves parsed responses. If block=True, waits up to the client's timeout for at least one.
+    #[pyo3(signature = (block=false))]
+    fn get_responses(&mut self, py: Python<'_>, block: bool) -> PyResult<Vec<Py<PyAny>>> {
+        if let Some(err) = self.inner.check_error() {
+            return Err(PyErr::new::<pyo3::exceptions::PyIOError, _>(err));
+        }
+
+        let timeout = if block {
+            Some(std::time::Duration::from_secs_f64(self.timeout))
+        } else {
+            None
+        };
+
+        let responses = self
+            .inner
+            .get_response_packets(timeout)
+            .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))?;
+
+        Ok(responses
+            .iter()
+            .map(|r| response_to_pydict(py, r))
+            .collect())
+    }
+
+    #[pyo3(signature = (timeout_seconds=5.0))]
+    fn get_device_info(&mut self, timeout_seconds: f64) -> PyResult<Option<DeviceInfo>> {
+        if let Some(err) = self.inner.check_error() {
+            return Err(PyErr::new::<pyo3::exceptions::PyIOError, _>(err));
+        }
+
+        let info = self
+            .inner
+            .get_device_info(std::time::Duration::from_secs_f64(timeout_seconds))
+            .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))?;
+        Ok(info)
+    }
+
+    #[pyo3(signature = (timeout_seconds=5.0))]
+fn get_device_config(&mut self, timeout_seconds: f64) -> PyResult<Option<DeviceConfig>> {
+        if let Some(err) = self.inner.check_error() {
+            return Err(PyErr::new::<pyo3::exceptions::PyIOError, _>(err));
+        }
+
+        let cfg = self
+            .inner
+            .get_device_config(std::time::Duration::from_secs_f64(timeout_seconds))
+            .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))?;
+        Ok(cfg)
+    }
+
+    #[pyo3(signature = (name, frequency, protocol, timeout_seconds=5.0))]
+    fn set_device_config(
+        &mut self,
+        name: String,
+        frequency: u16,
+        protocol: DeviceProtocol,
+        timeout_seconds: f64,
+    ) -> PyResult<bool> {
+        if let Some(err) = self.inner.check_error() {
+            return Err(PyErr::new::<pyo3::exceptions::PyIOError, _>(err));
+        }
+
+        let res = self
+            .inner
+            .set_device_config(
+                name,
+                frequency,
+                protocol,
+                std::time::Duration::from_secs_f64(timeout_seconds),
+            )
+            .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))?;
+
+        Ok(res.unwrap_or(false))
+    }
+
+    #[pyo3(signature = (timeout_seconds=5.0))]
+    fn cancel(&mut self, timeout_seconds: f64) -> PyResult<bool> {
+        if let Some(err) = self.inner.check_error() {
+            return Err(PyErr::new::<pyo3::exceptions::PyIOError, _>(err));
+        }
+
+        let res = self
+            .inner
+            .cancel(std::time::Duration::from_secs_f64(timeout_seconds))
+            .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))?;
+        Ok(res.unwrap_or(false))
+    }
+
+    fn reboot(&mut self) -> PyResult<()> {
+        if let Some(err) = self.inner.check_error() {
+            return Err(PyErr::new::<pyo3::exceptions::PyIOError, _>(err));
+        }
+
+        self.inner
+            .reboot()
+            .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))?;
+        Ok(())
+    }
+
     fn is_running(&self) -> bool {
         self.inner.is_running()
     }
@@ -73,6 +216,9 @@ impl FIRMClient {
 fn firm_client(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<FIRMClient>()?;
     m.add_class::<FIRMDataPacket>()?;
+    m.add_class::<DeviceProtocol>()?;
+    m.add_class::<DeviceInfo>()?;
+    m.add_class::<DeviceConfig>()?;
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     Ok(())
 }

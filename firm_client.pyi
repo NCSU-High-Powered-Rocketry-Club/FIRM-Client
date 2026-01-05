@@ -1,8 +1,27 @@
-from typing import Type
+from typing import Type, ClassVar
 from types import TracebackType
 
+class DeviceProtocol:
+    USB: ClassVar["DeviceProtocol"]
+    UART: ClassVar["DeviceProtocol"]
+    I2C: ClassVar["DeviceProtocol"]
+    SPI: ClassVar["DeviceProtocol"]
 
-class FIRMPacket:
+class DeviceInfo:
+    firmware_version: str
+    id: int
+
+class DeviceConfig:
+    name: str
+    frequency: int
+    protocol: DeviceProtocol
+
+# ---------------------------------------------------------------
+
+FIRMResponse = dict[str, object]
+
+# RENAMED: Rust exports this as "FIRMDataPacket", so the stub must match.
+class FIRMDataPacket:
     """Represents a single FIRM packet."""
     timestamp_seconds: float
     """Timestamp in seconds since FIRM was powered on."""
@@ -37,7 +56,6 @@ class FIRMPacket:
     altitude from.
     """
 
-
 class FIRMClient:
     """Represents a client for communicating with the FIRM device.
     
@@ -55,7 +73,8 @@ class FIRMClient:
     def stop(self) -> None: ...
     """Stops the client by stopping the data reading thread and closing the serial port."""
 
-    def get_data_packets(self, block: bool = False) -> list[FIRMPacket]: ...
+    # Note: Updated return type to match the class name change above
+    def get_data_packets(self, block: bool = False) -> list[FIRMDataPacket]: ...
     """Retrieves available data packets from the FIRM device.
     
     Args:
@@ -68,6 +87,27 @@ class FIRMClient:
 
     def is_running(self) -> bool: ...
     """Return True if the client is currently running and reading data."""
+
+    def send_command_bytes(self, command_bytes: bytes) -> None: ...
+    """Sends raw command bytes to the device."""
+
+    def get_responses(self, block: bool = False) -> list[FIRMResponse]: ...
+    """Retrieves parsed command responses (as dicts)."""
+
+    def get_device_info(self, timeout_seconds: float = 5.0) -> DeviceInfo | None: ...
+    """Requests device info and waits up to timeout_seconds."""
+
+    def get_device_config(self, timeout_seconds: float = 5.0) -> DeviceConfig | None: ...
+    """Requests device configuration and waits up to timeout_seconds."""
+
+    def set_device_config(self, name: str, frequency: int, protocol: DeviceProtocol, timeout_seconds: float = 5.0) -> bool: ...
+    """Sets device config and waits up to timeout_seconds for acknowledgement."""
+
+    def cancel(self, timeout_seconds: float = 5.0) -> bool: ...
+    """Sends cancel and waits up to timeout_seconds for acknowledgement."""
+
+    def reboot(self) -> None: ...
+    """Sends reboot command."""
 
     def __enter__(self) -> "FIRMClient": ...
     """Context manager which simply calls .start()"""

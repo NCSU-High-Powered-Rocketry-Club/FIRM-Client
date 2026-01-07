@@ -1,17 +1,54 @@
-use firm_core::data_parser::{FIRMPacket, SerialParser};
+use firm_core::commands::FIRMCommand;
+use firm_core::data_parser::SerialParser;
+use firm_core::firm_packets::{DeviceConfig, DeviceProtocol};
 use wasm_bindgen::prelude::*;
-use firm_core::command_sender::FirmCommand;
 
-#[wasm_bindgen(js_name = JSFIRMParser)]
-pub struct JSFIRMParser {
+#[wasm_bindgen]
+pub struct FIRMCommandBuilder;
+
+#[wasm_bindgen]
+impl FIRMCommandBuilder {
+    pub fn build_get_device_info() -> Vec<u8> {
+        FIRMCommand::GetDeviceInfo.to_bytes()
+    }
+
+    pub fn build_get_device_config() -> Vec<u8> {
+        FIRMCommand::GetDeviceConfig.to_bytes()
+    }
+
+    pub fn build_set_device_config(
+        name: String,
+        frequency: u16,
+        protocol: DeviceProtocol,
+    ) -> Vec<u8> {
+        let config = DeviceConfig {
+            name,
+            frequency,
+            protocol,
+        };
+
+        FIRMCommand::SetDeviceConfig(config).to_bytes()
+    }
+
+    pub fn build_cancel() -> Vec<u8> {
+        FIRMCommand::Cancel.to_bytes()
+    }
+
+    pub fn build_reboot() -> Vec<u8> {
+        FIRMCommand::Reboot.to_bytes()
+    }
+}
+
+#[wasm_bindgen(js_name = FIRMDataParser)]
+pub struct FIRMDataParser {
     inner: SerialParser,
 }
 
-#[wasm_bindgen(js_class = JSFIRMParser)]
-impl JSFIRMParser {
+#[wasm_bindgen(js_class = FIRMDataParser)]
+impl FIRMDataParser {
     #[wasm_bindgen(constructor)]
-    pub fn new() -> JSFIRMParser {
-        JSFIRMParser {
+    pub fn new() -> FIRMDataParser {
+        FIRMDataParser {
             inner: SerialParser::new(),
         }
     }
@@ -22,45 +59,18 @@ impl JSFIRMParser {
     }
 
     #[wasm_bindgen]
-    pub fn get_packet(&mut self) -> Option<FIRMPacket> {
-        self.inner.get_packet()
-    }
-}
-
-/// Helper class to construct FIRM commands.
-#[wasm_bindgen]
-pub struct FirmCommandBuilder;
-
-#[wasm_bindgen]
-impl FirmCommandBuilder {
-    /// Creates a Ping command.
-    ///
-    /// # Returns
-    ///
-    /// * `Uint8Array` - The serialized command bytes.
-    pub fn ping() -> Vec<u8> {
-        FirmCommand::Ping.to_bytes()
+    pub fn get_packet(&mut self) -> JsValue {
+        match self.inner.get_data_packet() {
+            Some(packet) => serde_wasm_bindgen::to_value(&packet).unwrap(),
+            None => JsValue::NULL,
+        }
     }
 
-    /// Creates a Reset command.
-    ///
-    /// # Returns
-    ///
-    /// * `Uint8Array` - The serialized command bytes.
-    pub fn reset() -> Vec<u8> {
-        FirmCommand::Reset.to_bytes()
-    }
-
-    /// Creates a SetRate command.
-    ///
-    /// # Arguments
-    ///
-    /// * `rate_hz` - The desired rate in Hertz.
-    ///
-    /// # Returns
-    ///
-    /// * `Uint8Array` - The serialized command bytes.
-    pub fn set_rate(rate_hz: u32) -> Vec<u8> {
-        FirmCommand::SetRate(rate_hz).to_bytes()
+    #[wasm_bindgen]
+    pub fn get_response(&mut self) -> JsValue {
+        match self.inner.get_response_packet() {
+            Some(response) => serde_wasm_bindgen::to_value(&response).unwrap(),
+            None => JsValue::NULL,
+        }
     }
 }

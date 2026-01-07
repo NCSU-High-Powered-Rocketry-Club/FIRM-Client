@@ -26,12 +26,12 @@ fn main() {
         while let Ok(packet) = client.get_data_packets(Some(Duration::from_millis(100))) {
             println!("{:#?}", packet);
         }
-        
+
         if let Some(err) = client.check_error() {
             eprintln!("Error: {}", err);
             break;
         }
-        
+
         thread::sleep(Duration::from_millis(10));
     }
 }

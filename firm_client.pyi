@@ -1,9 +1,28 @@
 from typing import Type
 from types import TracebackType
+from enum import IntEnum
 
 
-class FIRMPacket:
+class DeviceProtocol(IntEnum):
+    USB: int
+    UART: int
+    I2C: int
+    SPI: int
+
+class DeviceInfo:
+    firmware_version: str
+    id: int
+
+class DeviceConfig:
+    name: str
+    frequency: int
+    protocol: DeviceProtocol
+
+FIRMResponse = dict[str, object]
+
+class FIRMDataPacket:
     """Represents a single FIRM packet."""
+
     timestamp_seconds: float
     """Timestamp in seconds since FIRM was powered on."""
     accel_x_meters_per_s2: float
@@ -37,25 +56,25 @@ class FIRMPacket:
     altitude from.
     """
 
-
 class FIRMClient:
     """Represents a client for communicating with the FIRM device.
-    
+
     Args:
         port_name (str): The name of the serial port to connect to.
         baud_rate (int): The baud rate for the serial connection. This must match the baud rate set
             on FIRM. Default is 2,000,000.
         timeout (float): The timeout for serial read operations in seconds. Default is 0.1.
     """
-    def __init__(self, port_name: str, baud_rate: int = 2_000_000, timeout: float = 0.1) -> None: ...
-
+    def __init__(
+        self, port_name: str, baud_rate: int = 2_000_000, timeout: float = 0.1
+    ) -> None: ...
     def start(self) -> None: ...
     """Starts the client by starting a thread to read data from the FIRM device."""
 
     def stop(self) -> None: ...
     """Stops the client by stopping the data reading thread and closing the serial port."""
 
-    def get_data_packets(self, block: bool = False) -> list[FIRMPacket]: ...
+    def get_data_packets(self, block: bool = False) -> list[FIRMDataPacket]: ...
     """Retrieves available data packets from the FIRM device.
     
     Args:
@@ -68,6 +87,35 @@ class FIRMClient:
 
     def is_running(self) -> bool: ...
     """Return True if the client is currently running and reading data."""
+
+    def send_command_bytes(self, command_bytes: bytes) -> None: ...
+    """Sends raw command bytes to the device."""
+
+    def get_responses(self, block: bool = False) -> list[FIRMResponse]: ...
+    """Retrieves parsed command responses (as dicts)."""
+
+    def get_device_info(self, timeout_seconds: float = 5.0) -> DeviceInfo | None: ...
+    """Requests device info and waits up to timeout_seconds."""
+
+    def get_device_config(
+        self, timeout_seconds: float = 5.0
+    ) -> DeviceConfig | None: ...
+    """Requests device configuration and waits up to timeout_seconds."""
+
+    def set_device_config(
+        self,
+        name: str,
+        frequency: int,
+        protocol: DeviceProtocol,
+        timeout_seconds: float = 5.0,
+    ) -> bool: ...
+    """Sets device config and waits up to timeout_seconds for acknowledgement."""
+
+    def cancel(self, timeout_seconds: float = 5.0) -> bool: ...
+    """Sends cancel and waits up to timeout_seconds for acknowledgement."""
+
+    def reboot(self) -> None: ...
+    """Sends reboot command."""
 
     def __enter__(self) -> "FIRMClient": ...
     """Context manager which simply calls .start()"""

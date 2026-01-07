@@ -1,6 +1,6 @@
 {
   "name": "firm-client",
-  "version": "0.1.5",
+  "version": "0.1.9",
   "description": "Web Serial + Rust WASM client reading data packets from FIRM",
   "license": "MIT",
   "type": "module",
@@ -8,22 +8,24 @@
   "module": "firm_typescript/typescript/dist/index.js",
   "types": "firm_typescript/typescript/dist/index.d.ts",
   "files": [
-    "firm_typescript/typescript/dist",
+    "firm_typescript/typescript/dist/**/*",
     "firm_typescript/pkg/firm_client.js",
     "firm_typescript/pkg/firm_client_bg.js",
     "firm_typescript/pkg/firm_client_bg.wasm",
     "firm_typescript/pkg/firm_client.d.ts",
+    "firm_typescript/pkg/firm_client_bg.wasm.d.ts",
     "LICENSE",
     "README.md"
   ],
   "scripts": {
     "clean": "rimraf firm_typescript/pkg firm_typescript/typescript/dist",
-    "build:wasm": "cd firm_typescript && wasm-pack build --target web --out-dir pkg --out-name firm_client --no-default-features --features wasm",
+    "build:wasm": "cd firm_typescript && wasm-pack build --target web --out-dir pkg --out-name firm_client --no-default-features --features wasm && cd .. && rimraf firm_typescript/pkg/package.json firm_typescript/pkg/.gitignore",
     "build:ts": "cd firm_typescript/typescript && tsc",
-    "build": "npm run build:wasm && npm run build:ts",
+    "build": "npm run clean && npm run build:wasm && npm run build:ts",
     "prepare": "npm run build",
     "lint": "eslint .",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "test-pack": "node firm_typescript/examples/verify_pack.js"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.2",

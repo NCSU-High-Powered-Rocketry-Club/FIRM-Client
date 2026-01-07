@@ -1,11 +1,13 @@
-from typing import Type, ClassVar
+from typing import Type
 from types import TracebackType
+from enum import IntEnum
 
-class DeviceProtocol:
-    USB: ClassVar["DeviceProtocol"]
-    UART: ClassVar["DeviceProtocol"]
-    I2C: ClassVar["DeviceProtocol"]
-    SPI: ClassVar["DeviceProtocol"]
+
+class DeviceProtocol(IntEnum):
+    USB: int
+    UART: int
+    I2C: int
+    SPI: int
 
 class DeviceInfo:
     firmware_version: str
@@ -16,11 +18,8 @@ class DeviceConfig:
     frequency: int
     protocol: DeviceProtocol
 
-# ---------------------------------------------------------------
-
 FIRMResponse = dict[str, object]
 
-# RENAMED: Rust exports this as "FIRMDataPacket", so the stub must match.
 class FIRMDataPacket:
     """Represents a single FIRM packet."""
 
@@ -75,7 +74,6 @@ class FIRMClient:
     def stop(self) -> None: ...
     """Stops the client by stopping the data reading thread and closing the serial port."""
 
-    # Note: Updated return type to match the class name change above
     def get_data_packets(self, block: bool = False) -> list[FIRMDataPacket]: ...
     """Retrieves available data packets from the FIRM device.
     

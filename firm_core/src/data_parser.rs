@@ -3,7 +3,6 @@ use crate::utils::crc16_ccitt;
 use alloc::collections::VecDeque;
 use alloc::vec::Vec;
 
-
 /// Start byte sequence for packet identification. This is in little-endian format.
 const DATA_PACKET_START_BYTES: [u8; 2] = [0x5A, 0xA5];
 /// Start byte sequence for response identification. This is in little-endian format.
@@ -35,13 +34,13 @@ pub struct SerialParser {
 
 impl SerialParser {
     /// Creates a new empty `SerialParser`.
-    /// 
+    ///
     /// # Arguments
-    /// 
+    ///
     /// - *None* - The parser starts with no buffered bytes or queued packets.
-    /// 
+    ///
     /// # Returns
-    /// 
+    ///
     /// - `Self` - A new parser instance with empty internal state.
     pub fn new() -> Self {
         SerialParser {
@@ -55,16 +54,16 @@ impl SerialParser {
     /// responses. How this function works is that it appends incoming bytes to an internal
     /// buffer, then scans through that buffer looking for data packets or responses. When
     /// it finds one, it extracts and decodes it and then queues it for later retrieval.
-    /// 
+    ///
     /// Additionally, command responses have the same amount of bytes as data packets, so
     /// they follow the same length and CRC rules. However, they have different start bytes.
-    /// 
+    ///
     /// # Arguments
-    /// 
+    ///
     /// - `bytes` (`&[u8]`) - Incoming raw bytes read from the FIRM serial stream.
-    /// 
+    ///
     /// # Returns
-    /// 
+    ///
     /// - `()` - No direct return; parsed packets are stored internally for `get_packet`.
     pub fn parse_bytes(&mut self, bytes: &[u8]) {
         // Append new bytes onto the rolling buffer.
@@ -140,13 +139,13 @@ impl SerialParser {
     }
 
     /// Pops the next parsed packet from the internal queue, if available.
-    /// 
+    ///
     /// # Arguments
-    /// 
+    ///
     /// - *None* - Operates on the parser's existing queued packets.
-    /// 
+    ///
     /// # Returns
-    /// 
+    ///
     /// - `Option<FIRMDataPacket>` - `Some(packet)` if a packet is available, otherwise `None`.
     pub fn get_data_packet(&mut self) -> Option<FIRMDataPacket> {
         self.parsed_data_packets.pop_front()
@@ -155,11 +154,11 @@ impl SerialParser {
     /// Pops the next parsed command response from the internal queue, if available.
     ///
     /// # Arguments
-    /// 
+    ///
     /// - *None* - Operates on the parser's existing queued responses.
-    /// 
+    ///
     /// # Returns
-    /// 
+    ///
     /// - `Option<FIRMResponsePacket>` - `Some(response)` if a response is available, otherwise `None`.
     pub fn get_response_packet(&mut self) -> Option<FIRMResponsePacket> {
         self.parsed_response_packets.pop_front()

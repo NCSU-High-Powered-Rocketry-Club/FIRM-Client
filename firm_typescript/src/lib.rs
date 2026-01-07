@@ -1,5 +1,5 @@
-use firm_core::data_parser::SerialParser;
 use firm_core::commands::FIRMCommand;
+use firm_core::data_parser::SerialParser;
 use firm_core::firm_packets::{DeviceConfig, DeviceProtocol};
 use wasm_bindgen::prelude::*;
 
@@ -16,13 +16,17 @@ impl FIRMCommandBuilder {
         FIRMCommand::GetDeviceConfig.to_bytes()
     }
 
-    pub fn build_set_device_config(name: String, frequency: u16, protocol: DeviceProtocol) -> Vec<u8> { 
+    pub fn build_set_device_config(
+        name: String,
+        frequency: u16,
+        protocol: DeviceProtocol,
+    ) -> Vec<u8> {
         let config = DeviceConfig {
             name,
             frequency,
             protocol,
         };
-        
+
         FIRMCommand::SetDeviceConfig(config).to_bytes()
     }
 

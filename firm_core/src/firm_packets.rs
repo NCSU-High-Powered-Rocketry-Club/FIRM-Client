@@ -1,11 +1,12 @@
-use serde::{Deserialize, Serialize};
 use crate::utils::bytes_to_str;
+use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
 #[cfg(feature = "wasm")]
 use wasm_bindgen::prelude::*;
 
+/// Represents the communication protocol used by the FIRM device.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq, eq_int))]
 #[cfg_attr(feature = "wasm", wasm_bindgen)]
@@ -13,14 +14,16 @@ pub enum DeviceProtocol {
     USB = 1,
     UART = 2,
     I2C = 3,
-    SPI = 4
+    SPI = 4,
 }
 
+/// Represents the information of the FIRM device.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "python", pyclass(get_all, set_all))]
 pub struct DeviceInfo {
     pub firmware_version: String, // Max 8 characters
-    #[cfg_attr(feature = "wasm", serde(serialize_with = "serialize_u64_as_string"))] // We need this because JS can't handle u64
+    #[cfg_attr(feature = "wasm", serde(serialize_with = "serialize_u64_as_string"))]
+    // We need this because JS can't handle u64
     pub id: u64,
 }
 
@@ -175,7 +178,10 @@ impl FIRMResponsePacket {
                 let id = u64::from_le_bytes(id_bytes.try_into().unwrap());
                 let firmware_version = bytes_to_str(firmware_version_bytes);
 
-                let info = DeviceInfo { id, firmware_version };
+                let info = DeviceInfo {
+                    id,
+                    firmware_version,
+                };
                 FIRMResponsePacket::GetDeviceInfo(info)
             }
             DEVICE_CONFIG_MARKER => {

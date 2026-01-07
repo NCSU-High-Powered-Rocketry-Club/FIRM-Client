@@ -1,22 +1,24 @@
-use firm_core::firm_packets::{DeviceConfig, DeviceInfo, DeviceProtocol, FIRMDataPacket, FIRMResponsePacket};
-use pyo3::prelude::*;
+use firm_core::firm_packets::{
+    DeviceConfig, DeviceInfo, DeviceProtocol, FIRMDataPacket, FIRMResponsePacket,
+};
 use firm_rust::FIRMClient as RustFirmClient;
+use pyo3::prelude::*;
 use pyo3::types::PyDict;
 
 #[pyclass(unsendable)]
 struct FIRMClient {
     inner: RustFirmClient,
-    timeout: f64
+    timeout: f64,
 }
 
 fn response_to_pydict(py: Python<'_>, res: &FIRMResponsePacket) -> Py<PyAny> {
     let outer = PyDict::new(py);
     match res {
         FIRMResponsePacket::GetDeviceInfo(info) => {
-            let _ = outer.set_item("GetDeviceInfo", info.clone()); 
+            let _ = outer.set_item("GetDeviceInfo", info.clone());
         }
         FIRMResponsePacket::GetDeviceConfig(cfg) => {
-            let _ = outer.set_item("GetDeviceConfig", cfg.clone()); 
+            let _ = outer.set_item("GetDeviceConfig", cfg.clone());
         }
         FIRMResponsePacket::SetDeviceConfig(ok) => {
             let _ = outer.set_item("SetDeviceConfig", *ok);
@@ -40,7 +42,10 @@ impl FIRMClient {
         let timeout_val = timeout.unwrap_or(0.1);
         let client = RustFirmClient::new(port_name, baudrate, timeout_val)
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyIOError, _>(e.to_string()))?;
-        Ok(FIRMClient { inner: client , timeout: timeout_val })
+        Ok(FIRMClient {
+            inner: client,
+            timeout: timeout_val,
+        })
     }
 
     fn start(&mut self) -> PyResult<()> {
@@ -64,8 +69,10 @@ impl FIRMClient {
             None
         };
         // Get all packets, and return early if there's an error
-        let packets = self.inner.get_data_packets(timeout)
-                        .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))?;
+        let packets = self
+            .inner
+            .get_data_packets(timeout)
+            .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))?;
         Ok(packets)
     }
 
@@ -79,30 +86,6 @@ impl FIRMClient {
             .send_command_bytes(command_bytes)
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyIOError, _>(e.to_string()))?;
         Ok(())
-    }
-
-    /// Retrieves parsed responses. If block=True, waits up to the client's timeout for at least one.
-    #[pyo3(signature = (block=false))]
-    fn get_responses(&mut self, py: Python<'_>, block: bool) -> PyResult<Vec<Py<PyAny>>> {
-        if let Some(err) = self.inner.check_error() {
-            return Err(PyErr::new::<pyo3::exceptions::PyIOError, _>(err));
-        }
-
-        let timeout = if block {
-            Some(std::time::Duration::from_secs_f64(self.timeout))
-        } else {
-            None
-        };
-
-        let responses = self
-            .inner
-            .get_response_packets(timeout)
-            .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))?;
-
-        Ok(responses
-            .iter()
-            .map(|r| response_to_pydict(py, r))
-            .collect())
     }
 
     #[pyo3(signature = (timeout_seconds=5.0))]
@@ -119,7 +102,7 @@ impl FIRMClient {
     }
 
     #[pyo3(signature = (timeout_seconds=5.0))]
-fn get_device_config(&mut self, timeout_seconds: f64) -> PyResult<Option<DeviceConfig>> {
+    fn get_device_config(&mut self, timeout_seconds: f64) -> PyResult<Option<DeviceConfig>> {
         if let Some(err) = self.inner.check_error() {
             return Err(PyErr::new::<pyo3::exceptions::PyIOError, _>(err));
         }

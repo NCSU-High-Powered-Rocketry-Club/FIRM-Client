@@ -1,6 +1,9 @@
 use alloc::vec::Vec;
 
-use crate::{firm_packets::*, utils::{crc16_ccitt, str_to_bytes}};
+use crate::{
+    firm_packets::*,
+    utils::{crc16_ccitt, str_to_bytes},
+};
 
 const COMMAND_START_BYTES: [u8; 2] = [0x55, 0xAA];
 const PADDING_BYTE: u8 = 0x00;
@@ -18,15 +21,15 @@ impl FIRMCommand {
     /// Serializes the command into a byte vector ready to be sent over serial. This
     /// makes the command in the following format:
     /// [START_MARKER][COMMAND_PAYLOAD][PADDING][CRC]
-    /// 
+    ///
     /// # Arguments
-    /// 
+    ///
     /// - `&self` (`undefined`) - The command to be serialized.
-    /// 
+    ///
     /// # Returns
-    /// 
+    ///
     /// - `Vec<u8>` - The command serialized into bytes ready to be sent over serial.
-    /// 
+    ///
     pub fn to_bytes(&self) -> Vec<u8> {
         let mut command_bytes = Vec::with_capacity(COMMAND_LENGTH as usize);
 
@@ -37,10 +40,10 @@ impl FIRMCommand {
         match self {
             FIRMCommand::GetDeviceInfo => {
                 command_bytes.push(DEVICE_INFO_MARKER);
-            },
+            }
             FIRMCommand::GetDeviceConfig => {
-                command_bytes.push(DEVICE_CONFIG_MARKER);   
-            },
+                command_bytes.push(DEVICE_CONFIG_MARKER);
+            }
             FIRMCommand::SetDeviceConfig(config) => {
                 // The device config command payload is in the following format:
                 // [SET_DEVICE_CONFIG_MARKER][NAME (32 bytes)][FREQUENCY (2 bytes)][PROTOCOL (1 byte)]]
@@ -57,13 +60,13 @@ impl FIRMCommand {
                     DeviceProtocol::I2C => command_bytes.push(0x03),
                     DeviceProtocol::SPI => command_bytes.push(0x04),
                 }
-            },
+            }
             FIRMCommand::Cancel => {
                 command_bytes.push(CANCEL_MARKER);
-            },
+            }
             FIRMCommand::Reboot => {
                 command_bytes.push(REBOOT_MARKER);
-            },
+            }
         }
 
         // Now add padding bytes to reach COMMAND_LENGTH - CRC size
@@ -74,9 +77,7 @@ impl FIRMCommand {
         // Finally, compute and append CRC
         let data_crc = crc16_ccitt(&command_bytes);
         command_bytes.extend_from_slice(&data_crc.to_le_bytes());
-        
+
         command_bytes
     }
 }
-
-

@@ -1,12 +1,14 @@
 use anyhow::Result;
-use firm_core::commands::FIRMCommand;
+use firm_core::client_packets::FIRMCommandPacket;
 use firm_core::data_parser::SerialParser;
 use firm_core::firm_packets::{
     DeviceConfig, DeviceInfo, DeviceProtocol, FIRMDataPacket, FIRMResponsePacket,
 };
+use firm_core::mock::{LOG_HEADER_SIZE, MockParser};
 use serialport::SerialPort;
 use std::collections::VecDeque;
 use std::io::{self, Read, Write};
+use std::fs::File;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, channel};
@@ -243,7 +245,7 @@ impl FIRMClient {
     }
 
     /// Sends a high-level command to the device.
-    pub fn send_command(&self, command: FIRMCommand) -> Result<()> {
+    pub fn send_command(&self, command: FIRMCommandPacket) -> Result<()> {
         self.send_command_bytes(command.to_bytes())
     }
 
@@ -332,7 +334,7 @@ impl FIRMClient {
 
     /// Requests device info and waits for the response.
     pub fn get_device_info(&mut self, timeout: Duration) -> Result<Option<DeviceInfo>> {
-        self.send_command(FIRMCommand::GetDeviceInfo)?;
+        self.send_command(FIRMCommandPacket::GetDeviceInfo)?;
         self.wait_for_matching_response(timeout, |res| match res {
             FIRMResponsePacket::GetDeviceInfo(info) => Some(info.clone()),
             _ => None,
@@ -341,7 +343,7 @@ impl FIRMClient {
 
     /// Requests device configuration and waits for the response.
     pub fn get_device_config(&mut self, timeout: Duration) -> Result<Option<DeviceConfig>> {
-        self.send_command(FIRMCommand::GetDeviceConfig)?;
+        self.send_command(FIRMCommandPacket::GetDeviceConfig)?;
         self.wait_for_matching_response(timeout, |res| match res {
             FIRMResponsePacket::GetDeviceConfig(cfg) => Some(cfg.clone()),
             _ => None,
@@ -361,16 +363,101 @@ impl FIRMClient {
             frequency,
             protocol,
         };
-        self.send_command(FIRMCommand::SetDeviceConfig(config))?;
+        self.send_command(FIRMCommandPacket::SetDeviceConfig(config))?;
         self.wait_for_matching_response(timeout, |res| match res {
             FIRMResponsePacket::SetDeviceConfig(ok) => Some(*ok),
             _ => None,
         })
     }
 
+    /// Sends a mock command, waits for acknowledgement, then starts sending mock data packets.
+    pub fn mock(&mut self, timeout: Duration) -> Result<Option<bool>> {
+        self.send_command(FIRMCommandPacket::Mock)?;
+        self.wait_for_matching_response(timeout, |res| match res {
+            FIRMResponsePacket::Mock(ok) => Some(*ok),
+            _ => None,
+        })
+    }
+
+    /// Starts mock mode and requires an acknowledgement.
+    ///
+    /// Returns `Ok(())` only if the device explicitly acknowledges mock mode.
+    pub fn start_mock_mode(&mut self, timeout: Duration) -> Result<()> {
+        match self.mock(timeout)? {
+            Some(true) => Ok(()),
+            Some(false) => Err(anyhow::anyhow!("Device rejected mock mode")),
+            None => Err(anyhow::anyhow!("Timed out waiting for mock acknowledgement")),
+        }
+    }
+
+    /// Streams mock telemetry packets synthesized from a `.bin` log file.
+    ///
+    /// This will:
+    /// 1) Send the mock command and wait for ack
+    /// 2) Read the log header (`firm_core::mock::LOG_HEADER_SIZE` bytes)
+    /// 3) Parse the remaining file bytes as log records
+    /// 4) Send mock telemetry frames (`FIRMMockPacket::to_bytes()`) to the device
+    ///
+    /// If `realtime` is true, the stream is paced based on the log timestamps. `speed` is a
+    /// multiplier (1.0 = real-time, 2.0 = 2x faster, 0.5 = half-speed).
+    pub fn stream_mock_log_file(
+        &mut self,
+        log_path: &str,
+        start_timeout: Duration,
+        realtime: bool,
+        speed: f64,
+        chunk_size: usize,
+    ) -> Result<usize> {
+        if speed <= 0.0 {
+            return Err(anyhow::anyhow!("speed must be > 0"));
+        }
+
+        self.start_mock_mode(start_timeout)?;
+
+        let mut file = File::open(log_path)?;
+        let mut header = vec![0u8; LOG_HEADER_SIZE];
+        file.read_exact(&mut header)?;
+
+        let mut parser = MockParser::new();
+        parser.read_header(&header);
+
+        let mut buf = vec![0u8; chunk_size.max(1)];
+        let mut packets_sent = 0usize;
+
+        loop {
+            let n = file.read(&mut buf)?;
+            if n == 0 {
+                break;
+            }
+
+            parser.parse_bytes(&buf[..n]);
+
+            while let Some((pkt, delay_seconds)) = parser.get_packet_with_delay() {
+                if realtime && delay_seconds > 0.0 {
+                    thread::sleep(Duration::from_secs_f64(delay_seconds / speed));
+                }
+
+                // Mock packets are raw framed data packets; send them as raw bytes.
+                self.send_command_bytes(pkt.to_bytes())?;
+                packets_sent += 1;
+            }
+        }
+
+        // Drain any remaining packets buffered by the parser.
+        while let Some((pkt, delay_seconds)) = parser.get_packet_with_delay() {
+            if realtime && delay_seconds > 0.0 {
+                thread::sleep(Duration::from_secs_f64(delay_seconds / speed));
+            }
+            self.send_command_bytes(pkt.to_bytes())?;
+            packets_sent += 1;
+        }
+
+        Ok(packets_sent)
+    }
+
     /// Sends a cancel command and waits for acknowledgement.
     pub fn cancel(&mut self, timeout: Duration) -> Result<Option<bool>> {
-        self.send_command(FIRMCommand::Cancel)?;
+        self.send_command(FIRMCommandPacket::Cancel)?;
         self.wait_for_matching_response(timeout, |res| match res {
             FIRMResponsePacket::Cancel(ok) => Some(*ok),
             _ => None,
@@ -379,7 +466,7 @@ impl FIRMClient {
 
     /// Sends a reboot command.
     pub fn reboot(&self) -> Result<()> {
-        self.send_command(FIRMCommand::Reboot)
+        self.send_command(FIRMCommandPacket::Reboot)
     }
 
     /// Checks for any errors that have occurred in the background thread.

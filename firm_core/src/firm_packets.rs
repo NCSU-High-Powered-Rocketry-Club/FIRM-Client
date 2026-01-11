@@ -202,6 +202,7 @@ pub enum FIRMResponsePacket {
     GetDeviceInfo(DeviceInfo),
     GetDeviceConfig(DeviceConfig),
     SetDeviceConfig(bool),
+    Mock(bool),
     Cancel(bool),
     Error(String),
 }
@@ -254,6 +255,10 @@ impl FIRMResponsePacket {
             SET_DEVICE_CONFIG_MARKER => {
                 let success = data[1] == 1;
                 FIRMResponsePacket::SetDeviceConfig(success)
+            }
+            MOCK_MARKER => {
+                let success = data[1] == 1;
+                FIRMResponsePacket::Mock(success)
             }
             CANCEL_MARKER => {
                 let acknowledgement = data[1] == 1;

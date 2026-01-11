@@ -25,6 +25,7 @@ pub mod command_constants {
     pub const DEVICE_CONFIG_MARKER: u8 = 0x02;
     pub const SET_DEVICE_CONFIG_MARKER: u8 = 0x03;
     pub const REBOOT_MARKER: u8 = 0x04;
+    pub const MOCK_MARKER: u8 = 0x05;
     pub const CANCEL_MARKER: u8 = 0xFF;
     pub const COMMAND_LENGTH: usize = 64;
     pub const CRC_LENGTH: usize = 2;

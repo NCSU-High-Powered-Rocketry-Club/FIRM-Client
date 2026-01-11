@@ -1,26 +1,8 @@
 use crate::firm_packets::{FIRMDataPacket, FIRMResponsePacket};
 use crate::utils::crc16_ccitt;
+use crate::constants::data_parser_constants::*;
 use alloc::collections::VecDeque;
 use alloc::vec::Vec;
-
-/// Start byte sequence for packet identification. This is in little-endian format.
-const DATA_PACKET_START_BYTES: [u8; 2] = [0x5A, 0xA5];
-/// Start byte sequence for response identification. This is in little-endian format.
-const RESPONSE_PACKET_START_BYTES: [u8; 2] = [0xA5, 0x5A];
-/// Size of the packet header in bytes.
-const HEADER_SIZE: usize = core::mem::size_of_val(&DATA_PACKET_START_BYTES);
-/// Size of the length field in bytes.
-const LENGTH_FIELD_SIZE: usize = 2;
-/// Size of the padding buffer in bytes.
-const PADDING_SIZE: usize = 4;
-/// Length of the payload in bytes.
-const PAYLOAD_LENGTH: usize = 56;
-/// Size of the CRC field in bytes.
-const CRC_SIZE: usize = 2;
-
-/// Total size of a full data packet in bytes.
-const FULL_PACKET_SIZE: usize =
-    HEADER_SIZE + LENGTH_FIELD_SIZE + PADDING_SIZE + PAYLOAD_LENGTH + CRC_SIZE;
 
 /// Streaming parser that accumulates serial bytes and produces `FIRMPacket` values.
 pub struct SerialParser {
@@ -97,13 +79,7 @@ impl SerialParser {
             // We know that length_bytes is 2 bytes long
             let length = u16::from_le_bytes([length_bytes[0], length_bytes[1]]);
 
-            // Reject packets with an unexpected payload length.
-            if length as usize != PAYLOAD_LENGTH {
-                pos = length_start;
-                continue;
-            }
-
-            let payload_start = length_start + LENGTH_FIELD_SIZE + PADDING_SIZE;
+            let payload_start = length_start + LENGTH_FIELD_SIZE + FIRST_PADDING_SIZE;
             let crc_start = payload_start + length as usize;
 
             // Compute CRC over header + length + padding + payload.
@@ -131,10 +107,10 @@ impl SerialParser {
             }
 
             // Advance past this full packet and continue scanning.
-            pos = crc_start + CRC_SIZE;
+            pos = crc_start + CRC_SIZE + SECOND_PADDING_SIZE;
         }
 
-        // Drop all bytes that were processed; keep only the tail for next call.
+        // Drop all bytes that were processed, we keep only the tail for next call.
         self.serial_bytes = self.serial_bytes[pos..].to_vec();
     }
 

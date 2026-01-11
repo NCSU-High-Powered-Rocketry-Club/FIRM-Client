@@ -108,7 +108,7 @@ with FIRMClient("/dev/ttyUSB0", baud_rate=2_000_000, timeout=0.1) as client:
     while True:
         packets = client.get_data_packets()
         for packet in packets:
-            print(packet.timestamp_seconds, packet.accel_x_meters_per_s2)
+            print(packet.timestamp_seconds, packet.raw_acceleration_x_gs)
 ```
 
 ### Web (TypeScript)

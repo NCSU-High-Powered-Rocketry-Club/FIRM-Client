@@ -3,34 +3,11 @@ use firm_core::firm_packets::{
 };
 use firm_rust::FIRMClient as RustFirmClient;
 use pyo3::prelude::*;
-use pyo3::types::PyDict;
 
 #[pyclass(unsendable)]
 struct FIRMClient {
     inner: RustFirmClient,
     timeout: f64,
-}
-
-fn response_to_pydict(py: Python<'_>, res: &FIRMResponsePacket) -> Py<PyAny> {
-    let outer = PyDict::new(py);
-    match res {
-        FIRMResponsePacket::GetDeviceInfo(info) => {
-            let _ = outer.set_item("GetDeviceInfo", info.clone());
-        }
-        FIRMResponsePacket::GetDeviceConfig(cfg) => {
-            let _ = outer.set_item("GetDeviceConfig", cfg.clone());
-        }
-        FIRMResponsePacket::SetDeviceConfig(ok) => {
-            let _ = outer.set_item("SetDeviceConfig", *ok);
-        }
-        FIRMResponsePacket::Cancel(ok) => {
-            let _ = outer.set_item("Cancel", *ok);
-        }
-        FIRMResponsePacket::Error(msg) => {
-            let _ = outer.set_item("Error", msg.clone());
-        }
-    }
-    outer.into()
 }
 
 #[pymethods]
@@ -165,10 +142,6 @@ impl FIRMClient {
 
     fn is_running(&self) -> bool {
         self.inner.is_running()
-    }
-
-    fn zero_out_pressure_altitude(&mut self) {
-        self.inner.zero_out_pressure_altitude();
     }
 
     fn __enter__(slf: Bound<'_, Self>) -> PyResult<Bound<'_, Self>> {

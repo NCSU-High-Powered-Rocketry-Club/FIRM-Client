@@ -4,9 +4,7 @@ use crate::{
     firm_packets::*,
     utils::{crc16_ccitt, str_to_bytes},
 };
-
-const COMMAND_START_BYTES: [u8; 2] = [0x55, 0xAA];
-const PADDING_BYTE: u8 = 0x00;
+use crate::constants::command_constants::*;
 
 /// Represents a command that can be sent to the FIRM hardware.
 pub enum FIRMCommand {
@@ -24,7 +22,7 @@ impl FIRMCommand {
     ///
     /// # Arguments
     ///
-    /// - `&self` (`undefined`) - The command to be serialized.
+    /// - `&self` The command to be serialized.
     ///
     /// # Returns
     ///

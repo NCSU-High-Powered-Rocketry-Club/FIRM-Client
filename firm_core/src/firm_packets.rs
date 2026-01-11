@@ -1,4 +1,5 @@
 use crate::utils::bytes_to_str;
+use crate::constants::command_constants::*;
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "python")]
@@ -46,43 +47,47 @@ pub struct DeviceConfig {
     pub protocol: DeviceProtocol,
 }
 
-pub const DEVICE_INFO_MARKER: u8 = 0x01;
-pub const DEVICE_CONFIG_MARKER: u8 = 0x02;
-pub const SET_DEVICE_CONFIG_MARKER: u8 = 0x03;
-pub const REBOOT_MARKER: u8 = 0x04;
-pub const CANCEL_MARKER: u8 = 0xFF;
-
-pub const COMMAND_LENGTH: u8 = 64;
-pub const CRC_LENGTH: usize = 2;
-pub const DEVICE_NAME_LENGTH: usize = 32;
-pub const DEVICE_ID_LENGTH: usize = 8;
-pub const FIRMWARE_VERSION_LENGTH: usize = 8;
-pub const FREQUENCY_LENGTH: usize = 2;
-
-const GRAVITY_METERS_PER_SECONDS_SQUARED: f32 = 9.80665;
-
 /// Represents a decoded FIRM telemetry packet with converted physical units.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "python", pyo3::pyclass(get_all, freelist = 20, frozen))]
 pub struct FIRMDataPacket {
     pub timestamp_seconds: f64,
 
-    pub accel_x_meters_per_s2: f32,
-    pub accel_y_meters_per_s2: f32,
-    pub accel_z_meters_per_s2: f32,
-
-    pub gyro_x_radians_per_s: f32,
-    pub gyro_y_radians_per_s: f32,
-    pub gyro_z_radians_per_s: f32,
-
-    pub pressure_pascals: f32,
     pub temperature_celsius: f32,
+    pub pressure_pascals: f32,
 
-    pub mag_x_microteslas: f32,
-    pub mag_y_microteslas: f32,
-    pub mag_z_microteslas: f32,
+    pub raw_acceleration_x_gs: f32,
+    pub raw_acceleration_y_gs: f32,
+    pub raw_acceleration_z_gs: f32,
 
-    pub pressure_altitude_meters: f32,
+    pub raw_angular_rate_x_deg_per_s: f32,
+    pub raw_angular_rate_y_deg_per_s: f32,
+    pub raw_angular_rate_z_deg_per_s: f32,
+
+    pub magnetic_field_x_microteslas: f32,
+    pub magnetic_field_y_microteslas: f32,
+    pub magnetic_field_z_microteslas: f32,
+
+    pub est_position_x_meters: f32,
+    pub est_position_y_meters: f32,
+    pub est_position_z_meters: f32,
+
+    pub est_velocity_x_meters_per_s: f32,
+    pub est_velocity_y_meters_per_s: f32,
+    pub est_velocity_z_meters_per_s: f32,
+
+    pub est_acceleration_x_gs: f32,
+    pub est_acceleration_y_gs: f32,
+    pub est_acceleration_z_gs: f32,
+
+    pub est_angular_rate_x_rad_per_s: f32,
+    pub est_angular_rate_y_rad_per_s: f32,
+    pub est_angular_rate_z_rad_per_s: f32,
+
+    pub est_quaternion_w: f32,
+    pub est_quaternion_x: f32,
+    pub est_quaternion_y: f32,
+    pub est_quaternion_z: f32,
 }
 
 impl FIRMDataPacket {
@@ -101,30 +106,6 @@ impl FIRMDataPacket {
 
         let mut idx = 0;
 
-        // Scalars.
-        let temperature_celsius: f32 = f32::from_le_bytes(four_bytes(bytes, &mut idx));
-        let pressure_pascals: f32 = f32::from_le_bytes(four_bytes(bytes, &mut idx));
-
-        // Accelerometer values originally in g, converted to m/s².
-        let accel_x_meters_per_s2: f32 =
-            f32::from_le_bytes(four_bytes(bytes, &mut idx)) * GRAVITY_METERS_PER_SECONDS_SQUARED;
-        let accel_y_meters_per_s2: f32 =
-            f32::from_le_bytes(four_bytes(bytes, &mut idx)) * GRAVITY_METERS_PER_SECONDS_SQUARED;
-        let accel_z_meters_per_s2: f32 =
-            f32::from_le_bytes(four_bytes(bytes, &mut idx)) * GRAVITY_METERS_PER_SECONDS_SQUARED;
-
-        // Gyroscope values in rad/s.
-        let gyro_x_radians_per_s: f32 = f32::from_le_bytes(four_bytes(bytes, &mut idx));
-        let gyro_y_radians_per_s: f32 = f32::from_le_bytes(four_bytes(bytes, &mut idx));
-        let gyro_z_radians_per_s: f32 = f32::from_le_bytes(four_bytes(bytes, &mut idx));
-
-        // Magnetometer values in µT.
-        let mag_x_microteslas: f32 = f32::from_le_bytes(four_bytes(bytes, &mut idx));
-        let mag_y_microteslas: f32 = f32::from_le_bytes(four_bytes(bytes, &mut idx));
-        let mag_z_microteslas: f32 = f32::from_le_bytes(four_bytes(bytes, &mut idx));
-
-        // Skip padding before timestamp.
-        idx += 4;
         let timestamp_seconds: f64 = f64::from_le_bytes([
             bytes[idx],
             bytes[idx + 1],
@@ -135,21 +116,81 @@ impl FIRMDataPacket {
             bytes[idx + 6],
             bytes[idx + 7],
         ]);
+        idx += 8;
+
+        let temperature_celsius: f32 = f32::from_le_bytes(four_bytes(bytes, &mut idx));
+        let pressure_pascals: f32 = f32::from_le_bytes(four_bytes(bytes, &mut idx));
+
+        let raw_acceleration_x_gs: f32 = f32::from_le_bytes(four_bytes(bytes, &mut idx));
+        let raw_acceleration_y_gs: f32 = f32::from_le_bytes(four_bytes(bytes, &mut idx));
+        let raw_acceleration_z_gs: f32 = f32::from_le_bytes(four_bytes(bytes, &mut idx));
+
+        let raw_angular_rate_x_deg_per_s: f32 = f32::from_le_bytes(four_bytes(bytes, &mut idx));
+        let raw_angular_rate_y_deg_per_s: f32 = f32::from_le_bytes(four_bytes(bytes, &mut idx));
+        let raw_angular_rate_z_deg_per_s: f32 = f32::from_le_bytes(four_bytes(bytes, &mut idx));
+
+        let magnetic_field_x_microteslas: f32 = f32::from_le_bytes(four_bytes(bytes, &mut idx));
+        let magnetic_field_y_microteslas: f32 = f32::from_le_bytes(four_bytes(bytes, &mut idx));
+        let magnetic_field_z_microteslas: f32 = f32::from_le_bytes(four_bytes(bytes, &mut idx));
+
+        let est_position_x_meters: f32 = f32::from_le_bytes(four_bytes(bytes, &mut idx));
+        let est_position_y_meters: f32 = f32::from_le_bytes(four_bytes(bytes, &mut idx));
+        let est_position_z_meters: f32 = f32::from_le_bytes(four_bytes(bytes, &mut idx));
+
+        let est_velocity_x_meters_per_s: f32 = f32::from_le_bytes(four_bytes(bytes, &mut idx));
+        let est_velocity_y_meters_per_s: f32 = f32::from_le_bytes(four_bytes(bytes, &mut idx));
+        let est_velocity_z_meters_per_s: f32 = f32::from_le_bytes(four_bytes(bytes, &mut idx));
+
+        let est_acceleration_x_gs: f32 = f32::from_le_bytes(four_bytes(bytes, &mut idx));
+        let est_acceleration_y_gs: f32 = f32::from_le_bytes(four_bytes(bytes, &mut idx));
+        let est_acceleration_z_gs: f32 = f32::from_le_bytes(four_bytes(bytes, &mut idx));
+
+        let est_angular_rate_x_rad_per_s: f32 = f32::from_le_bytes(four_bytes(bytes, &mut idx));
+        let est_angular_rate_y_rad_per_s: f32 = f32::from_le_bytes(four_bytes(bytes, &mut idx));
+        let est_angular_rate_z_rad_per_s: f32 = f32::from_le_bytes(four_bytes(bytes, &mut idx));
+
+        let est_quaternion_w: f32 = f32::from_le_bytes(four_bytes(bytes, &mut idx));
+        let est_quaternion_x: f32 = f32::from_le_bytes(four_bytes(bytes, &mut idx));
+        let est_quaternion_y: f32 = f32::from_le_bytes(four_bytes(bytes, &mut idx));
+        let est_quaternion_z: f32 = f32::from_le_bytes(four_bytes(bytes, &mut idx));
 
         Self {
             timestamp_seconds,
-            accel_x_meters_per_s2,
-            accel_y_meters_per_s2,
-            accel_z_meters_per_s2,
-            gyro_x_radians_per_s,
-            gyro_y_radians_per_s,
-            gyro_z_radians_per_s,
-            pressure_pascals,
             temperature_celsius,
-            mag_x_microteslas,
-            mag_y_microteslas,
-            mag_z_microteslas,
-            pressure_altitude_meters: 0.0,
+            pressure_pascals,
+
+            raw_acceleration_x_gs,
+            raw_acceleration_y_gs,
+            raw_acceleration_z_gs,
+
+            raw_angular_rate_x_deg_per_s,
+            raw_angular_rate_y_deg_per_s,
+            raw_angular_rate_z_deg_per_s,
+
+            magnetic_field_x_microteslas,
+            magnetic_field_y_microteslas,
+            magnetic_field_z_microteslas,
+
+            est_position_x_meters,
+            est_position_y_meters,
+            est_position_z_meters,
+
+            est_velocity_x_meters_per_s,
+            est_velocity_y_meters_per_s,
+            est_velocity_z_meters_per_s,
+
+            est_acceleration_x_gs,
+            est_acceleration_y_gs,
+            est_acceleration_z_gs,
+
+            est_angular_rate_x_rad_per_s,
+            est_angular_rate_y_rad_per_s,
+            est_angular_rate_z_rad_per_s,
+
+            est_quaternion_w,
+            est_quaternion_x,
+            est_quaternion_y,
+            est_quaternion_z,
         }
     }
 }

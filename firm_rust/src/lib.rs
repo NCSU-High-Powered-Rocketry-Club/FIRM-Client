@@ -1,5 +1,5 @@
 use anyhow::Result;
-use firm_core::client_packets::FIRMCommandPacket;
+use firm_core::client_packets::{FIRMCommandPacket, FIRMMockPacket};
 use firm_core::data_parser::SerialParser;
 use firm_core::firm_packets::{
     DeviceConfig, DeviceInfo, DeviceProtocol, FIRMDataPacket, FIRMResponsePacket,
@@ -246,11 +246,11 @@ impl FIRMClient {
 
     /// Sends a high-level command to the device.
     pub fn send_command(&self, command: FIRMCommandPacket) -> Result<()> {
-        self.send_command_bytes(command.to_bytes())
+        self.send_bytes(command.to_bytes())
     }
 
-    /// Sends raw command bytes to the device.
-    pub fn send_command_bytes(&self, bytes: Vec<u8>) -> Result<()> {
+    /// Sends raw bytes to the device.
+    pub fn send_bytes(&self, bytes: Vec<u8>) -> Result<()> {
         self.command_sender
             .send(bytes)
             .map_err(|_| io::Error::other("Command channel closed"))?;
@@ -390,13 +390,13 @@ impl FIRMClient {
         }
     }
 
-    /// Streams mock telemetry packets synthesized from a `.bin` log file.
+    /// Streams framed mock sensor packets from a `.bin` log file.
     ///
     /// This will:
     /// 1) Send the mock command and wait for ack
     /// 2) Read the log header (`firm_core::mock::LOG_HEADER_SIZE` bytes)
     /// 3) Parse the remaining file bytes as log records
-    /// 4) Send mock telemetry frames (`FIRMMockPacket::to_bytes()`) to the device
+    /// 4) Send framed mock sensor packets (`FIRMMockPacket::to_bytes()`) to the device
     ///
     /// If `realtime` is true, the stream is paced based on the log timestamps. `speed` is a
     /// multiplier (1.0 = real-time, 2.0 = 2x faster, 0.5 = half-speed).
@@ -418,6 +418,11 @@ impl FIRMClient {
         let mut header = vec![0u8; LOG_HEADER_SIZE];
         file.read_exact(&mut header)?;
 
+        // Send the log header to the device, framed as a mock sensor packet.
+        // Payload is the raw header bytes.
+        let header_pkt = FIRMMockPacket::new(header.clone());
+        self.send_bytes(header_pkt.to_bytes())?;
+
         let mut parser = MockParser::new();
         parser.read_header(&header);
 
@@ -438,7 +443,7 @@ impl FIRMClient {
                 }
 
                 // Mock packets are raw framed data packets; send them as raw bytes.
-                self.send_command_bytes(pkt.to_bytes())?;
+                self.send_bytes(pkt.to_bytes())?;
                 packets_sent += 1;
             }
         }
@@ -448,7 +453,7 @@ impl FIRMClient {
             if realtime && delay_seconds > 0.0 {
                 thread::sleep(Duration::from_secs_f64(delay_seconds / speed));
             }
-            self.send_command_bytes(pkt.to_bytes())?;
+            self.send_bytes(pkt.to_bytes())?;
             packets_sent += 1;
         }
 

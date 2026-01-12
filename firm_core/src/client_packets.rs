@@ -6,7 +6,7 @@ use crate::{
 };
 use crate::constants::command_constants::*;
 use crate::constants::data_parser_constants::{
-    DATA_PACKET_START_BYTES, FIRST_PADDING_SIZE, SECOND_PADDING_SIZE,
+    MOCK_SENSOR_PACKET_START_BYTES,
 };
 
 /// Represents a command that can be sent to the FIRM hardware.
@@ -89,33 +89,32 @@ impl FIRMCommandPacket {
 }
 
 pub struct FIRMMockPacket {
-    /// Start marker bytes (typically `DATA_PACKET_START_BYTES`).
+    /// Start marker bytes for mock sensor packets.
     pub header: [u8; 2],
     /// Payload length in bytes.
     pub len: u16,
     /// Payload bytes (telemetry payload).
     pub payload: Vec<u8>,
-    /// CRC computed over `[header][len][first padding][payload]`.
+    /// CRC computed over `[header][len][payload]`.
     pub crc: u16,
 }
 
 impl FIRMMockPacket {
     /// Creates a new mock packet from a raw payload.
     ///
-    /// Assumes the payload is already correct for the FIRM telemetry format.
+    /// Assumes the payload is already correct for the mock sensor packet format.
     pub fn new(payload: Vec<u8>) -> Self {
         let len = payload.len() as u16;
 
-        // Compute CRC over: header + length + first padding + payload
-        let mut crc_input = Vec::with_capacity(2 + 2 + FIRST_PADDING_SIZE + payload.len());
-        crc_input.extend_from_slice(&DATA_PACKET_START_BYTES);
+        // Compute CRC over: header + length + payload
+        let mut crc_input = Vec::with_capacity(2 + 2 + payload.len());
+        crc_input.extend_from_slice(&MOCK_SENSOR_PACKET_START_BYTES);
         crc_input.extend_from_slice(&len.to_le_bytes());
-        crc_input.extend_from_slice(&[0u8; FIRST_PADDING_SIZE]);
         crc_input.extend_from_slice(&payload);
         let crc = crc16_ccitt(&crc_input);
 
         Self {
-            header: DATA_PACKET_START_BYTES,
+            header: MOCK_SENSOR_PACKET_START_BYTES,
             len,
             payload,
             crc,
@@ -124,13 +123,57 @@ impl FIRMMockPacket {
 
     /// Serializes the mock packet into bytes ready to be written to the serial stream.
     pub fn to_bytes(&self) -> Vec<u8> {
-        let mut out = Vec::with_capacity(2 + 2 + FIRST_PADDING_SIZE + self.payload.len() + 2);
+        let mut out = Vec::with_capacity(2 + 2 + self.payload.len() + 2);
         out.extend_from_slice(&self.header);
         out.extend_from_slice(&self.len.to_le_bytes());
-        out.extend_from_slice(&[0u8; FIRST_PADDING_SIZE]);
         out.extend_from_slice(&self.payload);
         out.extend_from_slice(&self.crc.to_le_bytes());
-        out.extend_from_slice(&[0u8; SECOND_PADDING_SIZE]);
         out
+    }
+
+    /// Parses a framed mock sensor packet from raw bytes. This is just used for testing.
+    ///
+    /// Expected wire format: `[header(2)][len(u16 LE)][payload(len)][crc(u16 LE)]`.
+    /// Returns `None` if the header doesn't match, the length is inconsistent, or CRC fails.
+    pub fn from_bytes(bytes: &[u8]) -> Option<Self> {
+        if bytes.len() < 2 + 2 + 2 {
+            return None;
+        }
+
+        let header: [u8; 2] = bytes[0..2].try_into().ok()?;
+        if header != MOCK_SENSOR_PACKET_START_BYTES {
+            return None;
+        }
+
+        let len = u16::from_le_bytes(bytes[2..4].try_into().ok()?);
+        let expected_total = 2usize + 2 + (len as usize) + 2;
+        if bytes.len() != expected_total {
+            return None;
+        }
+
+        let payload_start = 4;
+        let payload_end = payload_start + (len as usize);
+        let payload = bytes[payload_start..payload_end].to_vec();
+        let crc = u16::from_le_bytes(bytes[payload_end..payload_end + 2].try_into().ok()?);
+
+        let computed = Self::compute_crc(&header, len, &payload);
+        if computed != crc {
+            return None;
+        }
+
+        Some(Self {
+            header,
+            len,
+            payload,
+            crc,
+        })
+    }
+
+    fn compute_crc(header: &[u8; 2], len: u16, payload: &[u8]) -> u16 {
+        let mut crc_input = Vec::with_capacity(2 + 2 + payload.len());
+        crc_input.extend_from_slice(header);
+        crc_input.extend_from_slice(&len.to_le_bytes());
+        crc_input.extend_from_slice(payload);
+        crc16_ccitt(&crc_input)
     }
 }

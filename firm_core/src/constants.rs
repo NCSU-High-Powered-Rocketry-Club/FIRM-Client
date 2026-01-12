@@ -3,6 +3,10 @@ pub mod data_parser_constants {
     pub const DATA_PACKET_START_BYTES: [u8; 2] = [0x5A, 0xA5];
     /// Start byte sequence for response identification. This is in little-endian format.
     pub const RESPONSE_PACKET_START_BYTES: [u8; 2] = [0xA5, 0x5A];
+    /// Start byte sequence for mock sensor packets (B/I/M records) sent to the device in mock mode.
+    ///
+    /// This is distinct from normal data/response packets.
+    pub const MOCK_SENSOR_PACKET_START_BYTES: [u8; 2] = [0x4D, 0x4B];
     /// Size of the packet header in bytes.
     pub const HEADER_SIZE: usize = core::mem::size_of_val(&DATA_PACKET_START_BYTES);
     /// Size of the length field in bytes.

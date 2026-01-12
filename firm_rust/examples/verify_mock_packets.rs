@@ -1,0 +1,95 @@
+use anyhow::Result;
+use firm_core::client_packets::FIRMMockPacket;
+use firm_core::mock::{LOG_HEADER_SIZE, MockParser};
+use std::fs::File;
+use std::io::Read;
+
+// Edit these before running.
+const LOG_PATH: &str = r"C:\Users\jackg\Downloads\LOG2.TXT";
+const CHUNK_SIZE: usize = 1024;
+
+fn main() -> Result<()> {
+    let mut parser = MockParser::new();
+
+    let mut file = File::open(LOG_PATH)?;
+    
+    let mut header = vec![0u8; LOG_HEADER_SIZE];
+    file.read_exact(&mut header)?;
+
+    if header.starts_with(b"FIRM") {
+        println!("✅ File header looks correct: FIRM...");
+    } else {
+        println!("❌ WRONG FILE! Header starts with: {:02X?}", &header[0..4]);
+        return Ok(()); // Stop here
+    }
+    
+    parser.read_header(&header);
+
+    let mut buf = vec![0u8; CHUNK_SIZE];
+
+    let mut count_total = 0usize;
+    let mut count_b = 0usize;
+    let mut count_i = 0usize;
+    let mut count_m = 0usize;
+
+    loop {
+        let n = file.read(&mut buf)?;
+        if n == 0 {
+            break;
+        }
+
+        parser.parse_bytes(&buf[..n]);
+
+        // Just verifies the round-trip serialization/parsing of packets
+        while let Some((pkt, delay_s)) = parser.get_packet_with_delay() {
+            let bytes = pkt.to_bytes();
+            let parsed = FIRMMockPacket::from_bytes(&bytes)
+                .expect("failed to parse bytes we just serialized (header/len/crc mismatch)");
+            assert_eq!(parsed.payload, pkt.payload);
+
+            count_total += 1;
+            match parsed.payload.first().copied() {
+                Some(b'B') => count_b += 1,
+                Some(b'I') => count_i += 1,
+                Some(b'M') => count_m += 1,
+                other => {
+                    println!("Unexpected record id: {other:?}");
+                }
+            }
+
+            if count_total <= 5 {
+                println!(
+                    "#{count_total} id={} payload_len={} delay_s={:.6}",
+                    parsed.payload[0] as char,
+                    parsed.payload.len(),
+                    delay_s
+                );
+            }
+        }
+
+        // TODO only testing 1 loop for now
+        break;
+    }
+
+    // Drain any remaining packets buffered by the parser.
+    while let Some((pkt, _delay_s)) = parser.get_packet_with_delay() {
+        let bytes = pkt.to_bytes();
+        let parsed = FIRMMockPacket::from_bytes(&bytes)
+            .expect("failed to parse bytes we just serialized (header/len/crc mismatch)");
+        assert_eq!(parsed.payload, pkt.payload);
+
+        count_total += 1;
+        match parsed.payload.first().copied() {
+            Some(b'B') => count_b += 1,
+            Some(b'I') => count_i += 1,
+            Some(b'M') => count_m += 1,
+            _ => {}
+        }
+    }
+
+    println!(
+        "OK: total={count_total} B={count_b} I={count_i} M={count_m} (round-trip header/len/crc verified)"
+    );
+
+    Ok(())
+}

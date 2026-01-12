@@ -1,21 +1,24 @@
 from firm_client import FIRMClient
 
 
-# --- User settings (edit these before running) ---
-PORT = "COM6"  # e.g. "COM6" on Windows, "/dev/ttyUSB0" on Linux
-LOG_PATH = r"C:\path\to\your\log.bin"
+PORT = "COM8"
+LOG_PATH = r"C:\Users\jackg\Downloads\LOG2.TXT"
 
 BAUD_RATE = 2_000_000
 SERIAL_TIMEOUT_SECONDS = 0.1
 
-START_TIMEOUT_SECONDS = 5.0  # wait for mock-mode acknowledgement
-REALTIME = True  # False = send as fast as possible
-SPEED = 1.0  # 1.0 = real-time, 2.0 = 2x faster
-CHUNK_SIZE = 8192
+START_TIMEOUT_SECONDS = 5.0
+REALTIME = True
+SPEED = 1.0
+CHUNK_SIZE = 1024
 
 
 def main() -> None:
-    with FIRMClient(PORT, BAUD_RATE, SERIAL_TIMEOUT_SECONDS) as client:
+    client = FIRMClient(PORT, BAUD_RATE, SERIAL_TIMEOUT_SECONDS)
+    try:
+        client.start()
+
+        print("Starting mock stream...")
         sent = client.stream_mock_log_file(
             LOG_PATH,
             realtime=REALTIME,
@@ -23,8 +26,9 @@ def main() -> None:
             chunk_size=CHUNK_SIZE,
             start_timeout_seconds=START_TIMEOUT_SECONDS,
         )
-
-    print(f"Sent {sent} mock packets")
+        print(f"Sent {sent} mock packets")
+    finally:
+        client.stop()
 
 
 if __name__ == "__main__":

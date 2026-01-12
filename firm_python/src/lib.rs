@@ -92,14 +92,14 @@ impl FIRMClient {
         Ok(packets)
     }
 
-    /// Sends raw command bytes to the device.
-    fn send_command_bytes(&mut self, command_bytes: Vec<u8>) -> PyResult<()> {
+    /// Sends raw bytes to the device.
+    fn send_bytes(&mut self, bytes: Vec<u8>) -> PyResult<()> {
         if let Some(err) = self.inner.check_error() {
             return Err(PyErr::new::<pyo3::exceptions::PyIOError, _>(err));
         }
 
         self.inner
-            .send_command_bytes(command_bytes)
+            .send_bytes(bytes)
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyIOError, _>(e.to_string()))?;
         Ok(())
     }

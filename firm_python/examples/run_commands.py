@@ -1,7 +1,7 @@
 import firm_client
 
 PORT = "COM8"
-BAUD = 115200
+BAUD = 2_000_000
 TIMEOUT = 0.1
 RESPONSE_TIMEOUT = 5.0
 

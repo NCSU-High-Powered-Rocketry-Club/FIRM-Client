@@ -268,3 +268,109 @@ impl FIRMResponsePacket {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{DeviceConfig, DeviceInfo, DeviceProtocol, FIRMDataPacket, FIRMResponsePacket};
+    use crate::constants::command_constants::*;
+    use crate::utils::str_to_bytes;
+
+    #[test]
+    fn test_firm_data_packet_from_bytes() {
+        let mut payload = [0u8; 120];
+        let timestamp = 42.0f64;
+        let temperature = 25.0f32;
+        let pressure = 101325.0f32;
+        payload[0..8].copy_from_slice(&timestamp.to_le_bytes());
+        payload[8..12].copy_from_slice(&temperature.to_le_bytes());
+        payload[12..16].copy_from_slice(&pressure.to_le_bytes());
+
+        let pkt = FIRMDataPacket::from_bytes(&payload);
+        assert_eq!(pkt.timestamp_seconds, timestamp);
+        assert_eq!(pkt.temperature_celsius, temperature);
+        assert_eq!(pkt.pressure_pascals, pressure);
+    }
+
+    #[test]
+    fn test_firm_response_packet_from_bytes_get_device_info() {
+        let mut payload = [0u8; 1 + DEVICE_ID_LENGTH + FIRMWARE_VERSION_LENGTH];
+        payload[0] = DEVICE_INFO_MARKER;
+
+        let id = 0x1122334455667788u64;
+        payload[1..1 + DEVICE_ID_LENGTH].copy_from_slice(&id.to_le_bytes());
+
+        let fw_bytes = str_to_bytes::<FIRMWARE_VERSION_LENGTH>("v1.2.3");
+        payload[1 + DEVICE_ID_LENGTH..1 + DEVICE_ID_LENGTH + FIRMWARE_VERSION_LENGTH]
+            .copy_from_slice(&fw_bytes);
+
+        let decoded = FIRMResponsePacket::from_bytes(&payload);
+        assert_eq!(
+            decoded,
+            FIRMResponsePacket::GetDeviceInfo(DeviceInfo {
+                firmware_version: "v1.2.3".to_string(),
+                id,
+            })
+        );
+    }
+
+    #[test]
+    fn test_firm_response_packet_from_bytes_get_device_config() {
+        let mut payload = [0u8; 1 + DEVICE_NAME_LENGTH + FREQUENCY_LENGTH + 1];
+        payload[0] = DEVICE_CONFIG_MARKER;
+
+        let name_bytes = str_to_bytes::<DEVICE_NAME_LENGTH>("MyDevice");
+        payload[1..1 + DEVICE_NAME_LENGTH].copy_from_slice(&name_bytes);
+
+        let frequency: u16 = 50;
+        payload[1 + DEVICE_NAME_LENGTH..1 + DEVICE_NAME_LENGTH + FREQUENCY_LENGTH]
+            .copy_from_slice(&frequency.to_le_bytes());
+
+        payload[1 + DEVICE_NAME_LENGTH + FREQUENCY_LENGTH] = 0x03;
+
+        let decoded = FIRMResponsePacket::from_bytes(&payload);
+        assert_eq!(
+            decoded,
+            FIRMResponsePacket::GetDeviceConfig(DeviceConfig {
+                name: "MyDevice".to_string(),
+                frequency,
+                protocol: DeviceProtocol::I2C,
+            })
+        );
+    }
+
+    #[test]
+    fn test_firm_response_packet_from_bytes_set_device_config() {
+        let payload = [SET_DEVICE_CONFIG_MARKER, 1u8];
+        assert_eq!(
+            FIRMResponsePacket::from_bytes(&payload),
+            FIRMResponsePacket::SetDeviceConfig(true)
+        );
+    }
+
+    #[test]
+    fn test_firm_response_packet_from_bytes_mock() {
+        let payload = [MOCK_MARKER, 1u8];
+        assert_eq!(
+            FIRMResponsePacket::from_bytes(&payload),
+            FIRMResponsePacket::Mock(true)
+        );
+    }
+
+    #[test]
+    fn test_firm_response_packet_from_bytes_cancel() {
+        let payload = [CANCEL_MARKER, 1u8];
+        assert_eq!(
+            FIRMResponsePacket::from_bytes(&payload),
+            FIRMResponsePacket::Cancel(true)
+        );
+    }
+
+    #[test]
+    fn test_firm_response_packet_from_bytes_unknown_marker() {
+        let payload = [0xABu8, 0u8];
+        assert_eq!(
+            FIRMResponsePacket::from_bytes(&payload),
+            FIRMResponsePacket::Error("Unknown response marker".to_string())
+        );
+    }
+}

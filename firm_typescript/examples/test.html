@@ -309,7 +309,7 @@
         setStatus('[UI] Connecting...');
 
         try {
-          const firm = await FIRM.connect({ baudRate: 115200 });
+          const firm = await FIRM.connect({ baudRate: 2000000 });
           firmInstance = firm;
           setStatus('[UI] Connected. Streaming packets...');
           controls.style.display = 'flex';

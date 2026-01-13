@@ -177,3 +177,112 @@ impl FIRMMockPacket {
         crc16_ccitt(&crc_input)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{FIRMCommandPacket, FIRMMockPacket};
+    use crate::constants::command_constants::*;
+    use crate::constants::data_parser_constants::MOCK_SENSOR_PACKET_START_BYTES;
+    use crate::firm_packets::{DeviceConfig, DeviceProtocol};
+    use crate::utils::{crc16_ccitt, str_to_bytes};
+
+    fn crc_from_command_bytes(bytes: &[u8]) -> u16 {
+        u16::from_le_bytes(bytes[COMMAND_LENGTH - CRC_LENGTH..COMMAND_LENGTH].try_into().unwrap())
+    }
+
+    fn calculate_command_crc(bytes: &[u8]) -> u16 {
+        crc16_ccitt(&bytes[..COMMAND_LENGTH - CRC_LENGTH])
+    }
+
+    fn assert_command_built_correct(command_packet: &[u8]) {
+        assert_eq!(command_packet.len(), COMMAND_LENGTH);
+        assert_eq!(&command_packet[0..2], &COMMAND_START_BYTES);
+        assert_eq!(
+            crc_from_command_bytes(command_packet),
+            calculate_command_crc(command_packet)
+        );
+    }
+
+    #[test]
+    fn test_firm_command_packet_to_bytes_get_device_info() {
+        let command_packet = FIRMCommandPacket::GetDeviceInfo.to_bytes();
+        assert_command_built_correct(&command_packet);
+        assert_eq!(command_packet[2], DEVICE_INFO_MARKER);
+    }
+
+    #[test]
+    fn test_firm_command_packet_to_bytes_get_device_config() {
+        let command_packet = FIRMCommandPacket::GetDeviceConfig.to_bytes();
+        assert_command_built_correct(&command_packet);
+        assert_eq!(command_packet[2], DEVICE_CONFIG_MARKER);
+    }
+
+    #[test]
+    fn test_firm_command_packet_to_bytes_cancel() {
+        let command_packet = FIRMCommandPacket::Cancel.to_bytes();
+        assert_command_built_correct(&command_packet);
+        assert_eq!(command_packet[2], CANCEL_MARKER);
+    }
+
+    #[test]
+    fn test_firm_command_packet_to_bytes_reboot() {
+        let command_packet = FIRMCommandPacket::Reboot.to_bytes();
+        assert_command_built_correct(&command_packet);
+        assert_eq!(command_packet[2], REBOOT_MARKER);
+    }
+
+    #[test]
+    fn test_firm_command_packet_to_bytes_mock() {
+        let command_packet = FIRMCommandPacket::Mock.to_bytes();
+        assert_command_built_correct(&command_packet);
+        assert_eq!(command_packet[2], MOCK_MARKER);
+    }
+
+    #[test]
+    fn test_firm_command_packet_to_bytes_set_device_config() {
+        let config = DeviceConfig {
+            name: "FIRM".to_string(),
+            frequency: 50,
+            protocol: DeviceProtocol::UART,
+        };
+
+        let command_packet = FIRMCommandPacket::SetDeviceConfig(config.clone()).to_bytes();
+        assert_command_built_correct(&command_packet);
+
+        assert_eq!(command_packet[2], SET_DEVICE_CONFIG_MARKER);
+
+        let name_start = 3;
+        let name_end = name_start + DEVICE_NAME_LENGTH;
+        let freq_start = name_end;
+        let freq_end = freq_start + FREQUENCY_LENGTH;
+        let protocol_idx = freq_end;
+
+        let expected_name_bytes = str_to_bytes::<DEVICE_NAME_LENGTH>(&config.name);
+        assert_eq!(&command_packet[name_start..name_end], &expected_name_bytes);
+
+        let freq = u16::from_le_bytes(command_packet[freq_start..freq_end].try_into().unwrap());
+        assert_eq!(freq, config.frequency);
+
+        assert_eq!(command_packet[protocol_idx], 0x02);
+    }
+
+    #[test]
+    fn test_firm_mock_packet_new() {
+        let payload = vec![1u8, 2, 3];
+        let packet = FIRMMockPacket::new(payload.clone());
+        assert_eq!(packet.header, MOCK_SENSOR_PACKET_START_BYTES);
+        assert_eq!(packet.len, payload.len() as u16);
+        assert_eq!(packet.payload, payload);
+    }
+
+    #[test]
+    fn test_firm_mock_packet_to_bytes() {
+        let payload: Vec<u8> = vec![0x10, 0x20, 0x30, 0x40, 0x50];
+        let packet = FIRMMockPacket::new(payload);
+        let bytes = packet.to_bytes();
+        assert_eq!(&bytes[0..2], &MOCK_SENSOR_PACKET_START_BYTES);
+        assert_eq!(u16::from_le_bytes(bytes[2..4].try_into().unwrap()), packet.len);
+        assert_eq!(u16::from_le_bytes(bytes[bytes.len() - 2..].try_into().unwrap()), packet.crc);
+        assert_eq!(&bytes[4..bytes.len() - 2], &packet.payload);
+    }
+}

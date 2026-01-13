@@ -79,7 +79,7 @@ impl SerialParser {
             // We know that length_bytes is 2 bytes long
             let length = u16::from_le_bytes([length_bytes[0], length_bytes[1]]);
 
-            let payload_start = length_start + LENGTH_FIELD_SIZE + FIRST_PADDING_SIZE;
+            let payload_start = length_start + LENGTH_FIELD_SIZE + PADDING_BEFORE_PAYLOAD_SIZE;
             let crc_start = payload_start + length as usize;
 
             // Compute CRC over header + length + padding + payload.
@@ -107,7 +107,7 @@ impl SerialParser {
             }
 
             // Advance past this full packet and continue scanning.
-            pos = crc_start + CRC_SIZE + SECOND_PADDING_SIZE;
+            pos = crc_start + CRC_SIZE + PADDING_AFTER_CRC_SIZE;
         }
 
         // Drop all bytes that were processed, we keep only the tail for next call.
@@ -138,5 +138,81 @@ impl SerialParser {
     /// - `Option<FIRMResponsePacket>` - `Some(response)` if a response is available, otherwise `None`.
     pub fn get_response_packet(&mut self) -> Option<FIRMResponsePacket> {
         self.parsed_response_packets.pop_front()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::SerialParser;
+    use crate::constants::command_constants::SET_DEVICE_CONFIG_MARKER;
+    use crate::constants::data_parser_constants::*;
+    use crate::firm_packets::FIRMResponsePacket;
+    use crate::utils::crc16_ccitt;
+
+    fn build_framed_packet(header: [u8; 2], payload: &[u8; PAYLOAD_LENGTH]) -> Vec<u8> {
+        let mut out = Vec::with_capacity(FULL_PACKET_SIZE);
+        out.extend_from_slice(&header);
+        out.extend_from_slice(&(PAYLOAD_LENGTH as u16).to_le_bytes());
+        out.extend_from_slice(&[0u8; PADDING_BEFORE_PAYLOAD_SIZE]);
+        out.extend_from_slice(payload);
+
+        let crc = crc16_ccitt(&out);
+        out.extend_from_slice(&crc.to_le_bytes());
+        out.extend_from_slice(&[0u8; PADDING_AFTER_CRC_SIZE]);
+        out
+    }
+
+    #[test]
+    fn test_serial_parser_parses_data_packet() {
+        let mut payload = [0u8; PAYLOAD_LENGTH];
+        payload[0..8].copy_from_slice(&42.0f64.to_le_bytes());
+        payload[8..12].copy_from_slice(&25.0f32.to_le_bytes());
+
+        let bytes = build_framed_packet(DATA_PACKET_START_BYTES, &payload);
+        let mut parser = SerialParser::new();
+        parser.parse_bytes(&bytes);
+
+        let pkt = parser.get_data_packet().expect("expected one data packet");
+        assert_eq!(pkt.timestamp_seconds, 42.0);
+        assert_eq!(pkt.temperature_celsius, 25.0);
+        assert!(parser.get_data_packet().is_none());
+        assert!(parser.get_response_packet().is_none());
+    }
+
+    #[test]
+    fn test_serial_parser_parses_response_packet_split_across_calls() {
+        let mut payload = [0u8; PAYLOAD_LENGTH];
+        payload[0] = SET_DEVICE_CONFIG_MARKER;
+        payload[1] = 1;
+
+        let bytes = build_framed_packet(RESPONSE_PACKET_START_BYTES, &payload);
+        let mid = bytes.len() / 2;
+
+        let mut parser = SerialParser::new();
+        parser.parse_bytes(&bytes[..mid]);
+        // When we first call it, it hasnt parsed the full packet yet
+        assert!(parser.get_response_packet().is_none());
+
+        parser.parse_bytes(&bytes[mid..]);
+        assert_eq!(
+            parser.get_response_packet(),
+            Some(FIRMResponsePacket::SetDeviceConfig(true))
+        );
+        assert!(parser.get_response_packet().is_none());
+        assert!(parser.get_data_packet().is_none());
+    }
+
+    #[test]
+    fn test_serial_parser_rejects_bad_crc() {
+        let payload = [0u8; PAYLOAD_LENGTH];
+        let mut bytes = build_framed_packet(DATA_PACKET_START_BYTES, &payload);
+
+        let payload_start = HEADER_SIZE + LENGTH_FIELD_SIZE + PADDING_BEFORE_PAYLOAD_SIZE;
+        bytes[payload_start] ^= 0x01;
+
+        let mut parser = SerialParser::new();
+        parser.parse_bytes(&bytes);
+        assert!(parser.get_data_packet().is_none());
+        assert!(parser.get_response_packet().is_none());
     }
 }

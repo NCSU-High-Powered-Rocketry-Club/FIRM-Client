@@ -2,32 +2,7 @@ use alloc::collections::VecDeque;
 use alloc::vec::Vec;
 
 use crate::client_packets::FIRMMockPacket;
-
-const BMP581_ID: u8 = b'B';
-const ICM45686_ID: u8 = b'I';
-const MMC5983MA_ID: u8 = b'M';
-
-const BMP581_SIZE: usize = 6;
-const ICM45686_SIZE: usize = 15;
-const MMC5983MA_SIZE: usize = 7;
-
-const HEADER_SIZE_TEXT: usize = 14; // "FIRM LOG vx.x"
-const HEADER_UID_SIZE: usize = 8;
-const HEADER_DEVICE_NAME_LEN: usize = 33;
-const HEADER_COMM_SIZE: usize = 2; // 1 byte usb, 1 byte uart
-const HEADER_CAL_SIZE: usize = (3 + 9) * 3 * 4; // (offsets + 3x3 matrix) * 3 sensors * 4 bytes
-const HEADER_NUM_SCALE_FACTORS: usize = 5; // 5 floats
-
-const HEADER_PADDING_SIZE: usize = 8 - ((HEADER_UID_SIZE + HEADER_DEVICE_NAME_LEN + HEADER_COMM_SIZE) % 8);
-const HEADER_TOTAL_SIZE: usize = HEADER_SIZE_TEXT
-    + HEADER_UID_SIZE
-    + HEADER_DEVICE_NAME_LEN
-    + HEADER_COMM_SIZE
-    + HEADER_PADDING_SIZE
-    + HEADER_CAL_SIZE
-    + (HEADER_NUM_SCALE_FACTORS * 4);
-
-pub const LOG_HEADER_SIZE: usize = HEADER_TOTAL_SIZE;
+use crate::constants::mock_constants::*;
 
 pub struct MockParser {
     /// Rolling buffer of unprocessed bytes.
@@ -59,13 +34,8 @@ impl MockParser {
     }
 
     /// Reads the log header and initializes scale factors.
-    ///
-    /// The caller must pass a byte buffer that contains exactly the header bytes
-    /// (as written by the device) and then call `parse_bytes()` with only the
-    /// subsequent log record bytes.
     pub fn read_header(&mut self, header_bytes: &[u8]) {
-        // No error handling per request: assume correct header length.
-        debug_assert_eq!(header_bytes.len(), HEADER_TOTAL_SIZE);
+        assert_eq!(header_bytes.len(), HEADER_TOTAL_SIZE);
 
         // Reset streaming state for a fresh playback run.
         self.bytes.clear();
@@ -78,14 +48,14 @@ impl MockParser {
 
     /// Feeds a new chunk of bytes into the parser.
     ///
-    /// Parses as many log records as possible and enqueues framed mock sensor packets.
+    /// Parses as many log packets as possible and enqueues framed mock sensor packets.
     pub fn parse_bytes(&mut self, chunk: &[u8]) {
         self.bytes.extend_from_slice(chunk);
 
-        // Parse records
+        // Parse log packets
         let mut pos = 0usize;
         while pos < self.bytes.len() {
-            let record_start = pos;
+            let log_packet_start = pos;
 
             let id = self.bytes[pos];
             if id == 0 {
@@ -107,7 +77,7 @@ impl MockParser {
 
             // Need timestamp.
             if pos + 1 + 3 > self.bytes.len() {
-                pos = record_start;
+                pos = log_packet_start;
                 break;
             }
 
@@ -134,7 +104,7 @@ impl MockParser {
             match id {
                 BMP581_ID => {
                     if pos + BMP581_SIZE > self.bytes.len() {
-                        pos = record_start;
+                        pos = log_packet_start;
                         break;
                     }
                     let raw = &self.bytes[pos..pos + BMP581_SIZE];
@@ -149,7 +119,7 @@ impl MockParser {
                 }
                 ICM45686_ID => {
                     if pos + ICM45686_SIZE > self.bytes.len() {
-                        pos = record_start;
+                        pos = log_packet_start;
                         break;
                     }
                     let raw = &self.bytes[pos..pos + ICM45686_SIZE];
@@ -164,7 +134,7 @@ impl MockParser {
                 }
                 MMC5983MA_ID => {
                     if pos + MMC5983MA_SIZE > self.bytes.len() {
-                        pos = record_start;
+                        pos = log_packet_start;
                         break;
                     }
                     let raw = &self.bytes[pos..pos + MMC5983MA_SIZE];
@@ -180,7 +150,7 @@ impl MockParser {
                 _ => {
                     // Unknown/garbage byte. Don't give up immediately: advance by one byte and
                     // keep scanning so we can re-sync if we're offset or the file has junk.
-                    pos = record_start + 1;
+                    pos = log_packet_start + 1;
                     continue;
                 }
             }
@@ -204,35 +174,89 @@ impl MockParser {
 mod tests {
     use super::*;
 
-    #[test]
-    fn parses_header_and_emits_packet_on_icm_record() {
-        // Build a minimal valid header. Header contents are ignored by MockParser.
+    fn make_header() -> Vec<u8> {
         let mut header = Vec::new();
-        header.extend_from_slice(&[0u8; HEADER_SIZE_TEXT]);
-        header.extend_from_slice(&[0u8; HEADER_UID_SIZE]);
-        header.extend_from_slice(&[0u8; HEADER_DEVICE_NAME_LEN]);
-        header.extend_from_slice(&[0u8; HEADER_COMM_SIZE]);
-        header.extend_from_slice(&[0u8; HEADER_PADDING_SIZE]);
-        header.extend_from_slice(&[0u8; HEADER_CAL_SIZE]);
+        header.resize(HEADER_TOTAL_SIZE, 0u8);
+        header
+    }
 
-        // scale factors bytes (ignored)
-        header.extend_from_slice(&[0u8; HEADER_NUM_SCALE_FACTORS * 4]);
-        assert_eq!(header.len(), HEADER_TOTAL_SIZE);
+    fn make_log_packet_bytes(id: u8, clock_count_24bit: u32, raw_len: usize) -> Vec<u8> {
+        // Timestamp is stored as a 24-bit big-endian counter (3 bytes).
+        let clock = clock_count_24bit & 0x00FF_FFFF;
+        let be = clock.to_be_bytes();
+        let t = [be[1], be[2], be[3]];
 
-        // One ICM record: [id][timestamp(3)][15 bytes]
-        let mut record = Vec::new();
-        record.push(ICM45686_ID);
-        record.extend_from_slice(&[0x00, 0x00, 0x01]); // clock count = 1
-        record.extend_from_slice(&[0u8; ICM45686_SIZE]); // all zeros -> all values 0
+        let mut fake_packet_bytes = vec![0u8; 1 + 3 + raw_len];
+        fake_packet_bytes[0] = id;
+        fake_packet_bytes[1..4].copy_from_slice(&t);
+        fake_packet_bytes
+    }
+
+    #[test]
+    fn test_reads_header_and_packet() {
+        let header = make_header();
+        let log_packet_bytes = make_log_packet_bytes(ICM45686_ID, 1, ICM45686_SIZE);
 
         let mut parser = MockParser::new();
         parser.read_header(&header);
-        parser.parse_bytes(&record);
+        parser.parse_bytes(&log_packet_bytes);
 
-        let (pkt, delay) = parser.get_packet_with_delay().unwrap();
+        let (log_packet, delay) = parser.get_packet_with_delay().unwrap();
         assert_eq!(delay, 0.0);
-        assert_eq!(pkt.payload.len(), 1 + 3 + ICM45686_SIZE);
-        assert_eq!(pkt.len as usize, pkt.payload.len());
-        assert_eq!(pkt.payload[0], ICM45686_ID);
+        assert_eq!(log_packet.payload.len(), 1 + 3 + ICM45686_SIZE);
+        assert_eq!(log_packet.len as usize, log_packet.payload.len());
+        assert_eq!(log_packet.payload[0], ICM45686_ID);
+        assert_eq!(&log_packet.payload[1..4], &[0x00, 0x00, 0x01]);
+        assert!(parser.get_packet_with_delay().is_none());
+    }
+
+    #[test]
+    fn test_delay_works() {
+        let header = make_header();
+
+        // delta = 168 ticks => delay = 1e-6 seconds
+        let log_packet_bytes1 = make_log_packet_bytes(BMP581_ID, 1000, BMP581_SIZE);
+        let log_packet_bytes2 = make_log_packet_bytes(BMP581_ID, 1168, BMP581_SIZE);
+
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&log_packet_bytes1);
+        bytes.extend_from_slice(&log_packet_bytes2);
+        let mut parser = MockParser::new();
+        parser.read_header(&header);
+        parser.parse_bytes(&bytes);
+
+        let (log_packet1, d1) = parser.get_packet_with_delay().unwrap();
+        let (log_packet2, d2) = parser.get_packet_with_delay().unwrap();
+        assert_eq!(d1, 0.0);
+        assert_eq!(log_packet1.payload, log_packet_bytes1);
+        assert_eq!(log_packet2.payload, log_packet_bytes2);
+        let expected = 168.0f64 / 168e6;
+        assert!((d2 - expected).abs() < 1e-12);
+        assert!(parser.get_packet_with_delay().is_none());
+    }
+
+    #[test]
+    fn test_difficult_reading() {
+        // This test just cchecks that a packet split across multiple parse_bytes calls is handled correctly
+        // and also that garbage bytes before a packet are skipped.
+        let header = make_header();
+        let log_packet_bytes = make_log_packet_bytes(MMC5983MA_ID, 0x123456, MMC5983MA_SIZE);
+
+        let mut chunk1 = Vec::new();
+        chunk1.push(0x99); // garbage byte
+        chunk1.extend_from_slice(&log_packet_bytes[..5]);
+        let chunk2 = &log_packet_bytes[5..];
+
+        let mut parser = MockParser::new();
+        parser.read_header(&header);
+
+        parser.parse_bytes(&chunk1);
+        assert!(parser.get_packet().is_none());
+
+        parser.parse_bytes(chunk2);
+        let mock_packet = parser.get_packet().unwrap();
+        assert_eq!(mock_packet.payload[0], MMC5983MA_ID);
+        assert_eq!(mock_packet.payload.len(), 1 + 3 + MMC5983MA_SIZE);
+        assert!(parser.get_packet().is_none());
     }
 }

@@ -1,10 +1,11 @@
 use anyhow::Result;
 use firm_core::client_packets::{FIRMCommandPacket, FIRMMockPacket};
+use firm_core::constants::mock_constants::HEADER_TOTAL_SIZE;
 use firm_core::data_parser::SerialParser;
 use firm_core::firm_packets::{
     DeviceConfig, DeviceInfo, DeviceProtocol, FIRMDataPacket, FIRMResponsePacket,
 };
-use firm_core::mock::{LOG_HEADER_SIZE, MockParser};
+use firm_core::mock::MockParser;
 use serialport::SerialPort;
 use std::collections::VecDeque;
 use std::io::{self, Read, Write};
@@ -415,7 +416,7 @@ impl FIRMClient {
         self.start_mock_mode(start_timeout)?;
 
         let mut file = File::open(log_path)?;
-        let mut header = vec![0u8; LOG_HEADER_SIZE];
+        let mut header = vec![0u8; HEADER_TOTAL_SIZE];
         file.read_exact(&mut header)?;
 
         // Send the log header to the device, framed as a mock sensor packet.
@@ -504,7 +505,7 @@ mod tests {
     #[test]
     fn test_new_failure() {
         // Test that creating a client with an invalid port fails immediately
-        let result = FIRMClient::new("invalid_port_name", 115200, 0.1);
+        let result = FIRMClient::new("invalid_port_name", 2_000_000, 0.1);
         assert!(result.is_err());
     }
 }

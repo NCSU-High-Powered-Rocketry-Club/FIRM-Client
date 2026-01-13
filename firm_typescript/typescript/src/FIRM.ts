@@ -6,7 +6,7 @@ const CALIBRATION_TIMEOUT_MS = 20000;
 
 /** Options for connecting to a FIRM device over Web Serial. */
 export interface FIRMConnectOptions {
-  /** Serial baud rate (default: 115200). */
+  /** Serial baud rate (default: 2000000). */
   baudRate?: number;
 }
 
@@ -58,7 +58,7 @@ export class FIRMClient {
     if (!('serial' in navigator)) throw new Error('Web Serial API not available');
     await init();
     const dataParser = new FIRMDataParser();
-    const baudRate = options.baudRate ?? 115200;
+    const baudRate = options.baudRate ?? 2000000;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const port = await (navigator as any).serial.requestPort();
     await port.open({ baudRate });

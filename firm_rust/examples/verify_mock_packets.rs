@@ -1,6 +1,7 @@
 use anyhow::Result;
 use firm_core::client_packets::FIRMMockPacket;
-use firm_core::mock::{LOG_HEADER_SIZE, MockParser};
+use firm_core::constants::mock_constants::HEADER_TOTAL_SIZE;
+use firm_core::mock::MockParser;
 use std::fs::File;
 use std::io::Read;
 
@@ -13,7 +14,7 @@ fn main() -> Result<()> {
 
     let mut file = File::open(LOG_PATH)?;
     
-    let mut header = vec![0u8; LOG_HEADER_SIZE];
+    let mut header = vec![0u8; HEADER_TOTAL_SIZE];
     file.read_exact(&mut header)?;
 
     if header.starts_with(b"FIRM") {

@@ -21,7 +21,7 @@ class DeviceConfig:
 # TODO I dont like this
 FIRMResponse = dict[str, object]
 
-class FIRMDataPacket:
+class FIRMData:
     """Represents a data packet received from the FIRM device."""
 
     timestamp_seconds: float
@@ -108,7 +108,7 @@ class FIRMClient:
     def stop(self) -> None: ...
     """Stops the client by stopping the data reading thread and closing the serial port."""
 
-    def get_data_packets(self, block: bool = False) -> list[FIRMDataPacket]: ...
+    def get_data_packets(self, block: bool = False) -> list[FIRMData]: ...
     """Retrieves available data packets from the FIRM device.
     
     Args:

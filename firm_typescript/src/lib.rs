@@ -1,6 +1,7 @@
 use firm_core::client_packets::FIRMCommandPacket;
 use firm_core::data_parser::SerialParser;
-use firm_core::firm_packets::{DeviceConfig, DeviceProtocol};
+use firm_core::firm_packets::{DeviceConfig, DeviceProtocol, FIRMData, FIRMResponse};
+use firm_core::framed_packet::Framed;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
@@ -9,11 +10,11 @@ pub struct FIRMCommandBuilder;
 #[wasm_bindgen]
 impl FIRMCommandBuilder {
     pub fn build_get_device_info() -> Vec<u8> {
-        FIRMCommandPacket::GetDeviceInfo.to_bytes()
+        FIRMCommandPacket::get_device_info().to_bytes()
     }
 
     pub fn build_get_device_config() -> Vec<u8> {
-        FIRMCommandPacket::GetDeviceConfig.to_bytes()
+        FIRMCommandPacket::get_device_config().to_bytes()
     }
 
     pub fn build_set_device_config(
@@ -27,15 +28,15 @@ impl FIRMCommandBuilder {
             protocol,
         };
 
-        FIRMCommandPacket::SetDeviceConfig(config).to_bytes()
+        FIRMCommandPacket::set_device_config(config).to_bytes()
     }
 
     pub fn build_cancel() -> Vec<u8> {
-        FIRMCommandPacket::Cancel.to_bytes()
+        FIRMCommandPacket::cancel().to_bytes()
     }
 
     pub fn build_reboot() -> Vec<u8> {
-        FIRMCommandPacket::Reboot.to_bytes()
+        FIRMCommandPacket::reboot().to_bytes()
     }
 }
 
@@ -60,16 +61,22 @@ impl FIRMDataParser {
 
     #[wasm_bindgen]
     pub fn get_packet(&mut self) -> JsValue {
-        match self.inner.get_data_packet() {
-            Some(packet) => serde_wasm_bindgen::to_value(&packet).unwrap(),
+        match self.inner.get_data_frame() {
+            Some(frame) => {
+                let decoded = FIRMData::from_bytes(frame.payload());
+                serde_wasm_bindgen::to_value(&decoded).unwrap()
+            }
             None => JsValue::NULL,
         }
     }
 
     #[wasm_bindgen]
     pub fn get_response(&mut self) -> JsValue {
-        match self.inner.get_response_packet() {
-            Some(response) => serde_wasm_bindgen::to_value(&response).unwrap(),
+        match self.inner.get_response_frame() {
+            Some(frame) => {
+                let decoded = FIRMResponse::from_packet(&frame);
+                serde_wasm_bindgen::to_value(&decoded).unwrap()
+            }
             None => JsValue::NULL,
         }
     }

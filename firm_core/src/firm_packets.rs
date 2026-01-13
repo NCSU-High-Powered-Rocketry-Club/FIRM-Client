@@ -1,5 +1,6 @@
 use crate::utils::bytes_to_str;
 use crate::constants::command_constants::*;
+use crate::framed_packet::{FramedPacket, Framed};
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "python")]
@@ -50,7 +51,7 @@ pub struct DeviceConfig {
 /// Represents a decoded FIRM telemetry packet with converted physical units.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "python", pyo3::pyclass(get_all, freelist = 20, frozen))]
-pub struct FIRMDataPacket {
+pub struct FIRMData {
     pub timestamp_seconds: f64,
 
     pub temperature_celsius: f32,
@@ -90,8 +91,92 @@ pub struct FIRMDataPacket {
     pub est_quaternion_z: f32,
 }
 
+/// Wire-level framed data packet.
+///
+/// This is the raw bytes as received (payload is not decoded).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FIRMDataPacket {
+    frame: FramedPacket,
+}
+
 impl FIRMDataPacket {
-    /// Constructs a `FIRMDataPacket` from a raw payload byte slice.
+    pub fn header(&self) -> &[u8; 4] {
+        self.frame.header()
+    }
+
+    pub fn payload(&self) -> &[u8] {
+        self.frame.payload()
+    }
+
+    pub fn len(&self) -> u32 {
+        self.frame.len()
+    }
+
+    pub fn crc(&self) -> u16 {
+        self.frame.crc()
+    }
+}
+
+impl Framed for FIRMDataPacket {
+    fn frame(&self) -> &FramedPacket {
+        &self.frame
+    }
+
+    fn from_bytes(bytes: &[u8]) -> Result<Self, crate::framed_packet::FrameError> {
+        Ok(Self {
+            frame: FramedPacket::from_bytes(bytes)?,
+        })
+    }
+}
+
+/// Wire-level framed response packet.
+///
+/// The response marker is stored in header byte 3; the payload is marker-free.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FIRMResponsePacket {
+    frame: FramedPacket,
+}
+
+impl FIRMResponsePacket {
+    pub fn header(&self) -> &[u8; 4] {
+        self.frame.header()
+    }
+
+    pub fn command_marker(&self) -> u8 {
+        self.frame.header()[3]
+    }
+
+    pub fn command(&self) -> Option<FIRMCommand> {
+        FIRMCommand::from_marker(self.command_marker())
+    }
+
+    pub fn payload(&self) -> &[u8] {
+        self.frame.payload()
+    }
+
+    pub fn len(&self) -> u32 {
+        self.frame.len()
+    }
+
+    pub fn crc(&self) -> u16 {
+        self.frame.crc()
+    }
+}
+
+impl Framed for FIRMResponsePacket {
+    fn frame(&self) -> &FramedPacket {
+        &self.frame
+    }
+
+    fn from_bytes(bytes: &[u8]) -> Result<Self, crate::framed_packet::FrameError> {
+        Ok(Self {
+            frame: FramedPacket::from_bytes(bytes)?,
+        })
+    }
+}
+
+impl FIRMData {
+    /// Constructs a `FIRMData` from a raw payload byte slice.
     pub fn from_bytes(bytes: &[u8]) -> Self {
         fn four_bytes(bytes: &[u8], idx: &mut usize) -> [u8; 4] {
             let res = [
@@ -195,10 +280,8 @@ impl FIRMDataPacket {
     }
 }
 
-/// Represents a response received from the FIRM hardware after sending a command.
-/// It can contain anything from a simple status to actual data requested by the command.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum FIRMResponsePacket {
+pub enum FIRMResponse {
     GetDeviceInfo(DeviceInfo),
     GetDeviceConfig(DeviceConfig),
     SetDeviceConfig(bool),
@@ -207,16 +290,15 @@ pub enum FIRMResponsePacket {
     Error(String),
 }
 
-impl FIRMResponsePacket {
-    /// Constructs a `FIRMResponsePacket` from a raw payload byte slice.
-    /// The format of this payload byte slice is as follows: [COMMAND MARKER][DATA...]
-    pub fn from_bytes(data: &[u8]) -> Self {
-        match data[0] {
-            DEVICE_INFO_MARKER => {
-                // [DEVICE_INFO_MARKER][ID (8 bytes)][FIRMWARE_VERSION (8 bytes)][PADDING ...]
-                let id_bytes = &data[1..1 + DEVICE_ID_LENGTH];
+impl FIRMResponse {
+    /// Constructs a decoded `FIRMResponse` from a command and raw payload bytes.
+    pub fn from_command_and_bytes(command: FIRMCommand, data: &[u8]) -> Self {
+        match command {
+            FIRMCommand::GetDeviceInfo => {
+                // [ID (8 bytes)][FIRMWARE_VERSION (8 bytes)][PADDING ...]
+                let id_bytes = &data[0..DEVICE_ID_LENGTH];
                 let firmware_version_bytes =
-                    &data[1 + DEVICE_ID_LENGTH..1 + DEVICE_ID_LENGTH + FIRMWARE_VERSION_LENGTH];
+                    &data[DEVICE_ID_LENGTH..DEVICE_ID_LENGTH + FIRMWARE_VERSION_LENGTH];
                 let id = u64::from_le_bytes(id_bytes.try_into().unwrap());
                 let firmware_version = bytes_to_str(firmware_version_bytes);
 
@@ -224,19 +306,19 @@ impl FIRMResponsePacket {
                     id,
                     firmware_version,
                 };
-                FIRMResponsePacket::GetDeviceInfo(info)
+                FIRMResponse::GetDeviceInfo(info)
             }
-            DEVICE_CONFIG_MARKER => {
-                // [DEVICE_CONFIG_MARKER][NAME (32 bytes)][FREQUENCY (2 bytes)][PROTOCOL (1 byte)]
+            FIRMCommand::GetDeviceConfig => {
+                // [NAME (32 bytes)][FREQUENCY (2 bytes)][PROTOCOL (1 byte)]
                 let name_bytes: [u8; DEVICE_NAME_LENGTH] =
-                    data[1..DEVICE_NAME_LENGTH + 1].try_into().unwrap();
+                    data[0..DEVICE_NAME_LENGTH].try_into().unwrap();
                 let name = bytes_to_str(&name_bytes);
                 let frequency = u16::from_le_bytes(
-                    data[DEVICE_NAME_LENGTH + 1..DEVICE_NAME_LENGTH + 1 + FREQUENCY_LENGTH]
+                    data[DEVICE_NAME_LENGTH..DEVICE_NAME_LENGTH + FREQUENCY_LENGTH]
                         .try_into()
                         .unwrap(),
                 );
-                let protocol = match data[DEVICE_NAME_LENGTH + 1 + FREQUENCY_LENGTH] {
+                let protocol = match data[DEVICE_NAME_LENGTH + FREQUENCY_LENGTH] {
                     0x01 => DeviceProtocol::USB,
                     0x02 => DeviceProtocol::UART,
                     0x03 => DeviceProtocol::I2C,
@@ -250,28 +332,44 @@ impl FIRMResponsePacket {
                     name,
                 };
 
-                FIRMResponsePacket::GetDeviceConfig(config)
+                FIRMResponse::GetDeviceConfig(config)
             }
-            SET_DEVICE_CONFIG_MARKER => {
-                let success = data[1] == 1;
-                FIRMResponsePacket::SetDeviceConfig(success)
+            FIRMCommand::SetDeviceConfig => {
+                let success = data.get(0) == Some(&1);
+                FIRMResponse::SetDeviceConfig(success)
             }
-            MOCK_MARKER => {
-                let success = data[1] == 1;
-                FIRMResponsePacket::Mock(success)
+            FIRMCommand::Mock => {
+                let success = data.get(0) == Some(&1);
+                FIRMResponse::Mock(success)
             }
-            CANCEL_MARKER => {
-                let acknowledgement = data[1] == 1;
-                FIRMResponsePacket::Cancel(acknowledgement)
+            FIRMCommand::Cancel => {
+                let acknowledgement = data.get(0) == Some(&1);
+                FIRMResponse::Cancel(acknowledgement)
             }
-            _ => FIRMResponsePacket::Error("Unknown response marker".to_string()),
+            // Reboot currently has no decoded response type.
+            FIRMCommand::Reboot => FIRMResponse::Error("No decoded response for Reboot".to_string()),
         }
+    }
+
+    /// Constructs a decoded `FIRMResponse` from a command marker and raw payload bytes.
+    ///
+    /// With the current framing, response packets carry the command marker in the 4-byte
+    /// packet header (byte 3), so the payload is marker-free.
+    pub fn from_marker_and_bytes(marker: u8, data: &[u8]) -> Self {
+        let Some(command) = FIRMCommand::from_marker(marker) else {
+            return FIRMResponse::Error("Unknown response marker".to_string());
+        };
+        Self::from_command_and_bytes(command, data)
+    }
+
+    pub fn from_packet(packet: &FIRMResponsePacket) -> Self {
+        Self::from_marker_and_bytes(packet.command_marker(), packet.payload())
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{DeviceConfig, DeviceInfo, DeviceProtocol, FIRMDataPacket, FIRMResponsePacket};
+    use super::{DeviceConfig, DeviceInfo, DeviceProtocol, FIRMData, FIRMResponse};
     use crate::constants::command_constants::*;
     use crate::utils::str_to_bytes;
 
@@ -285,7 +383,7 @@ mod tests {
         payload[8..12].copy_from_slice(&temperature.to_le_bytes());
         payload[12..16].copy_from_slice(&pressure.to_le_bytes());
 
-        let pkt = FIRMDataPacket::from_bytes(&payload);
+        let pkt = FIRMData::from_bytes(&payload);
         assert_eq!(pkt.timestamp_seconds, timestamp);
         assert_eq!(pkt.temperature_celsius, temperature);
         assert_eq!(pkt.pressure_pascals, pressure);
@@ -293,20 +391,19 @@ mod tests {
 
     #[test]
     fn test_firm_response_packet_from_bytes_get_device_info() {
-        let mut payload = [0u8; 1 + DEVICE_ID_LENGTH + FIRMWARE_VERSION_LENGTH];
-        payload[0] = DEVICE_INFO_MARKER;
+        let mut payload = [0u8; DEVICE_ID_LENGTH + FIRMWARE_VERSION_LENGTH];
 
         let id = 0x1122334455667788u64;
-        payload[1..1 + DEVICE_ID_LENGTH].copy_from_slice(&id.to_le_bytes());
+        payload[0..DEVICE_ID_LENGTH].copy_from_slice(&id.to_le_bytes());
 
         let fw_bytes = str_to_bytes::<FIRMWARE_VERSION_LENGTH>("v1.2.3");
-        payload[1 + DEVICE_ID_LENGTH..1 + DEVICE_ID_LENGTH + FIRMWARE_VERSION_LENGTH]
+        payload[DEVICE_ID_LENGTH..DEVICE_ID_LENGTH + FIRMWARE_VERSION_LENGTH]
             .copy_from_slice(&fw_bytes);
 
-        let decoded = FIRMResponsePacket::from_bytes(&payload);
+        let decoded = FIRMResponse::from_marker_and_bytes(DEVICE_INFO_MARKER, &payload);
         assert_eq!(
             decoded,
-            FIRMResponsePacket::GetDeviceInfo(DeviceInfo {
+            FIRMResponse::GetDeviceInfo(DeviceInfo {
                 firmware_version: "v1.2.3".to_string(),
                 id,
             })
@@ -315,22 +412,21 @@ mod tests {
 
     #[test]
     fn test_firm_response_packet_from_bytes_get_device_config() {
-        let mut payload = [0u8; 1 + DEVICE_NAME_LENGTH + FREQUENCY_LENGTH + 1];
-        payload[0] = DEVICE_CONFIG_MARKER;
+        let mut payload = [0u8; DEVICE_NAME_LENGTH + FREQUENCY_LENGTH + 1];
 
         let name_bytes = str_to_bytes::<DEVICE_NAME_LENGTH>("MyDevice");
-        payload[1..1 + DEVICE_NAME_LENGTH].copy_from_slice(&name_bytes);
+        payload[0..DEVICE_NAME_LENGTH].copy_from_slice(&name_bytes);
 
         let frequency: u16 = 50;
-        payload[1 + DEVICE_NAME_LENGTH..1 + DEVICE_NAME_LENGTH + FREQUENCY_LENGTH]
+        payload[DEVICE_NAME_LENGTH..DEVICE_NAME_LENGTH + FREQUENCY_LENGTH]
             .copy_from_slice(&frequency.to_le_bytes());
 
-        payload[1 + DEVICE_NAME_LENGTH + FREQUENCY_LENGTH] = 0x03;
+        payload[DEVICE_NAME_LENGTH + FREQUENCY_LENGTH] = 0x03;
 
-        let decoded = FIRMResponsePacket::from_bytes(&payload);
+        let decoded = FIRMResponse::from_marker_and_bytes(DEVICE_CONFIG_MARKER, &payload);
         assert_eq!(
             decoded,
-            FIRMResponsePacket::GetDeviceConfig(DeviceConfig {
+            FIRMResponse::GetDeviceConfig(DeviceConfig {
                 name: "MyDevice".to_string(),
                 frequency,
                 protocol: DeviceProtocol::I2C,
@@ -340,37 +436,37 @@ mod tests {
 
     #[test]
     fn test_firm_response_packet_from_bytes_set_device_config() {
-        let payload = [SET_DEVICE_CONFIG_MARKER, 1u8];
+        let payload = [1u8];
         assert_eq!(
-            FIRMResponsePacket::from_bytes(&payload),
-            FIRMResponsePacket::SetDeviceConfig(true)
+            FIRMResponse::from_marker_and_bytes(SET_DEVICE_CONFIG_MARKER, &payload),
+            FIRMResponse::SetDeviceConfig(true)
         );
     }
 
     #[test]
     fn test_firm_response_packet_from_bytes_mock() {
-        let payload = [MOCK_MARKER, 1u8];
+        let payload = [1u8];
         assert_eq!(
-            FIRMResponsePacket::from_bytes(&payload),
-            FIRMResponsePacket::Mock(true)
+            FIRMResponse::from_marker_and_bytes(MOCK_MARKER, &payload),
+            FIRMResponse::Mock(true)
         );
     }
 
     #[test]
     fn test_firm_response_packet_from_bytes_cancel() {
-        let payload = [CANCEL_MARKER, 1u8];
+        let payload = [1u8];
         assert_eq!(
-            FIRMResponsePacket::from_bytes(&payload),
-            FIRMResponsePacket::Cancel(true)
+            FIRMResponse::from_marker_and_bytes(CANCEL_MARKER, &payload),
+            FIRMResponse::Cancel(true)
         );
     }
 
     #[test]
     fn test_firm_response_packet_from_bytes_unknown_marker() {
-        let payload = [0xABu8, 0u8];
+        let payload = [0u8];
         assert_eq!(
-            FIRMResponsePacket::from_bytes(&payload),
-            FIRMResponsePacket::Error("Unknown response marker".to_string())
+            FIRMResponse::from_marker_and_bytes(0xAB, &payload),
+            FIRMResponse::Error("Unknown response marker".to_string())
         );
     }
 }

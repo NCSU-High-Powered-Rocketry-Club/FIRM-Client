@@ -1,5 +1,5 @@
 use anyhow::Result;
-use firm_core::client_packets::FIRMMockPacket;
+use firm_core::client_packets::{FIRMMockPacket, FIRMMockPacketType};
 use firm_core::constants::mock_constants::HEADER_TOTAL_SIZE;
 use firm_core::mock::MockParser;
 use std::fs::File;
@@ -46,23 +46,27 @@ fn main() -> Result<()> {
             let bytes = pkt.to_bytes();
             let parsed = FIRMMockPacket::from_bytes(&bytes)
                 .expect("failed to parse bytes we just serialized (header/len/crc mismatch)");
-            assert_eq!(parsed.payload, pkt.payload);
+            assert_eq!(parsed.payload(), pkt.payload());
 
             count_total += 1;
-            match parsed.payload.first().copied() {
-                Some(b'B') => count_b += 1,
-                Some(b'I') => count_i += 1,
-                Some(b'M') => count_m += 1,
-                other => {
-                    println!("Unexpected record id: {other:?}");
-                }
+            match parsed.packet_type() {
+                FIRMMockPacketType::B => count_b += 1,
+                FIRMMockPacketType::I => count_i += 1,
+                FIRMMockPacketType::M => count_m += 1,
+                other => println!("Unexpected packet type: {other:?}"),
             }
 
             if count_total <= 5 {
+                let id_char = match parsed.packet_type() {
+                    FIRMMockPacketType::Header => 'H',
+                    FIRMMockPacketType::B => 'B',
+                    FIRMMockPacketType::I => 'I',
+                    FIRMMockPacketType::M => 'M',
+                };
                 println!(
                     "#{count_total} id={} payload_len={} delay_s={:.6}",
-                    parsed.payload[0] as char,
-                    parsed.payload.len(),
+                    id_char,
+                    parsed.payload().len(),
                     delay_s
                 );
             }
@@ -77,13 +81,13 @@ fn main() -> Result<()> {
         let bytes = pkt.to_bytes();
         let parsed = FIRMMockPacket::from_bytes(&bytes)
             .expect("failed to parse bytes we just serialized (header/len/crc mismatch)");
-        assert_eq!(parsed.payload, pkt.payload);
+        assert_eq!(parsed.payload(), pkt.payload());
 
         count_total += 1;
-        match parsed.payload.first().copied() {
-            Some(b'B') => count_b += 1,
-            Some(b'I') => count_i += 1,
-            Some(b'M') => count_m += 1,
+        match parsed.packet_type() {
+            FIRMMockPacketType::B => count_b += 1,
+            FIRMMockPacketType::I => count_i += 1,
+            FIRMMockPacketType::M => count_m += 1,
             _ => {}
         }
     }

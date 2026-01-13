@@ -1,5 +1,5 @@
 use firm_core::firm_packets::{
-    DeviceConfig, DeviceInfo, DeviceProtocol, FIRMDataPacket, FIRMResponsePacket,
+    DeviceConfig, DeviceInfo, DeviceProtocol, FIRMData,
 };
 use firm_rust::FIRMClient as RustFirmClient;
 use pyo3::prelude::*;
@@ -74,7 +74,7 @@ impl FIRMClient {
     }
 
     #[pyo3(signature = (block=false))]
-    fn get_data_packets(&mut self, block: bool) -> PyResult<Vec<FIRMDataPacket>> {
+    fn get_data_packets(&mut self, block: bool) -> PyResult<Vec<FIRMData>> {
         if let Some(err) = self.inner.check_error() {
             return Err(PyErr::new::<pyo3::exceptions::PyIOError, _>(err));
         }
@@ -201,7 +201,7 @@ impl FIRMClient {
 #[pymodule(gil_used = false)]
 fn firm_client(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<FIRMClient>()?;
-    m.add_class::<FIRMDataPacket>()?;
+    m.add_class::<FIRMData>()?;
     m.add_class::<DeviceProtocol>()?;
     m.add_class::<DeviceInfo>()?;
     m.add_class::<DeviceConfig>()?;

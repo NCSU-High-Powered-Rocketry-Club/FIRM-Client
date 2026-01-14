@@ -1,71 +1,64 @@
 pub mod packet_constants {
-    /// Maximum allowed payload size in bytes.
-    pub const HEADER_SIZE: usize = 4;
+    /// Header is stored as two little-endian u16s on the wire.
+    pub const HEADER_SIZE: usize = 2;
+    pub const IDENTIFIER_SIZE: usize = 2;
     pub const LENGTH_SIZE: usize = 4;
     pub const CRC_SIZE: usize = 2;
-}
 
-pub mod data_parser_constants {
-    /// Start byte sequence for packet identification. This is in little-endian format.
-    pub const DATA_PACKET_START_BYTES: [u8; 2] = [0x5A, 0xA5];
-    /// Start byte sequence for response identification. This is in little-endian format.
-    pub const RESPONSE_PACKET_START_BYTES: [u8; 2] = [0xA5, 0x5A];
+    pub const MIN_PACKET_SIZE: usize = HEADER_SIZE + IDENTIFIER_SIZE + LENGTH_SIZE + CRC_SIZE;
 
-    pub const MOCK_SENSOR_PACKET_START_BYTES: [u8; 2] = [0xB6, 0x6B];
+    /// First u16 in the framed header.
+    #[repr(u16)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum PacketHeader {
+        /// Equivalent wire bytes: [0x5A, 0xA5]
+        Data = 0xA55A,
+        /// Equivalent wire bytes: [0xA5, 0x5A]
+        Response = 0x5AA5,
+        /// Equivalent wire bytes: [0xB6, 0x6B]
+        MockSensor = 0x6BB6,
+        /// Equivalent wire bytes: [0x6B, 0xB6]
+        Command = 0xB66B,
+    }
 
-    /// Message IDs (u16) in little-endian byte order.
-    pub const MSGID_DATA_PACKET: u16 = 0xA55A;
-    pub const MSGID_RESPONSE_PACKET: u16 = 0x5AA5;
-
-    /// Padding bytes used in the 4-byte header.
-    pub const PADDING_BYTE: u8 = 0x00;
-
-    /// Packet format: [header(4)][len(u32 le)(4)][payload(len)][crc(u16 le)(2)]
-    pub const HEADER_SIZE: usize = 4;
-    pub const LENGTH_FIELD_SIZE: usize = 4;
-    pub const CRC_SIZE: usize = 2;
-    pub const MIN_PACKET_SIZE: usize = HEADER_SIZE + LENGTH_FIELD_SIZE + CRC_SIZE;
+    impl PacketHeader {
+        pub const fn as_u16(self) -> u16 {
+            self as u16
+        }
+    }
 }
 
 pub mod command_constants {
-    pub const DEVICE_INFO_MARKER: u8 = 0x01;
-    pub const DEVICE_CONFIG_MARKER: u8 = 0x02;
-    pub const SET_DEVICE_CONFIG_MARKER: u8 = 0x03;
-    pub const REBOOT_MARKER: u8 = 0x04;
-    pub const MOCK_MARKER: u8 = 0x05;
-    pub const CANCEL_MARKER: u8 = 0xFF;
+    use crate::framed_packet::FrameError;
 
+    pub const DEVICE_INFO_MARKER: u16 = 0x0001;
+    pub const DEVICE_CONFIG_MARKER: u16 = 0x0002;
+    pub const SET_DEVICE_CONFIG_MARKER: u16 = 0x0003;
+    pub const REBOOT_MARKER: u16 = 0x0004;
+    pub const MOCK_MARKER: u16 = 0x0005;
+    pub const CANCEL_MARKER: u16 = 0x00FF;
+
+    #[repr(u16)]
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub enum FIRMCommand {
-        GetDeviceInfo,
-        GetDeviceConfig,
-        SetDeviceConfig,
-        Reboot,
-        Mock,
-        Cancel,
+        GetDeviceInfo = DEVICE_INFO_MARKER,
+        GetDeviceConfig = DEVICE_CONFIG_MARKER,
+        SetDeviceConfig = SET_DEVICE_CONFIG_MARKER,
+        Reboot = REBOOT_MARKER,
+        Mock = MOCK_MARKER,
+        Cancel = CANCEL_MARKER,
     }
 
     impl FIRMCommand {
-        pub const fn marker(self) -> u8 {
-            match self {
-                FIRMCommand::GetDeviceInfo => DEVICE_INFO_MARKER,
-                FIRMCommand::GetDeviceConfig => DEVICE_CONFIG_MARKER,
-                FIRMCommand::SetDeviceConfig => SET_DEVICE_CONFIG_MARKER,
-                FIRMCommand::Reboot => REBOOT_MARKER,
-                FIRMCommand::Mock => MOCK_MARKER,
-                FIRMCommand::Cancel => CANCEL_MARKER,
-            }
-        }
-
-        pub const fn from_marker(marker: u8) -> Option<Self> {
+        pub const fn from_marker(marker: u16) -> Result<Self, FrameError> {
             match marker {
-                DEVICE_INFO_MARKER => Some(FIRMCommand::GetDeviceInfo),
-                DEVICE_CONFIG_MARKER => Some(FIRMCommand::GetDeviceConfig),
-                SET_DEVICE_CONFIG_MARKER => Some(FIRMCommand::SetDeviceConfig),
-                REBOOT_MARKER => Some(FIRMCommand::Reboot),
-                MOCK_MARKER => Some(FIRMCommand::Mock),
-                CANCEL_MARKER => Some(FIRMCommand::Cancel),
-                _ => None,
+                DEVICE_INFO_MARKER => Ok(FIRMCommand::GetDeviceInfo),
+                DEVICE_CONFIG_MARKER => Ok(FIRMCommand::GetDeviceConfig),
+                SET_DEVICE_CONFIG_MARKER => Ok(FIRMCommand::SetDeviceConfig),
+                REBOOT_MARKER => Ok(FIRMCommand::Reboot),
+                MOCK_MARKER => Ok(FIRMCommand::Mock),
+                CANCEL_MARKER => Ok(FIRMCommand::Cancel),
+                _ => Err(FrameError::UnknownMarker(marker)),
             }
         }
     }
@@ -76,12 +69,40 @@ pub mod command_constants {
     pub const DEVICE_ID_LENGTH: usize = 8;
     pub const FIRMWARE_VERSION_LENGTH: usize = 8;
     pub const FREQUENCY_LENGTH: usize = 2;
-    /// Protocol value: COMMAND_PACKET = 0x6BB6.
-    pub const COMMAND_START_BYTES: [u8; 2] = [0x6B, 0xB6];
-    pub const PADDING_BYTE: u8 = 0x00;
 }
 
 pub mod mock_constants {
+    use crate::constants::packet_constants::PacketHeader;
+
+    pub const MOCK_SENSOR_PACKET_HEADER: u16 = PacketHeader::MockSensor as u16;
+
+    /// Mock sensor packet type identifier stored in the second u16 header field.
+    #[repr(u16)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum FIRMMockPacketType {
+        HeaderPacket = b'H' as u16,
+        BarometerPacket = b'B' as u16,
+        IMUPacket = b'I' as u16,
+        MagnetometerPacket = b'M' as u16,
+    }
+
+    impl FIRMMockPacketType {
+        pub const fn as_u16(self) -> u16 {
+            self as u16
+        }
+
+        // TODO: make Result
+        pub const fn from_u16(v: u16) -> Option<Self> {
+            match v {
+                x if x == b'H' as u16 => Some(FIRMMockPacketType::HeaderPacket),
+                x if x == b'B' as u16 => Some(FIRMMockPacketType::BarometerPacket),
+                x if x == b'I' as u16 => Some(FIRMMockPacketType::IMUPacket),
+                x if x == b'M' as u16 => Some(FIRMMockPacketType::MagnetometerPacket),
+                _ => None,
+            }
+        }
+    }
+
     pub const BMP581_ID: u8 = b'B';
     pub const ICM45686_ID: u8 = b'I';
     pub const MMC5983MA_ID: u8 = b'M';

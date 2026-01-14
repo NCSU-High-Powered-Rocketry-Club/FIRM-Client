@@ -1,6 +1,8 @@
 use anyhow::Result;
-use firm_core::client_packets::{FIRMMockPacket, FIRMMockPacketType};
+use firm_core::client_packets::FIRMMockPacket;
+use firm_core::constants::mock_constants::FIRMMockPacketType;
 use firm_core::constants::mock_constants::HEADER_TOTAL_SIZE;
+use firm_core::framed_packet::Framed;
 use firm_core::mock::MockParser;
 use std::fs::File;
 use std::io::Read;
@@ -50,18 +52,18 @@ fn main() -> Result<()> {
 
             count_total += 1;
             match parsed.packet_type() {
-                FIRMMockPacketType::B => count_b += 1,
-                FIRMMockPacketType::I => count_i += 1,
-                FIRMMockPacketType::M => count_m += 1,
+                FIRMMockPacketType::BarometerPacket => count_b += 1,
+                FIRMMockPacketType::IMUPacket => count_i += 1,
+                FIRMMockPacketType::MagnetometerPacket => count_m += 1,
                 other => println!("Unexpected packet type: {other:?}"),
             }
 
             if count_total <= 5 {
                 let id_char = match parsed.packet_type() {
-                    FIRMMockPacketType::Header => 'H',
-                    FIRMMockPacketType::B => 'B',
-                    FIRMMockPacketType::I => 'I',
-                    FIRMMockPacketType::M => 'M',
+                    FIRMMockPacketType::HeaderPacket => 'H',
+                    FIRMMockPacketType::BarometerPacket => 'B',
+                    FIRMMockPacketType::IMUPacket => 'I',
+                    FIRMMockPacketType::MagnetometerPacket => 'M',
                 };
                 println!(
                     "#{count_total} id={} payload_len={} delay_s={:.6}",
@@ -85,9 +87,9 @@ fn main() -> Result<()> {
 
         count_total += 1;
         match parsed.packet_type() {
-            FIRMMockPacketType::B => count_b += 1,
-            FIRMMockPacketType::I => count_i += 1,
-            FIRMMockPacketType::M => count_m += 1,
+            FIRMMockPacketType::BarometerPacket => count_b += 1,
+            FIRMMockPacketType::IMUPacket => count_i += 1,
+            FIRMMockPacketType::MagnetometerPacket => count_m += 1,
             _ => {}
         }
     }

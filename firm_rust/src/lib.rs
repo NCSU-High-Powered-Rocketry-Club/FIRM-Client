@@ -1,6 +1,7 @@
 use anyhow::Result;
-use firm_core::client_packets::{FIRMCommandPacket, FIRMMockPacket, FIRMMockPacketType};
+use firm_core::client_packets::{FIRMCommandPacket, FIRMMockPacket};
 use firm_core::constants::mock_constants::HEADER_TOTAL_SIZE;
+use firm_core::constants::mock_constants::FIRMMockPacketType;
 use firm_core::data_parser::SerialParser;
 use firm_core::framed_packet::Framed;
 use firm_core::firm_packets::{
@@ -140,15 +141,15 @@ impl FIRMClient {
                     Ok(bytes_read) if bytes_read > 0 => {
                         // Feed the read bytes into the parser
                         parser.parse_bytes(&buffer[..bytes_read]);
-                        while let Some(frame) = parser.get_data_frame() {
-                            let packet = FIRMData::from_bytes(frame.payload());
+                        while let Some(frame) = parser.get_data_packet() {
+                            let packet = frame.data().clone();
                             if sender.send(packet).is_err() {
                                 return port; // Receiver dropped
                             }
                         }
 
-                        while let Some(frame) = parser.get_response_frame() {
-                            let response = FIRMResponse::from_packet(&frame);
+                        while let Some(frame) = parser.get_response_packet() {
+                            let response = frame.response().clone();
                             if response_sender.send(response).is_err() {
                                 return port; // Receiver dropped
                             }
@@ -338,7 +339,7 @@ impl FIRMClient {
 
     /// Requests device info and waits for the response.
     pub fn get_device_info(&mut self, timeout: Duration) -> Result<Option<DeviceInfo>> {
-        self.send_command(FIRMCommandPacket::get_device_info())?;
+        self.send_command(FIRMCommandPacket::build_get_device_info_command())?;
         self.wait_for_matching_response(timeout, |res| match res {
             FIRMResponse::GetDeviceInfo(info) => Some(info.clone()),
             _ => None,
@@ -347,7 +348,7 @@ impl FIRMClient {
 
     /// Requests device configuration and waits for the response.
     pub fn get_device_config(&mut self, timeout: Duration) -> Result<Option<DeviceConfig>> {
-        self.send_command(FIRMCommandPacket::get_device_config())?;
+        self.send_command(FIRMCommandPacket::build_get_device_config_command())?;
         self.wait_for_matching_response(timeout, |res| match res {
             FIRMResponse::GetDeviceConfig(cfg) => Some(cfg.clone()),
             _ => None,
@@ -367,7 +368,7 @@ impl FIRMClient {
             frequency,
             protocol,
         };
-        self.send_command(FIRMCommandPacket::set_device_config(config))?;
+        self.send_command(FIRMCommandPacket::build_set_device_config_command(config))?;
         self.wait_for_matching_response(timeout, |res| match res {
             FIRMResponse::SetDeviceConfig(ok) => Some(*ok),
             _ => None,
@@ -376,7 +377,7 @@ impl FIRMClient {
 
     /// Sends a mock command, waits for acknowledgement, then starts sending mock data packets.
     pub fn mock(&mut self, timeout: Duration) -> Result<Option<bool>> {
-        self.send_command(FIRMCommandPacket::mock())?;
+        self.send_command(FIRMCommandPacket::build_mock_command())?;
         self.wait_for_matching_response(timeout, |res| match res {
             FIRMResponse::Mock(ok) => Some(*ok),
             _ => None,
@@ -424,7 +425,7 @@ impl FIRMClient {
 
         // Send the log header to the device, framed as a mock packet.
         // Payload is the raw header bytes (type byte is separate).
-        let header_pkt = FIRMMockPacket::new(FIRMMockPacketType::Header, header.clone());
+        let header_pkt = FIRMMockPacket::new(FIRMMockPacketType::HeaderPacket, header.clone());
         self.send_bytes(header_pkt.to_bytes())?;
 
         let mut parser = MockParser::new();
@@ -466,7 +467,7 @@ impl FIRMClient {
 
     /// Sends a cancel command and waits for acknowledgement.
     pub fn cancel(&mut self, timeout: Duration) -> Result<Option<bool>> {
-        self.send_command(FIRMCommandPacket::cancel())?;
+        self.send_command(FIRMCommandPacket::build_cancel_command())?;
         self.wait_for_matching_response(timeout, |res| match res {
             FIRMResponse::Cancel(ok) => Some(*ok),
             _ => None,
@@ -475,7 +476,7 @@ impl FIRMClient {
 
     /// Sends a reboot command.
     pub fn reboot(&self) -> Result<()> {
-        self.send_command(FIRMCommandPacket::reboot())
+        self.send_command(FIRMCommandPacket::build_reboot_command())
     }
 
     /// Checks for any errors that have occurred in the background thread.

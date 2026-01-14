@@ -87,6 +87,21 @@
         resize: vertical;
       }
 
+      #outgoingBytes {
+        width: 100%;
+        height: 140px;
+        background: #f9f9f9;
+        border: 2px solid var(--theme-color);
+        border-radius: 10px;
+        padding: 1rem;
+        font-family: monospace;
+        font-size: 0.8rem;
+        white-space: pre;
+        overflow-y: auto;
+        color: #333;
+        resize: vertical;
+      }
+
       .controls {
         display: none;
         flex-direction: column;
@@ -156,6 +171,9 @@
     <h3>Incoming Serial Bytes:</h3>
     <textarea id="rawBytes" readonly>{ No raw bytes yet }</textarea>
 
+    <h3>Outgoing Serial Bytes:</h3>
+    <textarea id="outgoingBytes" readonly>{ No outgoing bytes yet }</textarea>
+
     <script type="module">
       // 2. USE THE MAPPED NAME HERE
       import { FIRM } from 'firm-client';
@@ -173,9 +191,11 @@
       const rebootBtn = document.getElementById('rebootBtn');
       const configOutput = document.getElementById('configOutput');
       const rawBytesEl = document.getElementById('rawBytes');
+      const outgoingBytesEl = document.getElementById('outgoingBytes');
 
       let firmInstance = null;
       let unsubscribeRawBytes = null;
+      let unsubscribeOutgoingBytes = null;
 
       function setStatus(msg) {
         status.textContent = msg;
@@ -294,6 +314,11 @@
         unsubscribeRawBytes = null;
 
         try {
+          unsubscribeOutgoingBytes?.();
+        } catch {}
+        unsubscribeOutgoingBytes = null;
+
+        try {
           await instanceToClose?.close?.();
         } catch (e) {
           console.warn('[UI] close() failed (ignored):', e);
@@ -317,6 +342,7 @@
           btn.disabled = true;
 
           let rawLog = '';
+          let outgoingLog = '';
           const MAX_CHARS = 20000;
           unsubscribeRawBytes = firm.onRawBytes((bytes) => {
             rawLog += bytesToHex(bytes) + '\n';
@@ -325,6 +351,15 @@
             }
             rawBytesEl.value = rawLog;
             rawBytesEl.scrollTop = rawBytesEl.scrollHeight;
+          });
+
+          unsubscribeOutgoingBytes = firm.onOutgoingBytes((bytes) => {
+            outgoingLog += bytesToHex(bytes) + '\n';
+            if (outgoingLog.length > MAX_CHARS) {
+              outgoingLog = outgoingLog.slice(outgoingLog.length - MAX_CHARS);
+            }
+            outgoingBytesEl.value = outgoingLog;
+            outgoingBytesEl.scrollTop = outgoingBytesEl.scrollHeight;
           });
 
           (async () => {

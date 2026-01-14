@@ -1,7 +1,8 @@
 use alloc::collections::VecDeque;
 use alloc::vec::Vec;
 
-use crate::client_packets::{FIRMMockPacket, FIRMMockPacketType};
+use crate::client_packets::FIRMMockPacket;
+use crate::constants::mock_constants::FIRMMockPacketType;
 use crate::constants::mock_constants::*;
 
 pub struct MockParser {
@@ -113,7 +114,7 @@ impl MockParser {
                     let mut payload = Vec::with_capacity(3 + BMP581_SIZE);
                     payload.extend_from_slice(t);
                     payload.extend_from_slice(raw);
-                    let pkt = FIRMMockPacket::new(FIRMMockPacketType::B, payload);
+                    let pkt = FIRMMockPacket::new(FIRMMockPacketType::BarometerPacket, payload);
                     self.parsed_packets.push_back((pkt, delay_seconds));
                 }
                 ICM45686_ID => {
@@ -128,7 +129,7 @@ impl MockParser {
                     let mut payload = Vec::with_capacity(3 + ICM45686_SIZE);
                     payload.extend_from_slice(t);
                     payload.extend_from_slice(raw);
-                    let pkt = FIRMMockPacket::new(FIRMMockPacketType::I, payload);
+                    let pkt = FIRMMockPacket::new(FIRMMockPacketType::IMUPacket, payload);
                     self.parsed_packets.push_back((pkt, delay_seconds));
                 }
                 MMC5983MA_ID => {
@@ -143,7 +144,7 @@ impl MockParser {
                     let mut payload = Vec::with_capacity(3 + MMC5983MA_SIZE);
                     payload.extend_from_slice(t);
                     payload.extend_from_slice(raw);
-                    let pkt = FIRMMockPacket::new(FIRMMockPacketType::M, payload);
+                    let pkt = FIRMMockPacket::new(FIRMMockPacketType::MagnetometerPacket, payload);
                     self.parsed_packets.push_back((pkt, delay_seconds));
                 }
                 _ => {
@@ -172,6 +173,7 @@ impl MockParser {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::framed_packet::Framed;
 
     fn make_header() -> Vec<u8> {
         let mut header = Vec::new();
@@ -202,7 +204,7 @@ mod tests {
 
         let (mock_packet, delay) = parser.get_packet_with_delay().unwrap();
         assert_eq!(delay, 0.0);
-        assert_eq!(mock_packet.packet_type(), FIRMMockPacketType::I);
+        assert_eq!(mock_packet.packet_type(), FIRMMockPacketType::IMUPacket);
         assert_eq!(mock_packet.payload().len(), 3 + ICM45686_SIZE);
         assert_eq!(mock_packet.len() as usize, mock_packet.payload().len());
         assert_eq!(&mock_packet.payload()[0..3], &[0x00, 0x00, 0x01]);
@@ -220,9 +222,6 @@ mod tests {
         let mut bytes = Vec::new();
         bytes.extend_from_slice(&log_packet_bytes1);
         bytes.extend_from_slice(&log_packet_bytes2);
-        let mut bytes = Vec::new();
-        bytes.extend_from_slice(&log_packet_bytes1);
-        bytes.extend_from_slice(&log_packet_bytes2);
 
         let mut parser = MockParser::new();
         parser.read_header(&header);
@@ -232,8 +231,8 @@ mod tests {
         let (mock_packet2, d2) = parser.get_packet_with_delay().unwrap();
         assert_eq!(d1, 0.0);
 
-        assert_eq!(mock_packet1.packet_type(), FIRMMockPacketType::B);
-        assert_eq!(mock_packet2.packet_type(), FIRMMockPacketType::B);
+        assert_eq!(mock_packet1.packet_type(), FIRMMockPacketType::BarometerPacket);
+        assert_eq!(mock_packet2.packet_type(), FIRMMockPacketType::BarometerPacket);
         assert_eq!(mock_packet1.payload(), log_packet_bytes1[1..].as_ref());
         assert_eq!(mock_packet2.payload(), log_packet_bytes2[1..].as_ref());
 
@@ -260,7 +259,7 @@ mod tests {
 
         parser.parse_bytes(chunk2);
         let mock_packet = parser.get_packet().unwrap();
-        assert_eq!(mock_packet.packet_type(), FIRMMockPacketType::M);
+        assert_eq!(mock_packet.packet_type(), FIRMMockPacketType::MagnetometerPacket);
         assert_eq!(mock_packet.payload().len(), 3 + MMC5983MA_SIZE);
         assert!(parser.get_packet().is_none());
     }

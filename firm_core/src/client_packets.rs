@@ -5,12 +5,11 @@ use crate::{
     framed_packet::{FramedPacket, Framed},
     utils::str_to_bytes,
 };
-use crate::constants::command_constants::{self, FIRMCommand, DEVICE_NAME_LENGTH, FREQUENCY_LENGTH, PADDING_BYTE};
-use crate::constants::data_parser_constants::{
-    MOCK_SENSOR_PACKET_START_BYTES,
-};
+use crate::constants::command_constants::{FIRMCommand, DEVICE_NAME_LENGTH, FREQUENCY_LENGTH};
+use crate::constants::mock_constants::{FIRMMockPacketType, MOCK_SENSOR_PACKET_HEADER};
+use crate::constants::packet_constants::PacketHeader;
 
-/// Header format: `[COMMAND_START_BYTES(2)][padding(1)][command_marker(1)]`.
+/// Header format: `[header(u16)][identifier(u16)]`.
 pub struct FIRMCommandPacket {
     command_type: FIRMCommand,
     frame: FramedPacket,
@@ -18,15 +17,11 @@ pub struct FIRMCommandPacket {
 
 impl FIRMCommandPacket {
     pub fn new(command_type: FIRMCommand, payload: Vec<u8>) -> Self {
-        let header = [
-            command_constants::COMMAND_START_BYTES[0],
-            command_constants::COMMAND_START_BYTES[1],
-            command_constants::PADDING_BYTE,
-            command_type.marker(),
-        ];
+        let header = PacketHeader::Command as u16;
+        let identifier = command_type as u16;
         Self {
             command_type,
-            frame: FramedPacket::new(header, payload),
+            frame: FramedPacket::new(header, identifier, payload),
         }
     }
 
@@ -34,55 +29,33 @@ impl FIRMCommandPacket {
         self.command_type
     }
 
-    pub fn header(&self) -> &[u8; 4] {
-        self.frame.header()
-    }
-
-    pub fn payload(&self) -> &[u8] {
-        self.frame.payload()
-    }
-
-    pub fn len(&self) -> u32 {
-        self.frame.len()
-    }
-
-    pub fn crc(&self) -> u16 {
-        self.frame.crc()
-    }
-
-    pub fn get_device_info() -> Self {
+    pub fn build_get_device_info_command() -> Self {
         Self::new(FIRMCommand::GetDeviceInfo, Vec::new())
     }
 
-    pub fn get_device_config() -> Self {
+    pub fn build_get_device_config_command() -> Self {
         Self::new(FIRMCommand::GetDeviceConfig, Vec::new())
     }
 
-    pub fn cancel() -> Self {
+    pub fn build_cancel_command() -> Self {
         Self::new(FIRMCommand::Cancel, Vec::new())
     }
 
-    pub fn reboot() -> Self {
+    pub fn build_reboot_command() -> Self {
         Self::new(FIRMCommand::Reboot, Vec::new())
     }
 
-    pub fn mock() -> Self {
+    pub fn build_mock_command() -> Self {
         Self::new(FIRMCommand::Mock, Vec::new())
     }
 
-    pub fn set_device_config(config: DeviceConfig) -> Self {
+    pub fn build_set_device_config_command(config: DeviceConfig) -> Self {
         let mut payload = Vec::with_capacity(DEVICE_NAME_LENGTH + FREQUENCY_LENGTH + 1);
         let name_bytes = str_to_bytes::<DEVICE_NAME_LENGTH>(&config.name);
         payload.extend_from_slice(&name_bytes);
         payload.extend_from_slice(&config.frequency.to_le_bytes());
 
-        let protocol_byte = match config.protocol {
-            DeviceProtocol::USB => 0x01,
-            DeviceProtocol::UART => 0x02,
-            DeviceProtocol::I2C => 0x03,
-            DeviceProtocol::SPI => 0x04,
-        };
-        payload.push(protocol_byte);
+        payload.push(config.protocol as u8);
 
         Self::new(FIRMCommand::SetDeviceConfig, payload)
     }
@@ -93,41 +66,12 @@ impl Framed for FIRMCommandPacket {
         &self.frame
     }
 
+    /// Parses a framed command packet from raw bytes. This method is just for testing.
     fn from_bytes(bytes: &[u8]) -> Result<Self, crate::framed_packet::FrameError> {
         let frame = FramedPacket::from_bytes(bytes)?;
-        let marker = frame.header()[3];
-        let command_type = FIRMCommand::from_marker(marker)
-            .ok_or(crate::framed_packet::FrameError::UnknownMarker(marker))?;
+        let marker = frame.identifier();
+        let command_type = FIRMCommand::from_marker(marker)?;
         Ok(Self { command_type, frame })
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FIRMMockPacketType {
-    Header,
-    B,
-    I,
-    M,
-}
-
-impl FIRMMockPacketType {
-    fn as_byte(self) -> u8 {
-        match self {
-            FIRMMockPacketType::Header => b'H',
-            FIRMMockPacketType::B => b'B',
-            FIRMMockPacketType::I => b'I',
-            FIRMMockPacketType::M => b'M',
-        }
-    }
-
-    fn from_byte(b: u8) -> Option<Self> {
-        match b {
-            b'H' => Some(FIRMMockPacketType::Header),
-            b'B' => Some(FIRMMockPacketType::B),
-            b'I' => Some(FIRMMockPacketType::I),
-            b'M' => Some(FIRMMockPacketType::M),
-            _ => None,
-        }
     }
 }
 
@@ -140,38 +84,18 @@ impl FIRMMockPacket {
     /// Creates a new mock packet.
     ///
     /// Packet format:
-    /// `[header(2)][pad(1)][type(1)][len(u32 LE)][payload(len)][crc(u16 LE)]`.
+    /// `[header(u16)][identifier(u16)][length(u32)][payload(len)][crc(u16)]`.
     pub fn new(packet_type: FIRMMockPacketType, payload: Vec<u8>) -> Self {
-        let header4 = [
-            MOCK_SENSOR_PACKET_START_BYTES[0],
-            MOCK_SENSOR_PACKET_START_BYTES[1],
-            PADDING_BYTE,
-            packet_type.as_byte(),
-        ];
+        let header = MOCK_SENSOR_PACKET_HEADER;
+        let identifier = packet_type as u16;
         Self {
             packet_type,
-            frame: FramedPacket::new(header4, payload),
+            frame: FramedPacket::new(header, identifier, payload),
         }
     }
 
     pub fn packet_type(&self) -> FIRMMockPacketType {
         self.packet_type
-    }
-
-    pub fn header(&self) -> &[u8; 4] {
-        self.frame.header()
-    }
-
-    pub fn payload(&self) -> &[u8] {
-        self.frame.payload()
-    }
-
-    pub fn len(&self) -> u32 {
-        self.frame.len()
-    }
-
-    pub fn crc(&self) -> u16 {
-        self.frame.crc()
     }
 
     /// Serializes the mock packet into bytes ready to be written to the serial stream.
@@ -181,15 +105,14 @@ impl FIRMMockPacket {
 
     /// Parses a framed mock sensor packet from raw bytes. This is just used for testing.
     ///
-    /// Expected wire format: `[header(2)][pad(1)][type(1)][len(u32 LE)][payload(len)][crc(u16 LE)]`.
+    /// Expected wire format: `[header(u16)][identifier(u16)][length(u32)][payload(len)][crc(u16)]`.
     /// Returns `None` if the header doesn't match, the length is inconsistent, or CRC fails.
     pub fn from_bytes(bytes: &[u8]) -> Option<Self> {
         let frame = FramedPacket::from_bytes(bytes).ok()?;
-        let header = frame.header();
-        if header[0..2] != MOCK_SENSOR_PACKET_START_BYTES {
+        if frame.header() != MOCK_SENSOR_PACKET_HEADER {
             return None;
         }
-        let packet_type = FIRMMockPacketType::from_byte(header[3])?;
+        let packet_type = FIRMMockPacketType::from_u16(frame.identifier())?;
         Some(Self { packet_type, frame })
     }
 }
@@ -199,18 +122,21 @@ impl Framed for FIRMMockPacket {
         &self.frame
     }
 
+    /// Parses a framed mock sensor packet from raw bytes. This method is just for testing.
     fn from_bytes(bytes: &[u8]) -> Result<Self, crate::framed_packet::FrameError> {
         let frame = FramedPacket::from_bytes(bytes)?;
-        let packet_type = FIRMMockPacketType::from_byte(frame.header()[3]).unwrap_or(FIRMMockPacketType::Header);
+        let packet_type = FIRMMockPacketType::from_u16(frame.identifier())
+            .unwrap_or(FIRMMockPacketType::HeaderPacket);
         Ok(Self { packet_type, frame })
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{FIRMCommandPacket, FIRMMockPacket, FIRMMockPacketType};
+    use super::{FIRMCommandPacket, FIRMMockPacket};
     use crate::constants::command_constants::*;
-    use crate::constants::data_parser_constants::MOCK_SENSOR_PACKET_START_BYTES;
+    use crate::constants::mock_constants::{FIRMMockPacketType, MOCK_SENSOR_PACKET_HEADER};
+    use crate::constants::packet_constants::PacketHeader;
     use crate::firm_packets::{DeviceConfig, DeviceProtocol};
     use crate::framed_packet::Framed;
     use crate::utils::{crc16_ccitt, str_to_bytes};
@@ -223,55 +149,40 @@ mod tests {
         crc16_ccitt(&bytes[..bytes.len() - CRC_LENGTH])
     }
 
-    fn assert_common_packet_invariants(bytes: &[u8], expected_start: &[u8; 2]) {
-        assert_eq!(&bytes[0..2], expected_start);
-        assert_eq!(bytes[2], PADDING_BYTE);
+    fn header_from_bytes(bytes: &[u8]) -> u16 {
+        u16::from_le_bytes(bytes[0..2].try_into().unwrap())
+    }
+
+    fn identifier_from_bytes(bytes: &[u8]) -> u16 {
+        u16::from_le_bytes(bytes[2..4].try_into().unwrap())
+    }
+
+    fn assert_common_packet_invariants(bytes: &[u8]) {
         assert_eq!(crc_from_bytes(bytes), calculate_crc(bytes));
     }
 
-    #[test]
-    fn test_firm_command_packet_to_bytes_get_device_info() {
-        let command_packet = FIRMCommandPacket::get_device_info().to_bytes();
-        assert_common_packet_invariants(&command_packet, &COMMAND_START_BYTES);
-        assert_eq!(command_packet[3], DEVICE_INFO_MARKER);
+    fn assert_zero_payload_command(make: fn() -> FIRMCommandPacket, expected_marker: u16) {
+        let command_packet = make().to_bytes();
+        assert_common_packet_invariants(&command_packet);
+        assert_eq!(header_from_bytes(&command_packet), PacketHeader::Command as u16);
+        assert_eq!(identifier_from_bytes(&command_packet), expected_marker);
         assert_eq!(u32::from_le_bytes(command_packet[4..8].try_into().unwrap()), 0);
-        assert_eq!(command_packet.len(), 2 + 1 + 1 + 4 + 0 + 2);
+        assert_eq!(command_packet.len(), 4 + 4 + 0 + CRC_LENGTH);
     }
 
     #[test]
-    fn test_firm_command_packet_to_bytes_get_device_config() {
-        let command_packet = FIRMCommandPacket::get_device_config().to_bytes();
-        assert_common_packet_invariants(&command_packet, &COMMAND_START_BYTES);
-        assert_eq!(command_packet[3], DEVICE_CONFIG_MARKER);
-        assert_eq!(u32::from_le_bytes(command_packet[4..8].try_into().unwrap()), 0);
-        assert_eq!(command_packet.len(), 2 + 1 + 1 + 4 + 0 + 2);
-    }
+    fn test_firm_command_packet_to_bytes_zero_payload_commands() {
+        let cases: &[(u16, fn() -> FIRMCommandPacket)] = &[
+            (DEVICE_INFO_MARKER, FIRMCommandPacket::build_get_device_info_command),
+            (DEVICE_CONFIG_MARKER, FIRMCommandPacket::build_get_device_config_command),
+            (CANCEL_MARKER, FIRMCommandPacket::build_cancel_command),
+            (REBOOT_MARKER, FIRMCommandPacket::build_reboot_command),
+            (MOCK_MARKER, FIRMCommandPacket::build_mock_command),
+        ];
 
-    #[test]
-    fn test_firm_command_packet_to_bytes_cancel() {
-        let command_packet = FIRMCommandPacket::cancel().to_bytes();
-        assert_common_packet_invariants(&command_packet, &COMMAND_START_BYTES);
-        assert_eq!(command_packet[3], CANCEL_MARKER);
-        assert_eq!(u32::from_le_bytes(command_packet[4..8].try_into().unwrap()), 0);
-        assert_eq!(command_packet.len(), 2 + 1 + 1 + 4 + 0 + 2);
-    }
-
-    #[test]
-    fn test_firm_command_packet_to_bytes_reboot() {
-        let command_packet = FIRMCommandPacket::reboot().to_bytes();
-        assert_common_packet_invariants(&command_packet, &COMMAND_START_BYTES);
-        assert_eq!(command_packet[3], REBOOT_MARKER);
-        assert_eq!(u32::from_le_bytes(command_packet[4..8].try_into().unwrap()), 0);
-        assert_eq!(command_packet.len(), 2 + 1 + 1 + 4 + 0 + 2);
-    }
-
-    #[test]
-    fn test_firm_command_packet_to_bytes_mock() {
-        let command_packet = FIRMCommandPacket::mock().to_bytes();
-        assert_common_packet_invariants(&command_packet, &COMMAND_START_BYTES);
-        assert_eq!(command_packet[3], MOCK_MARKER);
-        assert_eq!(u32::from_le_bytes(command_packet[4..8].try_into().unwrap()), 0);
-        assert_eq!(command_packet.len(), 2 + 1 + 1 + 4 + 0 + 2);
+        for (marker, make) in cases {
+            assert_zero_payload_command(*make, *marker);
+        }
     }
 
     #[test]
@@ -282,37 +193,35 @@ mod tests {
             protocol: DeviceProtocol::UART,
         };
 
-        let command_packet = FIRMCommandPacket::set_device_config(config.clone()).to_bytes();
-        assert_common_packet_invariants(&command_packet, &COMMAND_START_BYTES);
+        let command_packet = FIRMCommandPacket::build_set_device_config_command(config.clone()).to_bytes();
+        assert_common_packet_invariants(&command_packet);
 
-        assert_eq!(command_packet[3], SET_DEVICE_CONFIG_MARKER);
+        assert_eq!(header_from_bytes(&command_packet), PacketHeader::Command as u16);
+
+        assert_eq!(identifier_from_bytes(&command_packet), SET_DEVICE_CONFIG_MARKER);
 
         let payload_len = u32::from_le_bytes(command_packet[4..8].try_into().unwrap()) as usize;
         assert_eq!(payload_len, DEVICE_NAME_LENGTH + FREQUENCY_LENGTH + 1);
-        assert_eq!(command_packet.len(), 2 + 1 + 1 + 4 + payload_len + 2);
+        assert_eq!(command_packet.len(), 4 + 4 + payload_len + CRC_LENGTH);
 
-        let payload_start = 8;
-        let name_start = payload_start;
-        let name_end = name_start + DEVICE_NAME_LENGTH;
-        let freq_start = name_end;
-        let freq_end = freq_start + FREQUENCY_LENGTH;
-        let protocol_idx = freq_end;
+        let payload = &command_packet[8..8 + payload_len];
+        let (got_name_bytes, rest) = payload.split_at(DEVICE_NAME_LENGTH);
+        let (got_freq_bytes, got_protocol_bytes) = rest.split_at(FREQUENCY_LENGTH);
 
         let expected_name_bytes = str_to_bytes::<DEVICE_NAME_LENGTH>(&config.name);
-        assert_eq!(&command_packet[name_start..name_end], &expected_name_bytes);
+        assert_eq!(got_name_bytes, &expected_name_bytes);
 
-        let freq = u16::from_le_bytes(command_packet[freq_start..freq_end].try_into().unwrap());
+        let freq = u16::from_le_bytes(got_freq_bytes.try_into().unwrap());
         assert_eq!(freq, config.frequency);
-
-        assert_eq!(command_packet[protocol_idx], 0x02);
+        assert_eq!(got_protocol_bytes, &[0x02]);
     }
 
     #[test]
     fn test_firm_mock_packet_new() {
         let payload = vec![1u8, 2, 3];
-        let packet = FIRMMockPacket::new(FIRMMockPacketType::B, payload.clone());
-        assert_eq!(&packet.header()[0..2], &MOCK_SENSOR_PACKET_START_BYTES);
-        assert_eq!(packet.packet_type(), FIRMMockPacketType::B);
+        let packet = FIRMMockPacket::new(FIRMMockPacketType::BarometerPacket, payload.clone());
+        assert_eq!(packet.header(), MOCK_SENSOR_PACKET_HEADER);
+        assert_eq!(packet.packet_type(), FIRMMockPacketType::BarometerPacket);
         assert_eq!(packet.len(), payload.len() as u32);
         assert_eq!(packet.payload(), payload.as_slice());
     }
@@ -320,11 +229,10 @@ mod tests {
     #[test]
     fn test_firm_mock_packet_to_bytes() {
         let payload: Vec<u8> = vec![0x10, 0x20, 0x30, 0x40, 0x50];
-        let packet = FIRMMockPacket::new(FIRMMockPacketType::I, payload);
+        let packet = FIRMMockPacket::new(FIRMMockPacketType::IMUPacket, payload);
         let bytes = packet.to_bytes();
-        assert_eq!(&bytes[0..2], &MOCK_SENSOR_PACKET_START_BYTES);
-        assert_eq!(bytes[2], PADDING_BYTE);
-        assert_eq!(bytes[3], b'I');
+        assert_eq!(header_from_bytes(&bytes), MOCK_SENSOR_PACKET_HEADER);
+        assert_eq!(identifier_from_bytes(&bytes), b'I' as u16);
         assert_eq!(u32::from_le_bytes(bytes[4..8].try_into().unwrap()), packet.len());
         assert_eq!(u16::from_le_bytes(bytes[bytes.len() - 2..].try_into().unwrap()), packet.crc());
         assert_eq!(&bytes[8..bytes.len() - 2], packet.payload());
@@ -334,11 +242,11 @@ mod tests {
     #[test]
     fn test_firm_mock_packet_roundtrip_from_bytes() {
         let payload = vec![9u8, 8, 7];
-        let packet = FIRMMockPacket::new(FIRMMockPacketType::Header, payload);
+        let packet = FIRMMockPacket::new(FIRMMockPacketType::HeaderPacket, payload);
         let bytes = packet.to_bytes();
         let parsed = FIRMMockPacket::from_bytes(&bytes).unwrap();
-        assert_eq!(&parsed.header()[0..2], &MOCK_SENSOR_PACKET_START_BYTES);
-        assert_eq!(parsed.packet_type(), FIRMMockPacketType::Header);
+        assert_eq!(parsed.header(), MOCK_SENSOR_PACKET_HEADER);
+        assert_eq!(parsed.packet_type(), FIRMMockPacketType::HeaderPacket);
         assert_eq!(parsed.len() as usize, parsed.payload().len());
         assert_eq!(parsed.payload(), packet.payload());
         assert_eq!(parsed.crc(), packet.crc());

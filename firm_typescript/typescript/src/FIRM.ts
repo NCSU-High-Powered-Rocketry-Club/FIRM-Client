@@ -28,6 +28,9 @@ export class FIRMClient {
   /** Subscribers for raw incoming serial bytes. */
   private rawBytesListeners: ((bytes: Uint8Array) => void)[] = [];
 
+  /** Subscribers for raw outgoing serial bytes. */
+  private outgoingBytesListeners: ((bytes: Uint8Array) => void)[] = [];
+
   /** Reader for the Web Serial stream. */
   private reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
 
@@ -130,6 +133,14 @@ export class FIRMClient {
    */
   async sendBytes(bytes: Uint8Array): Promise<void> {
     if (!this.writer) throw new Error('Writer not available');
+
+    this.outgoingBytesListeners.forEach((fn) => {
+      try {
+        fn(bytes);
+      } catch (e) {
+        console.warn('[FIRM] outgoing bytes listener error:', e);
+      }
+    });
     await this.writer.write(bytes);
   }
 
@@ -143,6 +154,20 @@ export class FIRMClient {
       const idx = this.rawBytesListeners.indexOf(listener);
       if (idx !== -1) {
         this.rawBytesListeners.splice(idx, 1);
+      }
+    };
+  }
+
+  /**
+   * @param listener Callback invoked with each outgoing write.
+   * @returns Unsubscribe function.
+   */
+  onOutgoingBytes(listener: (bytes: Uint8Array) => void): () => void {
+    this.outgoingBytesListeners.push(listener);
+    return () => {
+      const idx = this.outgoingBytesListeners.indexOf(listener);
+      if (idx !== -1) {
+        this.outgoingBytesListeners.splice(idx, 1);
       }
     };
   }

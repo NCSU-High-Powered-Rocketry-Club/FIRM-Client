@@ -18,6 +18,8 @@ use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, channel};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
+pub mod mock_serial;
+
 /// Interface to the FIRM Client device.
 ///
 /// # Example:
@@ -75,7 +77,63 @@ impl FIRMClient {
             .open()
             .map_err(io::Error::other)?;
 
-        Ok(Self {
+        Ok(Self::new_from_port(
+            port,
+            sender,
+            receiver,
+            response_sender,
+            response_receiver,
+            error_sender,
+            error_receiver,
+            command_sender,
+            command_receiver,
+            mock_sender,
+            mock_receiver,
+        ))
+    }
+
+    /// Creates a new client backed by an in-memory mock serial port.
+    pub fn new_mock(timeout: f64) -> (Self, mock_serial::MockDeviceHandle) {
+        let (sender, receiver) = channel();
+        let (response_sender, response_receiver) = channel();
+        let (error_sender, error_receiver) = channel();
+        let (command_sender, command_receiver) = channel();
+        let (mock_sender, mock_receiver) = channel();
+
+        let (port, device) =
+            mock_serial::MockSerialPort::pair(Duration::from_secs_f64(timeout));
+
+        let client = Self::new_from_port(
+            port,
+            sender,
+            receiver,
+            response_sender,
+            response_receiver,
+            error_sender,
+            error_receiver,
+            command_sender,
+            command_receiver,
+            mock_sender,
+            mock_receiver,
+        );
+
+        (client, device)
+    }
+
+    fn new_from_port(
+        port: Box<dyn SerialPort>,
+        sender: Sender<FIRMData>,
+        receiver: Receiver<FIRMData>,
+        response_sender: Sender<FIRMResponse>,
+        response_receiver: Receiver<FIRMResponse>,
+        error_sender: Sender<String>,
+        error_receiver: Receiver<String>,
+        command_sender: Sender<FIRMCommandPacket>,
+        command_receiver: Receiver<FIRMCommandPacket>,
+        mock_sender: Sender<FIRMMockPacket>,
+        mock_receiver: Receiver<FIRMMockPacket>,
+    ) -> Self {
+        Self {
             packet_receiver: receiver,
             response_receiver,
             error_receiver: error_receiver,
@@ -90,7 +148,7 @@ impl FIRMClient {
             mock_receiver: Some(mock_receiver),
             port: Some(port),
             response_buffer: VecDeque::new(),
-        })
+        }
     }
 
     /// Starts the background thread to read from the serial port and parse packets.
@@ -525,6 +583,8 @@ impl Drop for FIRMClient {
 
 #[cfg(test)]
 mod tests {
+    use firm_core::{constants::packet_constants::PacketHeader, framed_packet::FramedPacket};
+
     use super::*;
 
     #[test]
@@ -532,5 +592,23 @@ mod tests {
         // Test that creating a client with an invalid port fails immediately
         let result = FIRMClient::new("invalid_port_name", 2_000_000, 0.1);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_get_data_packet_over_mock_serial() {
+        let (mut client, device) = FIRMClient::new_mock(0.01);
+        client.start();
+
+        let mut payload = vec![0u8; 120];
+        payload[0..8].copy_from_slice(&1.5f64.to_le_bytes());
+        payload[8..12].copy_from_slice(&25.0f32.to_le_bytes());
+
+        let mocked_packet = FramedPacket::new(PacketHeader::Data as u16, 0, payload);
+        device.inject_framed_packet(mocked_packet);
+
+        // Need to give some time for the background thread to read the data
+        let packets = client.get_data_packets(Some(Duration::from_millis(100))).unwrap();
+        assert!(!packets.is_empty());
+        assert!((packets[0].timestamp_seconds - 1.5).abs() < 1e-9);
     }
 }

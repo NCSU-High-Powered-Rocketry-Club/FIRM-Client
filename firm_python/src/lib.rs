@@ -1,5 +1,5 @@
 use firm_core::firm_packets::{
-    DeviceConfig, DeviceInfo, DeviceProtocol, FIRMDataPacket, FIRMResponsePacket,
+    DeviceConfig, DeviceInfo, DeviceProtocol, FIRMData,
 };
 use firm_rust::FIRMClient as RustFirmClient;
 use pyo3::prelude::*;
@@ -34,8 +34,35 @@ impl FIRMClient {
         self.inner.stop();
     }
 
+    #[pyo3(signature = (log_path, realtime=true, speed=1.0, chunk_size=8192, start_timeout_seconds=5.0))]
+    fn stream_mock_log_file(
+        &mut self,
+        log_path: &str,
+        realtime: bool,
+        speed: f64,
+        chunk_size: usize,
+        start_timeout_seconds: f64,
+    ) -> PyResult<usize> {
+        if let Some(err) = self.inner.check_error() {
+            return Err(PyErr::new::<pyo3::exceptions::PyIOError, _>(err));
+        }
+
+        let sent = self
+            .inner
+            .stream_mock_log_file(
+                log_path,
+                std::time::Duration::from_secs_f64(start_timeout_seconds),
+                realtime,
+                speed,
+                chunk_size,
+            )
+            .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))?;
+
+        Ok(sent)
+    }
+
     #[pyo3(signature = (block=false))]
-    fn get_data_packets(&mut self, block: bool) -> PyResult<Vec<FIRMDataPacket>> {
+    fn get_data_packets(&mut self, block: bool) -> PyResult<Vec<FIRMData>> {
         if let Some(err) = self.inner.check_error() {
             return Err(PyErr::new::<pyo3::exceptions::PyIOError, _>(err));
         }
@@ -51,18 +78,6 @@ impl FIRMClient {
             .get_data_packets(timeout)
             .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))?;
         Ok(packets)
-    }
-
-    /// Sends raw command bytes to the device.
-    fn send_command_bytes(&mut self, command_bytes: Vec<u8>) -> PyResult<()> {
-        if let Some(err) = self.inner.check_error() {
-            return Err(PyErr::new::<pyo3::exceptions::PyIOError, _>(err));
-        }
-
-        self.inner
-            .send_command_bytes(command_bytes)
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyIOError, _>(e.to_string()))?;
-        Ok(())
     }
 
     #[pyo3(signature = (timeout_seconds=5.0))]
@@ -162,7 +177,7 @@ impl FIRMClient {
 #[pymodule(gil_used = false)]
 fn firm_client(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<FIRMClient>()?;
-    m.add_class::<FIRMDataPacket>()?;
+    m.add_class::<FIRMData>()?;
     m.add_class::<DeviceProtocol>()?;
     m.add_class::<DeviceInfo>()?;
     m.add_class::<DeviceConfig>()?;

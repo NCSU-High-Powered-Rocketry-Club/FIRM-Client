@@ -4,16 +4,19 @@ from enum import IntEnum
 
 
 class DeviceProtocol(IntEnum):
+    """Enum of the supported device communication protocols."""
     USB: int
     UART: int
     I2C: int
     SPI: int
 
 class DeviceInfo:
+    """Represents information about the FIRM device."""
     firmware_version: str
     id: int
 
 class DeviceConfig:
+    """Represents the configuration of the FIRM device."""
     name: str
     frequency: int
     protocol: DeviceProtocol

@@ -368,6 +368,10 @@ impl FIRMClient {
             packets_sent += 1;
         }
 
+        // TODO: check this works
+        // Send a cancel command when it finishes
+        self.cancel(Duration::from_secs(5))?;
+
         Ok(packets_sent)
     }
 

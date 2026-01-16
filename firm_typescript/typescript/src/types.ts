@@ -88,5 +88,6 @@ export type FIRMResponse =
   | { GetDeviceInfo: DeviceInfo }
   | { GetDeviceConfig: DeviceConfig }
   | { SetDeviceConfig: boolean }
+  | { Mock: boolean }
   | { Cancel: boolean }
   | { Error: string };

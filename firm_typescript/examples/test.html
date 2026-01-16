@@ -125,6 +125,10 @@
         flex-grow: 1;
       }
 
+      input[type='file'] {
+        flex-grow: 1;
+      }
+
       .status {
         font-size: 0.9rem;
         color: #666;
@@ -149,6 +153,10 @@
         <button id="runMagCalBtn">Run Mag Calibration</button>
         <button id="cancelBtn">Cancel</button>
         <button id="rebootBtn">Reboot</button>
+      </div>
+      <div class="control-row">
+        <input type="file" id="mockLogFile" />
+        <button id="mockStreamBtn">Stream Mock Log</button>
       </div>
       <div
         id="configOutput"
@@ -189,6 +197,8 @@
       const runMagCalBtn = document.getElementById('runMagCalBtn');
       const cancelBtn = document.getElementById('cancelBtn');
       const rebootBtn = document.getElementById('rebootBtn');
+      const mockLogFile = document.getElementById('mockLogFile');
+      const mockStreamBtn = document.getElementById('mockStreamBtn');
       const configOutput = document.getElementById('configOutput');
       const rawBytesEl = document.getElementById('rawBytes');
       const outgoingBytesEl = document.getElementById('outgoingBytes');
@@ -299,6 +309,29 @@
           console.error(err);
           setStatus('[UI] Failed to send reboot command.');
           configOutput.textContent = 'Error: Failed to send reboot command.';
+        }
+      });
+
+      mockStreamBtn.addEventListener('click', async () => {
+        if (!firmInstance) return;
+        const file = mockLogFile?.files?.[0];
+        if (!file) {
+          alert('Please select a log file first');
+          return;
+        }
+        setStatus('[UI] Streaming mock log...');
+        try {
+          const sent = await firmInstance.streamMockLogFile(file, {
+            realtime: true,
+            speed: 1.0,
+            chunkSize: 8192,
+          });
+          setStatus('[UI] Mock stream complete.');
+          configOutput.textContent = `Sent ${sent} mock packets.`;
+        } catch (err) {
+          console.error(err);
+          setStatus('[UI] Mock stream failed.');
+          configOutput.textContent = 'Error: ' + (err?.message ?? err);
         }
       });
 

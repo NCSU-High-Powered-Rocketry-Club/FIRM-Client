@@ -43,9 +43,9 @@ pub trait Framed: Sized {
 }
 
 /// Shared packet framing for the wire format:
-/// `[header(4)][length(4)][payload(len)][crc(2)]`.
+/// `[header(2)][identifier(2)][length(4)][payload(len)][crc(2)]`.
 ///
-/// CRC is computed over everything before the CRC: `header + len + payload`.
+/// CRC is computed over everything before the CRC: `header + identifier + len + payload`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FramedPacket {
     header: u16,

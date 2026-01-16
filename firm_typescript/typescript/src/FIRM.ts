@@ -1,4 +1,9 @@
-import init, { FIRMDataParser, FIRMCommandBuilder } from '../../pkg/firm_client.js';
+import init, {
+  FIRMDataParser,
+  FIRMCommandBuilder,
+  MockLogParser,
+  mock_header_size,
+} from '../../pkg/firm_client.js';
 import { FIRMPacket, FIRMResponse, DeviceInfo, DeviceConfig, DeviceProtocol } from './types.js';
 
 const RESPONSE_TIMEOUT_MS = 5000;
@@ -8,6 +13,13 @@ const CALIBRATION_TIMEOUT_MS = 20000;
 export interface FIRMConnectOptions {
   /** Serial baud rate (default: 2000000). */
   baudRate?: number;
+}
+
+export interface MockStreamOptions {
+  realtime?: boolean;
+  speed?: number;
+  chunkSize?: number;
+  startTimeoutMs?: number;
 }
 
 /**
@@ -187,6 +199,68 @@ export class FIRMClient {
     } catch {
       return null;
     }
+  }
+
+  /**
+   * Streams a mock log file to the device (used for hardware mock mode).
+   */
+  async streamMockLogFile(file: File, options: MockStreamOptions = {}): Promise<number> {
+    if (!this.writer) throw new Error('Writer not available');
+
+    const realtime = options.realtime ?? true;
+    const speed = options.speed ?? 1.0;
+    const chunkSize = options.chunkSize ?? 8192;
+    const startTimeoutMs = options.startTimeoutMs ?? RESPONSE_TIMEOUT_MS;
+
+    if (speed <= 0) throw new Error('speed must be > 0');
+
+    await this.sendBytes(FIRMCommandBuilder.build_mock());
+    const ok = await this.waitForResponse(
+      (res) => ('Mock' in res ? res.Mock : undefined),
+      startTimeoutMs,
+    ).catch(() => null);
+
+    if (!ok) throw new Error('Mock mode not acknowledged');
+
+    const data = new Uint8Array(await file.arrayBuffer());
+    const headerSize = mock_header_size();
+    if (data.length < headerSize) throw new Error('Log file too small');
+
+    const header = data.slice(0, headerSize);
+    const body = data.slice(headerSize);
+
+    const parser = new MockLogParser();
+    parser.read_header(header);
+    await this.sendBytes(parser.build_header_packet(header));
+
+    let sent = 0;
+    for (let offset = 0; offset < body.length; offset += chunkSize) {
+      parser.parse_bytes(body.slice(offset, offset + chunkSize));
+      sent += await this.drainMockPackets(parser, realtime, speed);
+    }
+
+    sent += await this.drainMockPackets(parser, realtime, speed);
+    return sent;
+  }
+
+  private async drainMockPackets(
+    parser: MockLogParser,
+    realtime: boolean,
+    speed: number,
+  ): Promise<number> {
+    let count = 0;
+    while (true) {
+      const pkt = parser.get_packet_with_delay() as
+        | { bytes: Uint8Array; delaySeconds: number }
+        | null;
+      if (!pkt) break;
+      if (realtime && pkt.delaySeconds > 0) {
+        await new Promise((r) => setTimeout(r, (pkt.delaySeconds * 1000) / speed));
+      }
+      await this.sendBytes(pkt.bytes);
+      count += 1;
+    }
+    return count;
   }
 
   /**

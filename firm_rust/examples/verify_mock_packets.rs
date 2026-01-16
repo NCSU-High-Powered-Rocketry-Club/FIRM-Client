@@ -9,7 +9,7 @@ use std::io::Read;
 
 // Edit these before running.
 const LOG_PATH: &str = r"C:\Users\jackg\Downloads\LOG2.TXT";
-const CHUNK_SIZE: usize = 1024;
+const CHUNK_SIZE: usize = 100000;
 
 fn main() -> Result<()> {
     let mut parser = MockParser::new();

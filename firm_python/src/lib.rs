@@ -34,18 +34,6 @@ impl FIRMClient {
         self.inner.stop();
     }
 
-    #[pyo3(signature = (timeout_seconds=5.0))]
-    fn start_mock_mode(&mut self, timeout_seconds: f64) -> PyResult<()> {
-        if let Some(err) = self.inner.check_error() {
-            return Err(PyErr::new::<pyo3::exceptions::PyIOError, _>(err));
-        }
-
-        self.inner
-            .start_mock_mode(std::time::Duration::from_secs_f64(timeout_seconds))
-            .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))?;
-        Ok(())
-    }
-
     #[pyo3(signature = (log_path, realtime=true, speed=1.0, chunk_size=8192, start_timeout_seconds=5.0))]
     fn stream_mock_log_file(
         &mut self,
@@ -90,18 +78,6 @@ impl FIRMClient {
             .get_data_packets(timeout)
             .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))?;
         Ok(packets)
-    }
-
-    /// Sends raw bytes to the device.
-    fn send_bytes(&mut self, bytes: Vec<u8>) -> PyResult<()> {
-        if let Some(err) = self.inner.check_error() {
-            return Err(PyErr::new::<pyo3::exceptions::PyIOError, _>(err));
-        }
-
-        self.inner
-            .send_bytes(bytes)
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyIOError, _>(e.to_string()))?;
-        Ok(())
     }
 
     #[pyo3(signature = (timeout_seconds=5.0))]

@@ -9,7 +9,6 @@ use crate::constants::command_constants::{FIRMCommand, DEVICE_NAME_LENGTH, FREQU
 use crate::constants::mock_constants::{FIRMMockPacketType, MOCK_SENSOR_PACKET_HEADER};
 use crate::constants::packet_constants::PacketHeader;
 
-/// Header format: `[header(u16)][identifier(u16)]`.
 pub struct FIRMCommandPacket {
     command_type: FIRMCommand,
     frame: FramedPacket,
@@ -81,10 +80,6 @@ pub struct FIRMMockPacket {
 }
 
 impl FIRMMockPacket {
-    /// Creates a new mock packet.
-    ///
-    /// Packet format:
-    /// `[header(u16)][identifier(u16)][length(u32)][payload(len)][crc(u16)]`.
     pub fn new(packet_type: FIRMMockPacketType, payload: Vec<u8>) -> Self {
         let header = MOCK_SENSOR_PACKET_HEADER;
         let identifier = packet_type as u16;
@@ -96,24 +91,6 @@ impl FIRMMockPacket {
 
     pub fn packet_type(&self) -> FIRMMockPacketType {
         self.packet_type
-    }
-
-    /// Serializes the mock packet into bytes ready to be written to the serial stream.
-    pub fn to_bytes(&self) -> Vec<u8> {
-        self.frame.to_bytes()
-    }
-
-    /// Parses a framed mock sensor packet from raw bytes. This is just used for testing.
-    ///
-    /// Expected wire format: `[header(u16)][identifier(u16)][length(u32)][payload(len)][crc(u16)]`.
-    /// Returns `None` if the header doesn't match, the length is inconsistent, or CRC fails.
-    pub fn from_bytes(bytes: &[u8]) -> Option<Self> {
-        let frame = FramedPacket::from_bytes(bytes).ok()?;
-        if frame.header() != MOCK_SENSOR_PACKET_HEADER {
-            return None;
-        }
-        let packet_type = FIRMMockPacketType::from_u16(frame.identifier())?;
-        Some(Self { packet_type, frame })
     }
 }
 
@@ -134,7 +111,7 @@ impl Framed for FIRMMockPacket {
 #[cfg(test)]
 mod tests {
     use super::{FIRMCommandPacket, FIRMMockPacket};
-    use crate::constants::command_constants::*;
+    use crate::constants::command_constants::{CRC_LENGTH, DEVICE_NAME_LENGTH, FREQUENCY_LENGTH, FIRMCommand};
     use crate::constants::mock_constants::{FIRMMockPacketType, MOCK_SENSOR_PACKET_HEADER};
     use crate::constants::packet_constants::PacketHeader;
     use crate::firm_packets::{DeviceConfig, DeviceProtocol};
@@ -173,11 +150,11 @@ mod tests {
     #[test]
     fn test_firm_command_packet_to_bytes_zero_payload_commands() {
         let cases: &[(u16, fn() -> FIRMCommandPacket)] = &[
-            (DEVICE_INFO_MARKER, FIRMCommandPacket::build_get_device_info_command),
-            (DEVICE_CONFIG_MARKER, FIRMCommandPacket::build_get_device_config_command),
-            (CANCEL_MARKER, FIRMCommandPacket::build_cancel_command),
-            (REBOOT_MARKER, FIRMCommandPacket::build_reboot_command),
-            (MOCK_MARKER, FIRMCommandPacket::build_mock_command),
+            (FIRMCommand::GetDeviceInfo as u16, FIRMCommandPacket::build_get_device_info_command),
+            (FIRMCommand::GetDeviceConfig as u16, FIRMCommandPacket::build_get_device_config_command),
+            (FIRMCommand::Cancel as u16, FIRMCommandPacket::build_cancel_command),
+            (FIRMCommand::Reboot as u16, FIRMCommandPacket::build_reboot_command),
+            (FIRMCommand::Mock as u16, FIRMCommandPacket::build_mock_command),
         ];
 
         for (marker, make) in cases {
@@ -198,7 +175,7 @@ mod tests {
 
         assert_eq!(header_from_bytes(&command_packet), PacketHeader::Command as u16);
 
-        assert_eq!(identifier_from_bytes(&command_packet), SET_DEVICE_CONFIG_MARKER);
+        assert_eq!(identifier_from_bytes(&command_packet), FIRMCommand::SetDeviceConfig as u16);
 
         let payload_len = u32::from_le_bytes(command_packet[4..8].try_into().unwrap()) as usize;
         assert_eq!(payload_len, DEVICE_NAME_LENGTH + FREQUENCY_LENGTH + 1);

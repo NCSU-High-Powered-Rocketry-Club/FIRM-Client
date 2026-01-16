@@ -18,9 +18,6 @@ class DeviceConfig:
     frequency: int
     protocol: DeviceProtocol
 
-# TODO I dont like this
-FIRMResponse = dict[str, object]
-
 class FIRMData:
     """Represents a data packet received from the FIRM device."""
 
@@ -118,9 +115,6 @@ class FIRMClient:
 
     def is_running(self) -> bool: ...
     """Return True if the client is currently running and reading data."""
-
-    def send_bytes(self, bytes: bytes) -> None: ...
-    """Sends raw bytes to the device."""
 
     def get_device_info(self, timeout_seconds: float = 5.0) -> DeviceInfo | None: ...
     """Requests device info and waits up to timeout_seconds."""

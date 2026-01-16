@@ -112,8 +112,6 @@ pub struct FIRMDataPacket {
 }
 
 impl FIRMDataPacket {
-    pub const PAYLOAD_LEN: usize = 120;
-
     pub fn data(&self) -> &FIRMData {
         &self.data
     }
@@ -126,14 +124,6 @@ impl Framed for FIRMDataPacket {
 
     fn from_bytes(bytes: &[u8]) -> Result<Self, FrameError> {
         let frame = FramedPacket::from_bytes(bytes)?;
-        let got = frame.payload().len();
-        if got < Self::PAYLOAD_LEN {
-            return Err(FrameError::InvalidPayloadLength {
-                expected: Self::PAYLOAD_LEN,
-                got,
-            });
-        }
-
         Ok(Self {
             data: FIRMData::from_bytes(frame.payload()),
             frame,
@@ -257,10 +247,6 @@ pub struct FIRMResponsePacket {
 }
 
 impl FIRMResponsePacket {
-    pub fn command_marker(&self) -> u16 {
-        self.frame.identifier()
-    }
-
     pub fn command_type(&self) -> FIRMCommand {
         self.command_type
     }
@@ -350,16 +336,12 @@ impl FIRMResponse {
             FIRMCommand::Reboot => FIRMResponse::Error("No decoded response for Reboot".to_string()),
         }
     }
-
-    pub fn from_packet(packet: &FIRMResponsePacket) -> Self {
-        packet.response().clone()
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{DeviceConfig, DeviceInfo, DeviceProtocol, FIRMData, FIRMResponse, FIRMResponsePacket};
-    use crate::constants::command_constants::*;
+    use crate::constants::command_constants::{DEVICE_ID_LENGTH, DEVICE_NAME_LENGTH, FIRMWARE_VERSION_LENGTH, FREQUENCY_LENGTH, FIRMCommand};
     use crate::constants::packet_constants::PacketHeader;
     use crate::framed_packet::{Framed, FramedPacket, FrameError};
     use crate::utils::str_to_bytes;
@@ -408,7 +390,7 @@ mod tests {
         payload[DEVICE_ID_LENGTH..DEVICE_ID_LENGTH + FIRMWARE_VERSION_LENGTH]
             .copy_from_slice(&fw_bytes);
 
-        let pkt = build_response_packet(DEVICE_INFO_MARKER, &payload).unwrap();
+        let pkt = build_response_packet(FIRMCommand::GetDeviceInfo as u16, &payload).unwrap();
         assert_eq!(
             pkt.response(),
             &FIRMResponse::GetDeviceInfo(DeviceInfo {
@@ -432,7 +414,7 @@ mod tests {
 
         payload[DEVICE_NAME_LENGTH + FREQUENCY_LENGTH] = 0x03;
 
-        let pkt = build_response_packet(DEVICE_CONFIG_MARKER, &payload).unwrap();
+        let pkt = build_response_packet(FIRMCommand::GetDeviceConfig as u16, &payload).unwrap();
         assert_eq!(
             pkt.response(),
             &FIRMResponse::GetDeviceConfig(DeviceConfig {
@@ -447,9 +429,9 @@ mod tests {
     #[test]
     fn test_firm_response_packet_from_bytes_set_device_config() {
         let cases: &[(u16, FIRMCommand, fn(bool) -> FIRMResponse)] = &[
-            (SET_DEVICE_CONFIG_MARKER, FIRMCommand::SetDeviceConfig, resp_set_device_config),
-            (MOCK_MARKER, FIRMCommand::Mock, resp_mock),
-            (CANCEL_MARKER, FIRMCommand::Cancel, resp_cancel),
+            (FIRMCommand::SetDeviceConfig as u16, FIRMCommand::SetDeviceConfig, resp_set_device_config),
+            (FIRMCommand::Mock as u16, FIRMCommand::Mock, resp_mock),
+            (FIRMCommand::Cancel as u16, FIRMCommand::Cancel, resp_cancel),
         ];
 
         for (marker, expected_command_type, mk_response) in cases {

@@ -2,7 +2,7 @@ from firm_client import FIRMClient
 
 
 PORT = "COM8"
-LOG_PATH = r"C:\Users\jackg\Downloads\LOG2.TXT"
+LOG_PATH = r"C:\Users\jackg\Downloads\LOG198.TXT"
 
 BAUD_RATE = 2_000_000
 SERIAL_TIMEOUT_SECONDS = 0.1

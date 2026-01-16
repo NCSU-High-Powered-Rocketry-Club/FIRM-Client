@@ -11,13 +11,9 @@ pub mod packet_constants {
     #[repr(u16)]
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub enum PacketHeader {
-        /// Equivalent wire bytes: [0x5A, 0xA5]
         Data = 0xA55A,
-        /// Equivalent wire bytes: [0xA5, 0x5A]
         Response = 0x5AA5,
-        /// Equivalent wire bytes: [0xB6, 0x6B]
         MockSensor = 0x6BB6,
-        /// Equivalent wire bytes: [0x6B, 0xB6]
         Command = 0xB66B,
     }
 
@@ -31,35 +27,43 @@ pub mod packet_constants {
 pub mod command_constants {
     use crate::framed_packet::FrameError;
 
-    pub const DEVICE_INFO_MARKER: u16 = 0x0001;
-    pub const DEVICE_CONFIG_MARKER: u16 = 0x0002;
-    pub const SET_DEVICE_CONFIG_MARKER: u16 = 0x0003;
-    pub const REBOOT_MARKER: u16 = 0x0004;
-    pub const MOCK_MARKER: u16 = 0x0005;
-    pub const CANCEL_MARKER: u16 = 0x00FF;
-
     #[repr(u16)]
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub enum FIRMCommand {
-        GetDeviceInfo = DEVICE_INFO_MARKER,
-        GetDeviceConfig = DEVICE_CONFIG_MARKER,
-        SetDeviceConfig = SET_DEVICE_CONFIG_MARKER,
-        Reboot = REBOOT_MARKER,
-        Mock = MOCK_MARKER,
-        Cancel = CANCEL_MARKER,
+        GetDeviceInfo = 0x0001,
+        GetDeviceConfig = 0x0002,
+        SetDeviceConfig = 0x0003,
+        Reboot = 0x0004,
+        Mock = 0x0005,
+        Cancel = 0x00FF,
     }
 
     impl FIRMCommand {
+        pub const fn marker(self) -> u16 {
+            self as u16
+        }
+
         pub const fn from_marker(marker: u16) -> Result<Self, FrameError> {
-            match marker {
-                DEVICE_INFO_MARKER => Ok(FIRMCommand::GetDeviceInfo),
-                DEVICE_CONFIG_MARKER => Ok(FIRMCommand::GetDeviceConfig),
-                SET_DEVICE_CONFIG_MARKER => Ok(FIRMCommand::SetDeviceConfig),
-                REBOOT_MARKER => Ok(FIRMCommand::Reboot),
-                MOCK_MARKER => Ok(FIRMCommand::Mock),
-                CANCEL_MARKER => Ok(FIRMCommand::Cancel),
-                _ => Err(FrameError::UnknownMarker(marker)),
+            if marker == FIRMCommand::GetDeviceInfo as u16 {
+                return Ok(FIRMCommand::GetDeviceInfo);
             }
+            if marker == FIRMCommand::GetDeviceConfig as u16 {
+                return Ok(FIRMCommand::GetDeviceConfig);
+            }
+            if marker == FIRMCommand::SetDeviceConfig as u16 {
+                return Ok(FIRMCommand::SetDeviceConfig);
+            }
+            if marker == FIRMCommand::Reboot as u16 {
+                return Ok(FIRMCommand::Reboot);
+            }
+            if marker == FIRMCommand::Mock as u16 {
+                return Ok(FIRMCommand::Mock);
+            }
+            if marker == FIRMCommand::Cancel as u16 {
+                return Ok(FIRMCommand::Cancel);
+            }
+
+            Err(FrameError::UnknownMarker(marker))
         }
     }
 
@@ -114,18 +118,20 @@ pub mod mock_constants {
     pub const HEADER_SIZE_TEXT: usize = 14; // "FIRM LOG vx.x"
     pub const HEADER_UID_SIZE: usize = 8;
     pub const HEADER_DEVICE_NAME_LEN: usize = 32;
-    pub const HEADER_COMM_SIZE: usize = 2; // 1 byte usb, 1 byte uart
+    pub const HEADER_COMM_SIZE: usize = 4; // 1 byte usb, 1 byte uart, 1 byte spi, 1 byte i2c
+    pub const HEADER_FIRMWARE_VERSION_SIZE: usize = 8; // "vX.X.X.X"
+    pub const HEADER_FREQUENCY_SIZE: usize = 2;
+    pub const HEADER_PADDING_SIZE: usize = 2;
     pub const HEADER_CAL_SIZE: usize = (3 + 9) * 3 * 4; // (offsets + 3x3 matrix) * 3 sensors * 4 bytes
-    pub const HEADER_NUM_SCALE_FACTORS: usize = 5; // 5 floats
+    pub const HEADER_NUM_SCALE_FACTOR_SIZE: usize = 5 * 4; // 5 floats
 
-    pub const HEADER_PADDING_SIZE: usize = (8
-        - ((HEADER_UID_SIZE + HEADER_DEVICE_NAME_LEN + HEADER_COMM_SIZE) % 8))
-        % 8;
     pub const HEADER_TOTAL_SIZE: usize = HEADER_SIZE_TEXT
         + HEADER_UID_SIZE
         + HEADER_DEVICE_NAME_LEN
         + HEADER_COMM_SIZE
+        + HEADER_FIRMWARE_VERSION_SIZE
+        + HEADER_FREQUENCY_SIZE
         + HEADER_PADDING_SIZE
         + HEADER_CAL_SIZE
-        + (HEADER_NUM_SCALE_FACTORS * 4);
+        + HEADER_NUM_SCALE_FACTOR_SIZE;
 }

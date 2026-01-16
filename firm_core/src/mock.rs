@@ -49,15 +49,17 @@ impl MockParser {
     /// Feeds a new chunk of bytes into the parser.
     ///
     /// Parses as many log packets as possible and enqueues framed mock packets.
+    /// 
+    /// This code is just copied from the Python decoder script.
     pub fn parse_bytes(&mut self, chunk: &[u8]) {
         self.bytes.extend_from_slice(chunk);
 
         // Parse log packets
-        let mut pos = 0usize;
-        while pos < self.bytes.len() {
-            let log_packet_start = pos;
+        let mut position = 0usize;
+        while position < self.bytes.len() {
+            let log_packet_start = position;
 
-            let id = self.bytes[pos];
+            let id = self.bytes[position];
             if id == 0 {
                 // whitespace padding between log packets
                 self.num_repeat_whitespace += 1;
@@ -70,20 +72,20 @@ impl MockParser {
                     self.bytes.clear();
                     break;
                 }
-                pos += 1;
+                position += 1;
                 continue;
             }
             self.num_repeat_whitespace = 0;
 
             // Need timestamp.
-            if pos + 1 + 3 > self.bytes.len() {
-                pos = log_packet_start;
+            if position + 1 + 3 > self.bytes.len() {
+                position = log_packet_start;
                 break;
             }
 
-            pos += 1;
-            let t = &self.bytes[pos..pos + 3];
-            pos += 3;
+            position += 1;
+            let t = &self.bytes[position..position + 3];
+            position += 3;
             let clock_count = u32::from_be_bytes([0, t[0], t[1], t[2]]);
 
             // Compute the delay from the previous log packet timestamp.
@@ -103,12 +105,12 @@ impl MockParser {
 
             match id {
                 BMP581_ID => {
-                    if pos + BMP581_SIZE > self.bytes.len() {
-                        pos = log_packet_start;
+                    if position + BMP581_SIZE > self.bytes.len() {
+                        position = log_packet_start;
                         break;
                     }
-                    let raw = &self.bytes[pos..pos + BMP581_SIZE];
-                    pos += BMP581_SIZE;
+                    let raw = &self.bytes[position..position + BMP581_SIZE];
+                    position += BMP581_SIZE;
 
                     // Payload excludes the type byte.
                     let mut payload = Vec::with_capacity(3 + BMP581_SIZE);
@@ -118,12 +120,12 @@ impl MockParser {
                     self.parsed_packets.push_back((pkt, delay_seconds));
                 }
                 ICM45686_ID => {
-                    if pos + ICM45686_SIZE > self.bytes.len() {
-                        pos = log_packet_start;
+                    if position + ICM45686_SIZE > self.bytes.len() {
+                        position = log_packet_start;
                         break;
                     }
-                    let raw = &self.bytes[pos..pos + ICM45686_SIZE];
-                    pos += ICM45686_SIZE;
+                    let raw = &self.bytes[position..position + ICM45686_SIZE];
+                    position += ICM45686_SIZE;
 
                     // Payload excludes the type byte.
                     let mut payload = Vec::with_capacity(3 + ICM45686_SIZE);
@@ -133,12 +135,12 @@ impl MockParser {
                     self.parsed_packets.push_back((pkt, delay_seconds));
                 }
                 MMC5983MA_ID => {
-                    if pos + MMC5983MA_SIZE > self.bytes.len() {
-                        pos = log_packet_start;
+                    if position + MMC5983MA_SIZE > self.bytes.len() {
+                        position = log_packet_start;
                         break;
                     }
-                    let raw = &self.bytes[pos..pos + MMC5983MA_SIZE];
-                    pos += MMC5983MA_SIZE;
+                    let raw = &self.bytes[position..position + MMC5983MA_SIZE];
+                    position += MMC5983MA_SIZE;
 
                     // Payload excludes the type byte.
                     let mut payload = Vec::with_capacity(3 + MMC5983MA_SIZE);
@@ -150,13 +152,13 @@ impl MockParser {
                 _ => {
                     // Unknown/garbage byte. Don't give up immediately: advance by one byte and
                     // keep scanning so we can re-sync if we're offset or the file has junk.
-                    pos = log_packet_start + 1;
+                    position = log_packet_start + 1;
                     continue;
                 }
             }
         }
 
-        self.bytes = self.bytes[pos..].to_vec();
+        self.bytes = self.bytes[position..].to_vec();
     }
 
     /// Pops the next parsed mock packet and returns it with its delay since the last one.

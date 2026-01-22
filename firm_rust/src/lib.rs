@@ -1,17 +1,14 @@
 use anyhow::Result;
 use firm_core::client_packets::{FIRMCommandPacket, FIRMMockPacket};
-use firm_core::constants::mock_constants::{HEADER_PARSE_DELAY, HEADER_TOTAL_SIZE};
-use firm_core::constants::mock_constants::FIRMMockPacketType;
+use firm_core::constants::mock::{FIRMMockPacketType, HEADER_PARSE_DELAY, HEADER_TOTAL_SIZE};
 use firm_core::data_parser::SerialParser;
+use firm_core::firm_packets::{DeviceConfig, DeviceInfo, DeviceProtocol, FIRMData, FIRMResponse};
 use firm_core::framed_packet::Framed;
-use firm_core::firm_packets::{
-    DeviceConfig, DeviceInfo, DeviceProtocol, FIRMData, FIRMResponse,
-};
 use firm_core::mock::LogParser;
 use serialport::SerialPort;
 use std::collections::VecDeque;
-use std::io::{self, Read, Write};
 use std::fs::File;
+use std::io::{self, Read, Write};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, channel};
@@ -65,78 +62,33 @@ impl FIRMClient {
     /// - `baud_rate` (`u32`) - The baud rate for the serial connection. Commonly 2,000,000 for FIRM devices.
     /// - `timeout` (`f64`) - Read timeout in seconds for the serial port.
     pub fn new(port_name: &str, baud_rate: u32, timeout: f64) -> Result<Self> {
-        let (sender, receiver) = channel();
-        let (response_sender, response_receiver) = channel();
-        let (error_sender, error_receiver) = channel();
-        let (command_sender, command_receiver) = channel();
-        let (mock_sender, mock_receiver) = channel();
-
         // Sets up the serial port
         let port: Box<dyn SerialPort> = serialport::new(port_name, baud_rate)
             .timeout(Duration::from_millis((timeout * 1000.0) as u64))
             .open()
             .map_err(io::Error::other)?;
 
-        Ok(Self::new_from_port(
-            port,
-            sender,
-            receiver,
-            response_sender,
-            response_receiver,
-            error_sender,
-            error_receiver,
-            command_sender,
-            command_receiver,
-            mock_sender,
-            mock_receiver,
-        ))
+        Ok(Self::new_from_port(port))
     }
 
     /// Creates a new client backed by an in-memory mock serial port.
     pub fn new_mock(timeout: f64) -> (Self, mock_serial::MockDeviceHandle) {
+        let (port, device) = mock_serial::MockSerialPort::pair(Duration::from_secs_f64(timeout));
+        let client = Self::new_from_port(port);
+        (client, device)
+    }
+
+    fn new_from_port(port: Box<dyn SerialPort>) -> Self {
         let (sender, receiver) = channel();
         let (response_sender, response_receiver) = channel();
         let (error_sender, error_receiver) = channel();
         let (command_sender, command_receiver) = channel();
         let (mock_sender, mock_receiver) = channel();
 
-        let (port, device) =
-            mock_serial::MockSerialPort::pair(Duration::from_secs_f64(timeout));
-
-        let client = Self::new_from_port(
-            port,
-            sender,
-            receiver,
-            response_sender,
-            response_receiver,
-            error_sender,
-            error_receiver,
-            command_sender,
-            command_receiver,
-            mock_sender,
-            mock_receiver,
-        );
-
-        (client, device)
-    }
-
-    fn new_from_port(
-        port: Box<dyn SerialPort>,
-        sender: Sender<FIRMData>,
-        receiver: Receiver<FIRMData>,
-        response_sender: Sender<FIRMResponse>,
-        response_receiver: Receiver<FIRMResponse>,
-        error_sender: Sender<String>,
-        error_receiver: Receiver<String>,
-        command_sender: Sender<FIRMCommandPacket>,
-        command_receiver: Receiver<FIRMCommandPacket>,
-        mock_sender: Sender<FIRMMockPacket>,
-        mock_receiver: Receiver<FIRMMockPacket>,
-    ) -> Self {
         Self {
             packet_receiver: receiver,
             response_receiver,
-            error_receiver: error_receiver,
+            error_receiver,
             running: Arc::new(AtomicBool::new(false)),
             join_handle: None,
             sender,
@@ -208,7 +160,7 @@ impl FIRMClient {
                     //     .collect::<Vec<_>>()
                     //     .join(" ");
                     // println!("Mock pkt bytes: {hex}");
-                    
+
                     if let Err(e) = port.write_all(&pkt_bytes) {
                         let _ = error_sender.send(e.to_string());
                         running_clone.store(false, Ordering::Relaxed);
@@ -219,7 +171,7 @@ impl FIRMClient {
 
                 // Read bytes from the serial port
                 match port.read(&mut buffer) {
-                    Ok(bytes_read) if bytes_read > 0 => {
+                    Ok(bytes_read @ 1..) => {
                         // Feed the read bytes into the parser
                         parser.parse_bytes(&buffer[..bytes_read]);
 
@@ -239,9 +191,9 @@ impl FIRMClient {
                             }
                         }
                     }
-                    Ok(_) => {}
+                    Ok(0) => {}
                     // Timeouts might happen; just continue reading
-                    Err(ref e) if e.kind() == std::io::ErrorKind::TimedOut => {}
+                    Err(e) if e.kind() == std::io::ErrorKind::TimedOut => {}
                     // Other errors should be reported and stop the thread:
                     Err(e) => {
                         let _ = error_sender.send(e.to_string());
@@ -513,10 +465,12 @@ impl FIRMClient {
         match self.mock(timeout)? {
             Some(true) => Ok(()),
             Some(false) => Err(anyhow::anyhow!("Device rejected mock mode")),
-            None => Err(anyhow::anyhow!("Timed out waiting for mock acknowledgement")),
+            None => Err(anyhow::anyhow!(
+                "Timed out waiting for mock acknowledgement"
+            )),
         }
     }
-    
+
     /// Sends a high-level command to the device.
     fn send_command(&self, command: FIRMCommandPacket) -> Result<()> {
         self.command_sender
@@ -562,16 +516,23 @@ impl FIRMClient {
             self.response_buffer.push_back(res);
         }
 
-        // First, search the buffer for a match without blocking.
-        if let Some((idx, value)) = self
-            .response_buffer
-            .iter()
-            .enumerate()
-            .find_map(|(i, res)| matcher(res).map(|v| (i, v)))
-        {
-            // Remove the matched response from the buffer and return it.
-            self.response_buffer.remove(idx);
-            return Ok(Some(value));
+        let mut try_get_response = |response_buffer: &mut VecDeque<FIRMResponse>| {
+            // First, search the buffer for a match without blocking.
+            if let Some((idx, value)) = response_buffer
+                .iter()
+                .enumerate()
+                .find_map(|(idx, res)| matcher(res).map(|value| (idx, value)))
+            {
+                // Remove the matched response from the buffer and return it.
+                response_buffer.remove(idx);
+                Some(value)
+            } else {
+                None
+            }
+        };
+
+        if let Some(result) = try_get_response(&mut self.response_buffer) {
+            return Ok(Some(result));
         }
 
         // Makes a deadline to enforce the overall timeout
@@ -596,18 +557,11 @@ impl FIRMClient {
             self.response_buffer.push_back(next);
 
             // Re-scan the buffer for a match now that we have new data.
-            if let Some((idx, value)) = self
-                .response_buffer
-                .iter()
-                .enumerate()
-                .find_map(|(i, res)| matcher(res).map(|v| (i, v)))
-            {
-                self.response_buffer.remove(idx);
-                return Ok(Some(value));
+            if let Some(result) = try_get_response(&mut self.response_buffer) {
+                return Ok(Some(result));
             }
         }
     }
-
 }
 
 /// Ensures that the client is properly stopped when dropped, i.e. .stop() is called.
@@ -619,7 +573,7 @@ impl Drop for FIRMClient {
 
 #[cfg(test)]
 mod tests {
-    use firm_core::{constants::packet_constants::PacketHeader, framed_packet::FramedPacket};
+    use firm_core::{constants::packet::PacketHeader, framed_packet::FramedPacket};
 
     use super::*;
 
@@ -643,7 +597,9 @@ mod tests {
         device.inject_framed_packet(mocked_packet);
 
         // Need to give some time for the background thread to read the data
-        let packets = client.get_data_packets(Some(Duration::from_millis(100))).unwrap();
+        let packets = client
+            .get_data_packets(Some(Duration::from_millis(100)))
+            .unwrap();
         assert!(!packets.is_empty());
         assert!((packets[0].timestamp_seconds - 1.5).abs() < 1e-9);
     }

@@ -79,8 +79,8 @@ pub mod command {
 }
 
 pub mod mock {
-    use std::time::Duration;
     use crate::constants::packet::PacketHeader;
+    use std::time::Duration;
 
     pub const MOCK_SENSOR_PACKET_HEADER: u16 = PacketHeader::MockSensor as u16;
     /// Mock sensor packet type identifier stored in the second u16 header field.

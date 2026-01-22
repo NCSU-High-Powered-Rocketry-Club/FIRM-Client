@@ -202,7 +202,10 @@ mod tests {
             MOCK_PACKET_TIMESTAMP_SIZE + ICM45686_SIZE
         );
         assert_eq!(mock_packet.len() as usize, mock_packet.payload().len());
-        assert_eq!(&mock_packet.payload()[0..MOCK_PACKET_TIMESTAMP_SIZE], &[0x00, 0x00, 0x01]);
+        assert_eq!(
+            &mock_packet.payload()[0..MOCK_PACKET_TIMESTAMP_SIZE],
+            &[0x00, 0x00, 0x01]
+        );
         assert!(parser.get_packet_and_time_delay().is_none());
     }
 

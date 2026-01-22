@@ -191,7 +191,11 @@ mod tests {
     fn test_serial_parser_parses_response_packet_split_across_calls() {
         // Identifier is in the identifier for response packets; payload is just the response data.
         let payload = [1u8];
-        let bytes = build_framed_packet(PacketHeader::Response, FIRMCommand::SetDeviceConfig as u16, &payload);
+        let bytes = build_framed_packet(
+            PacketHeader::Response,
+            FIRMCommand::SetDeviceConfig as u16,
+            &payload,
+        );
         let mid = bytes.len() / 2;
 
         let mut parser = SerialParser::new();

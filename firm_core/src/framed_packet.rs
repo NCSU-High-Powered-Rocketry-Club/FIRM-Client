@@ -108,8 +108,8 @@ impl FramedPacket {
         }
 
         let header_raw = u16::from_le_bytes(bytes[0..HEADER_SIZE].try_into().unwrap());
-        let header = PacketHeader::from_u16(header_raw)
-            .ok_or(FrameError::UnknownIdentifier(header_raw))?;
+        let header =
+            PacketHeader::from_u16(header_raw).ok_or(FrameError::UnknownIdentifier(header_raw))?;
         let identifier = u16::from_le_bytes(
             bytes[HEADER_SIZE..HEADER_SIZE + IDENTIFIER_SIZE]
                 .try_into()

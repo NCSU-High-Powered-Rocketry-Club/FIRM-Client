@@ -373,8 +373,8 @@ mod tests {
         identifier: u16,
         payload: &[u8],
     ) -> Result<FIRMResponsePacket, FrameError> {
-        let bytes = FramedPacket::new(PacketHeader::Response, identifier, payload.to_vec())
-            .to_bytes();
+        let bytes =
+            FramedPacket::new(PacketHeader::Response, identifier, payload.to_vec()).to_bytes();
         FIRMResponsePacket::from_bytes(&bytes)
     }
 

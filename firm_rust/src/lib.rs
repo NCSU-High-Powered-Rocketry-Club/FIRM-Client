@@ -212,10 +212,10 @@ impl FIRMClient {
     pub fn stop(&mut self) {
         self.running.store(false, Ordering::Relaxed);
         // todo: explain this properly when I understand it better (it's mostly for restarting)
-        if let Some(handle) = self.join_handle.take() {
-            if let Ok(port) = handle.join() {
-                self.port = Some(port);
-            }
+        if let Some(handle) = self.join_handle.take()
+            && let Ok(port) = handle.join()
+        {
+            self.port = Some(port);
         }
 
         // The receivers are moved into the background thread on start()
@@ -268,10 +268,10 @@ impl FIRMClient {
         let mut responses: Vec<FIRMResponse> = self.response_buffer.drain(..).collect();
 
         // If blocking and we have nothing buffered, wait for one response.
-        if responses.is_empty() {
-            if let Some(duration) = timeout {
-                responses.push(self.response_receiver.recv_timeout(duration)?);
-            }
+        if responses.is_empty()
+            && let Some(duration) = timeout
+        {
+            responses.push(self.response_receiver.recv_timeout(duration)?);
         }
 
         while let Ok(res) = self.response_receiver.try_recv() {

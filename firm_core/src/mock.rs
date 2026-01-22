@@ -24,6 +24,12 @@ pub struct LogParser {
     eof_reached: bool,
 }
 
+impl Default for LogParser {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl LogParser {
     /// Creates a new empty `LogParser`.
     pub fn new() -> Self {

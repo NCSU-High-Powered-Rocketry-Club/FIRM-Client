@@ -33,6 +33,10 @@ pub trait Framed: Sized {
         self.frame().len()
     }
 
+    fn is_empty(&self) -> bool {
+        self.frame().is_empty()
+    }
+
     fn crc(&self) -> u16 {
         self.frame().crc()
     }
@@ -85,6 +89,10 @@ impl FramedPacket {
 
     pub fn len(&self) -> u32 {
         self.payload.len() as u32
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.payload.is_empty()
     }
 
     pub fn to_bytes(&self) -> Vec<u8> {

@@ -325,15 +325,15 @@ impl FIRMResponse {
                 FIRMResponse::GetDeviceConfig(config)
             }
             FIRMCommand::SetDeviceConfig => {
-                let success = data.get(0) == Some(&1);
+                let success = data.first() == Some(&1);
                 FIRMResponse::SetDeviceConfig(success)
             }
             FIRMCommand::Mock => {
-                let success = data.get(0) == Some(&1);
+                let success = data.first() == Some(&1);
                 FIRMResponse::Mock(success)
             }
             FIRMCommand::Cancel => {
-                let acknowledgement = data.get(0) == Some(&1);
+                let acknowledgement = data.first() == Some(&1);
                 FIRMResponse::Cancel(acknowledgement)
             }
             // Reboot currently has no decoded response type.

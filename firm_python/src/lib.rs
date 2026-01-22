@@ -1,6 +1,4 @@
-use firm_core::firm_packets::{
-    DeviceConfig, DeviceInfo, DeviceProtocol, FIRMData,
-};
+use firm_core::firm_packets::{DeviceConfig, DeviceInfo, DeviceProtocol, FIRMData};
 use firm_rust::FIRMClient as RustFirmClient;
 use pyo3::prelude::*;
 
@@ -18,7 +16,7 @@ impl FIRMClient {
         let baudrate = baud_rate.unwrap_or(2_000_000);
         let timeout_val = timeout.unwrap_or(0.1);
         let client = RustFirmClient::new(port_name, baudrate, timeout_val)
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyIOError, _>(e.to_string()))?;
+            .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))?;
         Ok(FIRMClient {
             inner: client,
             timeout: timeout_val,
@@ -44,7 +42,7 @@ impl FIRMClient {
         start_timeout_seconds: f64,
     ) -> PyResult<usize> {
         if let Some(err) = self.inner.check_error() {
-            return Err(PyErr::new::<pyo3::exceptions::PyIOError, _>(err));
+            return Err(pyo3::exceptions::PyIOError::new_err(err));
         }
 
         let sent = self
@@ -64,7 +62,7 @@ impl FIRMClient {
     #[pyo3(signature = (block=false))]
     fn get_data_packets(&mut self, block: bool) -> PyResult<Vec<FIRMData>> {
         if let Some(err) = self.inner.check_error() {
-            return Err(PyErr::new::<pyo3::exceptions::PyIOError, _>(err));
+            return Err(pyo3::exceptions::PyIOError::new_err(err));
         }
 
         let timeout = if block {
@@ -83,7 +81,7 @@ impl FIRMClient {
     #[pyo3(signature = (timeout_seconds=5.0))]
     fn get_device_info(&mut self, timeout_seconds: f64) -> PyResult<Option<DeviceInfo>> {
         if let Some(err) = self.inner.check_error() {
-            return Err(PyErr::new::<pyo3::exceptions::PyIOError, _>(err));
+            return Err(pyo3::exceptions::PyIOError::new_err(err));
         }
 
         let info = self
@@ -96,7 +94,7 @@ impl FIRMClient {
     #[pyo3(signature = (timeout_seconds=5.0))]
     fn get_device_config(&mut self, timeout_seconds: f64) -> PyResult<Option<DeviceConfig>> {
         if let Some(err) = self.inner.check_error() {
-            return Err(PyErr::new::<pyo3::exceptions::PyIOError, _>(err));
+            return Err(pyo3::exceptions::PyIOError::new_err(err));
         }
 
         let cfg = self
@@ -115,7 +113,7 @@ impl FIRMClient {
         timeout_seconds: f64,
     ) -> PyResult<bool> {
         if let Some(err) = self.inner.check_error() {
-            return Err(PyErr::new::<pyo3::exceptions::PyIOError, _>(err));
+            return Err(pyo3::exceptions::PyIOError::new_err(err));
         }
 
         let res = self
@@ -134,7 +132,7 @@ impl FIRMClient {
     #[pyo3(signature = (timeout_seconds=5.0))]
     fn cancel(&mut self, timeout_seconds: f64) -> PyResult<bool> {
         if let Some(err) = self.inner.check_error() {
-            return Err(PyErr::new::<pyo3::exceptions::PyIOError, _>(err));
+            return Err(pyo3::exceptions::PyIOError::new_err(err));
         }
 
         let res = self
@@ -146,7 +144,7 @@ impl FIRMClient {
 
     fn reboot(&mut self) -> PyResult<()> {
         if let Some(err) = self.inner.check_error() {
-            return Err(PyErr::new::<pyo3::exceptions::PyIOError, _>(err));
+            return Err(pyo3::exceptions::PyIOError::new_err(err));
         }
 
         self.inner

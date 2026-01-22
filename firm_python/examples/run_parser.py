@@ -1,12 +1,22 @@
+import argparse
 from firm_client import FIRMClient
 
 
 def main() -> None:
-    port_name = "COM8"
-    baud_rate = 2_000_000
+    parser = argparse.ArgumentParser(description="Parse and display FIRM data packets")
+    parser.add_argument("port", help="Serial port name (e.g., COM8 or /dev/ttyACM0)")
+    parser.add_argument(
+        "-b",
+        "--baud-rate",
+        type=int,
+        default=2_000_000,
+        help="Baud rate for serial communication (default: 2000000)",
+    )
+    args = parser.parse_args()
+
     initial_dt = 0
 
-    with FIRMClient(port_name, baud_rate) as client:
+    with FIRMClient(args.port, args.baud_rate) as client:
         client.get_data_packets(block=True)  # Clear initial packets
         while client.is_running():
             packets = client.get_data_packets(block=True)
@@ -33,5 +43,4 @@ def main() -> None:
             initial_dt = packets[-1].timestamp_seconds
 
 
-if __name__ == "__main__":
-    main()
+main()

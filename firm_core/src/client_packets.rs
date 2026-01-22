@@ -1,13 +1,13 @@
 use alloc::vec::Vec;
 
+use crate::constants::command::{DEVICE_NAME_LENGTH, FIRMCommand, FREQUENCY_LENGTH};
+use crate::constants::mock::{FIRMMockPacketType, MOCK_SENSOR_PACKET_HEADER};
+use crate::constants::packet::PacketHeader;
 use crate::{
     firm_packets::*,
-    framed_packet::{FramedPacket, Framed},
+    framed_packet::{Framed, FramedPacket},
     utils::str_to_bytes,
 };
-use crate::constants::command_constants::{FIRMCommand, DEVICE_NAME_LENGTH, FREQUENCY_LENGTH};
-use crate::constants::mock_constants::{FIRMMockPacketType, MOCK_SENSOR_PACKET_HEADER};
-use crate::constants::packet_constants::PacketHeader;
 
 pub struct FIRMCommandPacket {
     command_type: FIRMCommand,
@@ -16,7 +16,7 @@ pub struct FIRMCommandPacket {
 
 impl FIRMCommandPacket {
     pub fn new(command_type: FIRMCommand, payload: Vec<u8>) -> Self {
-        let header = PacketHeader::Command as u16;
+        let header = PacketHeader::Command.as_u16();
         let identifier = command_type as u16;
         Self {
             command_type,
@@ -68,9 +68,12 @@ impl Framed for FIRMCommandPacket {
     /// Parses a framed command packet from raw bytes. This method is just for testing.
     fn from_bytes(bytes: &[u8]) -> Result<Self, crate::framed_packet::FrameError> {
         let frame = FramedPacket::from_bytes(bytes)?;
-        let marker = frame.identifier();
-        let command_type = FIRMCommand::from_marker(marker)?;
-        Ok(Self { command_type, frame })
+        let identifier = frame.identifier();
+        let command_type = FIRMCommand::from_u16(identifier)?;
+        Ok(Self {
+            command_type,
+            frame,
+        })
     }
 }
 
@@ -111,9 +114,11 @@ impl Framed for FIRMMockPacket {
 #[cfg(test)]
 mod tests {
     use super::{FIRMCommandPacket, FIRMMockPacket};
-    use crate::constants::command_constants::{CRC_LENGTH, DEVICE_NAME_LENGTH, FREQUENCY_LENGTH, FIRMCommand};
-    use crate::constants::mock_constants::{FIRMMockPacketType, MOCK_SENSOR_PACKET_HEADER};
-    use crate::constants::packet_constants::PacketHeader;
+    use crate::constants::command::{
+        CRC_LENGTH, DEVICE_NAME_LENGTH, FIRMCommand, FREQUENCY_LENGTH,
+    };
+    use crate::constants::mock::{FIRMMockPacketType, MOCK_SENSOR_PACKET_HEADER};
+    use crate::constants::packet::PacketHeader;
     use crate::firm_packets::{DeviceConfig, DeviceProtocol};
     use crate::framed_packet::Framed;
     use crate::utils::{crc16_ccitt, str_to_bytes};
@@ -138,27 +143,48 @@ mod tests {
         assert_eq!(crc_from_bytes(bytes), calculate_crc(bytes));
     }
 
-    fn assert_zero_payload_command(make: fn() -> FIRMCommandPacket, expected_marker: u16) {
+    fn assert_zero_payload_command(make: fn() -> FIRMCommandPacket, expected_identifier: u16) {
         let command_packet = make().to_bytes();
         assert_common_packet_invariants(&command_packet);
-        assert_eq!(header_from_bytes(&command_packet), PacketHeader::Command as u16);
-        assert_eq!(identifier_from_bytes(&command_packet), expected_marker);
-        assert_eq!(u32::from_le_bytes(command_packet[4..8].try_into().unwrap()), 0);
+        assert_eq!(
+            header_from_bytes(&command_packet),
+            PacketHeader::Command as u16
+        );
+        assert_eq!(identifier_from_bytes(&command_packet), expected_identifier);
+        assert_eq!(
+            u32::from_le_bytes(command_packet[4..8].try_into().unwrap()),
+            0
+        );
         assert_eq!(command_packet.len(), 4 + 4 + 0 + CRC_LENGTH);
     }
 
     #[test]
     fn test_firm_command_packet_to_bytes_zero_payload_commands() {
         let cases: &[(u16, fn() -> FIRMCommandPacket)] = &[
-            (FIRMCommand::GetDeviceInfo as u16, FIRMCommandPacket::build_get_device_info_command),
-            (FIRMCommand::GetDeviceConfig as u16, FIRMCommandPacket::build_get_device_config_command),
-            (FIRMCommand::Cancel as u16, FIRMCommandPacket::build_cancel_command),
-            (FIRMCommand::Reboot as u16, FIRMCommandPacket::build_reboot_command),
-            (FIRMCommand::Mock as u16, FIRMCommandPacket::build_mock_command),
+            (
+                FIRMCommand::GetDeviceInfo as u16,
+                FIRMCommandPacket::build_get_device_info_command,
+            ),
+            (
+                FIRMCommand::GetDeviceConfig as u16,
+                FIRMCommandPacket::build_get_device_config_command,
+            ),
+            (
+                FIRMCommand::Cancel as u16,
+                FIRMCommandPacket::build_cancel_command,
+            ),
+            (
+                FIRMCommand::Reboot as u16,
+                FIRMCommandPacket::build_reboot_command,
+            ),
+            (
+                FIRMCommand::Mock as u16,
+                FIRMCommandPacket::build_mock_command,
+            ),
         ];
 
-        for (marker, make) in cases {
-            assert_zero_payload_command(*make, *marker);
+        for (identifier, make) in cases {
+            assert_zero_payload_command(*make, *identifier);
         }
     }
 
@@ -170,12 +196,19 @@ mod tests {
             protocol: DeviceProtocol::UART,
         };
 
-        let command_packet = FIRMCommandPacket::build_set_device_config_command(config.clone()).to_bytes();
+        let command_packet =
+            FIRMCommandPacket::build_set_device_config_command(config.clone()).to_bytes();
         assert_common_packet_invariants(&command_packet);
 
-        assert_eq!(header_from_bytes(&command_packet), PacketHeader::Command as u16);
+        assert_eq!(
+            header_from_bytes(&command_packet),
+            PacketHeader::Command as u16
+        );
 
-        assert_eq!(identifier_from_bytes(&command_packet), FIRMCommand::SetDeviceConfig as u16);
+        assert_eq!(
+            identifier_from_bytes(&command_packet),
+            FIRMCommand::SetDeviceConfig as u16
+        );
 
         let payload_len = u32::from_le_bytes(command_packet[4..8].try_into().unwrap()) as usize;
         assert_eq!(payload_len, DEVICE_NAME_LENGTH + FREQUENCY_LENGTH + 1);
@@ -210,8 +243,14 @@ mod tests {
         let bytes = packet.to_bytes();
         assert_eq!(header_from_bytes(&bytes), MOCK_SENSOR_PACKET_HEADER);
         assert_eq!(identifier_from_bytes(&bytes), b'I' as u16);
-        assert_eq!(u32::from_le_bytes(bytes[4..8].try_into().unwrap()), packet.len());
-        assert_eq!(u16::from_le_bytes(bytes[bytes.len() - 2..].try_into().unwrap()), packet.crc());
+        assert_eq!(
+            u32::from_le_bytes(bytes[4..8].try_into().unwrap()),
+            packet.len()
+        );
+        assert_eq!(
+            u16::from_le_bytes(bytes[bytes.len() - 2..].try_into().unwrap()),
+            packet.crc()
+        );
         assert_eq!(&bytes[8..bytes.len() - 2], packet.payload());
         assert_eq!(crc_from_bytes(&bytes), calculate_crc(&bytes));
     }

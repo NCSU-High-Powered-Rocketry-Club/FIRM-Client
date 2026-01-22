@@ -1,5 +1,5 @@
 use firm_core::client_packets::{FIRMCommandPacket, FIRMMockPacket};
-use firm_core::constants::mock_constants::{FIRMMockPacketType, HEADER_TOTAL_SIZE};
+use firm_core::constants::mock::{FIRMMockPacketType, HEADER_TOTAL_SIZE};
 use firm_core::data_parser::SerialParser;
 use firm_core::firm_packets::{DeviceConfig, DeviceProtocol};
 use firm_core::framed_packet::Framed;
@@ -74,9 +74,7 @@ impl FIRMDataParser {
     #[wasm_bindgen]
     pub fn get_packet(&mut self) -> JsValue {
         match self.inner.get_data_packet() {
-            Some(frame) => {
-                serde_wasm_bindgen::to_value(frame.data()).unwrap()
-            }
+            Some(frame) => serde_wasm_bindgen::to_value(frame.data()).unwrap(),
             None => JsValue::NULL,
         }
     }
@@ -84,9 +82,7 @@ impl FIRMDataParser {
     #[wasm_bindgen]
     pub fn get_response(&mut self) -> JsValue {
         match self.inner.get_response_packet() {
-            Some(frame) => {
-                serde_wasm_bindgen::to_value(frame.response()).unwrap()
-            }
+            Some(frame) => serde_wasm_bindgen::to_value(frame.response()).unwrap(),
             None => JsValue::NULL,
         }
     }
@@ -122,8 +118,16 @@ impl MockLogParser {
             Some((pkt, delay_seconds)) => {
                 let bytes = pkt.to_bytes();
                 let obj = Object::new();
-                let _ = Reflect::set(&obj, &"bytes".into(), &Uint8Array::from(bytes.as_slice()).into());
-                let _ = Reflect::set(&obj, &"delaySeconds".into(), &JsValue::from_f64(delay_seconds));
+                let _ = Reflect::set(
+                    &obj,
+                    &"bytes".into(),
+                    &Uint8Array::from(bytes.as_slice()).into(),
+                );
+                let _ = Reflect::set(
+                    &obj,
+                    &"delaySeconds".into(),
+                    &JsValue::from_f64(delay_seconds),
+                );
                 obj.into()
             }
             None => JsValue::NULL,

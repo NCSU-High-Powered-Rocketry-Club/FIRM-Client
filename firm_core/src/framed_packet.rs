@@ -1,13 +1,13 @@
 use alloc::vec::Vec;
 
-use crate::{constants::packet_constants::*, utils::crc16_ccitt};
+use crate::{constants::packet::*, utils::crc16_ccitt};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FrameError {
     TooShort,
     LengthMismatch { expected: usize, got: usize },
     BadCrc { expected: u16, got: u16 },
-    UnknownMarker(u16),
+    UnknownIdentifier(u16),
     InvalidPayloadLength { expected: usize, got: usize },
 }
 
@@ -115,21 +115,35 @@ impl FramedPacket {
         );
 
         let len_start = HEADER_SIZE + IDENTIFIER_SIZE;
-        let len = u32::from_le_bytes(bytes[len_start..len_start + LENGTH_SIZE].try_into().unwrap()) as usize;
+        let len = u32::from_le_bytes(
+            bytes[len_start..len_start + LENGTH_SIZE]
+                .try_into()
+                .unwrap(),
+        ) as usize;
 
         let expected = HEADER_SIZE + IDENTIFIER_SIZE + LENGTH_SIZE + len + CRC_SIZE;
         if bytes.len() != expected {
-            return Err(FrameError::LengthMismatch { expected, got: bytes.len() });
+            return Err(FrameError::LengthMismatch {
+                expected,
+                got: bytes.len(),
+            });
         }
 
         let payload_start = HEADER_SIZE + IDENTIFIER_SIZE + LENGTH_SIZE;
         let payload_end = payload_start + len;
         let payload = bytes[payload_start..payload_end].to_vec();
 
-        let got_crc = u16::from_le_bytes(bytes[payload_end..payload_end + CRC_SIZE].try_into().unwrap());
+        let got_crc = u16::from_le_bytes(
+            bytes[payload_end..payload_end + CRC_SIZE]
+                .try_into()
+                .unwrap(),
+        );
         let expected_crc = Self::compute_crc(header, identifier, len as u32, &payload);
         if got_crc != expected_crc {
-            return Err(FrameError::BadCrc { expected: expected_crc, got: got_crc });
+            return Err(FrameError::BadCrc {
+                expected: expected_crc,
+                got: got_crc,
+            });
         }
 
         Ok(Self {
@@ -140,7 +154,7 @@ impl FramedPacket {
         })
     }
 
-    /// Computes CRC over `[header][length][payload]`.
+    /// Computes CRC over `[header][identifier][length][payload]`.
     pub fn compute_crc(header: u16, identifier: u16, len: u32, payload: &[u8]) -> u16 {
         let mut crc_input =
             Vec::with_capacity(HEADER_SIZE + IDENTIFIER_SIZE + LENGTH_SIZE + payload.len());

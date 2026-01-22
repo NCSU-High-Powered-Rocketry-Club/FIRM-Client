@@ -1,7 +1,7 @@
+use crate::constants::packet::{PacketHeader, *};
 use crate::firm_packets::{FIRMDataPacket, FIRMResponsePacket};
 use crate::framed_packet::Framed;
 use crate::utils::crc16_ccitt;
-use crate::constants::packet_constants::{PacketHeader, *};
 use alloc::collections::VecDeque;
 use alloc::vec::Vec;
 
@@ -74,7 +74,8 @@ impl SerialParser {
             }
 
             let length_start = header_start + HEADER_SIZE + IDENTIFIER_SIZE;
-            let length_bytes: [u8; LENGTH_SIZE] = self.serial_bytes[length_start..length_start + LENGTH_SIZE]
+            let length_bytes: [u8; LENGTH_SIZE] = self.serial_bytes
+                [length_start..length_start + LENGTH_SIZE]
                 .try_into()
                 .unwrap();
             let length = u32::from_le_bytes(length_bytes) as usize;
@@ -112,13 +113,11 @@ impl SerialParser {
                     position += 1;
                     continue;
                 }
+            } else if let Ok(frame) = FIRMResponsePacket::from_bytes(packet_bytes) {
+                self.parsed_response_packets.push_back(frame);
             } else {
-                if let Ok(frame) = FIRMResponsePacket::from_bytes(packet_bytes) {
-                    self.parsed_response_packets.push_back(frame);
-                } else {
-                    position += 1;
-                    continue;
-                }
+                position += 1;
+                continue;
             }
 
             position = packet_end;
@@ -155,13 +154,18 @@ impl SerialParser {
     }
 }
 
+impl Default for SerialParser {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::SerialParser;
-    use crate::constants::command_constants::FIRMCommand;
-    use crate::constants::packet_constants::{PacketHeader, *};
+    use crate::constants::command::FIRMCommand;
+    use crate::constants::packet::{PacketHeader, *};
     use crate::framed_packet::FramedPacket;
-    use crate::firm_packets::{FIRMResponse};
 
     fn build_framed_packet(header: u16, identifier: u16, payload: &[u8]) -> Vec<u8> {
         FramedPacket::new(header, identifier, payload.to_vec()).to_bytes()
@@ -171,8 +175,8 @@ mod tests {
         (PacketHeader::Data as u16, 0)
     }
 
-    fn response_header(marker: u16) -> (u16, u16) {
-        (PacketHeader::Response as u16, marker)
+    fn response_header(identifier: u16) -> (u16, u16) {
+        (PacketHeader::Response as u16, identifier)
     }
 
     #[test]
@@ -195,7 +199,7 @@ mod tests {
 
     #[test]
     fn test_serial_parser_parses_response_packet_split_across_calls() {
-        // Marker is in the identifier for response packets; payload is just the response data.
+        // Identifier is in the identifier for response packets; payload is just the response data.
         let payload = [1u8];
         let (hdr, id) = response_header(FIRMCommand::SetDeviceConfig as u16);
         let bytes = build_framed_packet(hdr, id, &payload);
@@ -207,7 +211,9 @@ mod tests {
         assert!(parser.get_response_packet().is_none());
 
         parser.parse_bytes(&bytes[mid..]);
-        let frame = parser.get_response_packet().expect("expected one response frame");
+        let _frame = parser
+            .get_response_packet()
+            .expect("expected one response frame");
         assert!(parser.get_response_packet().is_none());
         assert!(parser.get_data_packet().is_none());
     }

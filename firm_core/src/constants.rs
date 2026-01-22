@@ -1,4 +1,4 @@
-pub mod packet_constants {
+pub mod packet {
     /// Header is stored as two little-endian u16s on the wire.
     pub const HEADER_SIZE: usize = 2;
     pub const IDENTIFIER_SIZE: usize = 2;
@@ -24,7 +24,7 @@ pub mod packet_constants {
     }
 }
 
-pub mod command_constants {
+pub mod command {
     use crate::framed_packet::FrameError;
 
     #[repr(u16)]
@@ -39,31 +39,24 @@ pub mod command_constants {
     }
 
     impl FIRMCommand {
-        pub const fn marker(self) -> u16 {
+        pub const fn to_u16(self) -> u16 {
             self as u16
         }
 
-        pub const fn from_marker(marker: u16) -> Result<Self, FrameError> {
-            if marker == FIRMCommand::GetDeviceInfo as u16 {
-                return Ok(FIRMCommand::GetDeviceInfo);
+        pub const fn from_u16(identifier: u16) -> Result<Self, FrameError> {
+            match identifier {
+                id if id == FIRMCommand::GetDeviceInfo.to_u16() => Ok(FIRMCommand::GetDeviceInfo),
+                id if id == FIRMCommand::GetDeviceConfig.to_u16() => {
+                    Ok(FIRMCommand::GetDeviceConfig)
+                }
+                id if id == FIRMCommand::SetDeviceConfig.to_u16() => {
+                    Ok(FIRMCommand::SetDeviceConfig)
+                }
+                id if id == FIRMCommand::Reboot.to_u16() => Ok(FIRMCommand::Reboot),
+                id if id == FIRMCommand::Mock.to_u16() => Ok(FIRMCommand::Mock),
+                id if id == FIRMCommand::Cancel.to_u16() => Ok(FIRMCommand::Cancel),
+                _ => Err(FrameError::UnknownIdentifier(identifier)),
             }
-            if marker == FIRMCommand::GetDeviceConfig as u16 {
-                return Ok(FIRMCommand::GetDeviceConfig);
-            }
-            if marker == FIRMCommand::SetDeviceConfig as u16 {
-                return Ok(FIRMCommand::SetDeviceConfig);
-            }
-            if marker == FIRMCommand::Reboot as u16 {
-                return Ok(FIRMCommand::Reboot);
-            }
-            if marker == FIRMCommand::Mock as u16 {
-                return Ok(FIRMCommand::Mock);
-            }
-            if marker == FIRMCommand::Cancel as u16 {
-                return Ok(FIRMCommand::Cancel);
-            }
-
-            Err(FrameError::UnknownMarker(marker))
         }
     }
 
@@ -75,10 +68,10 @@ pub mod command_constants {
     pub const FREQUENCY_LENGTH: usize = 2;
 }
 
-pub mod mock_constants {
+pub mod mock {
     use std::time::Duration;
 
-    use crate::constants::packet_constants::PacketHeader;
+    use crate::constants::packet::PacketHeader;
 
     pub const MOCK_SENSOR_PACKET_HEADER: u16 = PacketHeader::MockSensor as u16;
 
@@ -86,10 +79,10 @@ pub mod mock_constants {
     #[repr(u16)]
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub enum FIRMMockPacketType {
-        HeaderPacket = b'H' as u16,
-        BarometerPacket = b'B' as u16,
-        IMUPacket = b'I' as u16,
-        MagnetometerPacket = b'M' as u16,
+        HeaderPacket = HEADER_ID as u16,
+        BarometerPacket = BMP581_ID as u16,
+        IMUPacket = ICM45686_ID as u16,
+        MagnetometerPacket = MMC5983MA_ID as u16,
     }
 
     impl FIRMMockPacketType {
@@ -100,15 +93,21 @@ pub mod mock_constants {
         // TODO: make Result
         pub const fn from_u16(v: u16) -> Option<Self> {
             match v {
-                x if x == b'H' as u16 => Some(FIRMMockPacketType::HeaderPacket),
-                x if x == b'B' as u16 => Some(FIRMMockPacketType::BarometerPacket),
-                x if x == b'I' as u16 => Some(FIRMMockPacketType::IMUPacket),
-                x if x == b'M' as u16 => Some(FIRMMockPacketType::MagnetometerPacket),
+                v if v == Self::HeaderPacket as u16 => Some(Self::HeaderPacket),
+                v if v == Self::BarometerPacket as u16 => Some(Self::BarometerPacket),
+                v if v == Self::IMUPacket as u16 => Some(Self::IMUPacket),
+                v if v == Self::MagnetometerPacket as u16 => Some(Self::MagnetometerPacket),
                 _ => None,
             }
         }
+
+        pub const fn as_char(self) -> char {
+            // SAFETY: All enum variants are valid ASCII values.
+            self as u8 as char
+        }
     }
 
+    pub const HEADER_ID: u8 = b'H';
     pub const BMP581_ID: u8 = b'B';
     pub const ICM45686_ID: u8 = b'I';
     pub const MMC5983MA_ID: u8 = b'M';

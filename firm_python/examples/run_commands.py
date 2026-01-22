@@ -1,11 +1,22 @@
+import argparse
 import firm_client
 
-PORT = "COM8"
-BAUD = 2_000_000
 TIMEOUT = 0.1
 RESPONSE_TIMEOUT = 5.0
 
-client = firm_client.FIRMClient(PORT, BAUD, TIMEOUT)
+
+parser = argparse.ArgumentParser(description="Run FIRM device commands")
+parser.add_argument("port", help="Serial port name (e.g., COM8 or /dev/ttyACM0)")
+parser.add_argument(
+    "-b",
+    "--baud-rate",
+    type=int,
+    default=2_000_000,
+    help="Baud rate for serial communication (default: 2000000)",
+)
+args = parser.parse_args()
+
+client = firm_client.FIRMClient(args.port, args.baud_rate, TIMEOUT)
 client.start()
 
 device_info = client.get_device_info(timeout_seconds=RESPONSE_TIMEOUT)
@@ -14,7 +25,10 @@ if device_info:
 
 print(
     client.set_device_config(
-        "name", 102, firm_client.DeviceProtocol.UART, timeout_seconds=RESPONSE_TIMEOUT
+        "name",
+        102,
+        firm_client.DeviceProtocol.UART,
+        timeout_seconds=RESPONSE_TIMEOUT,
     )
 )
 

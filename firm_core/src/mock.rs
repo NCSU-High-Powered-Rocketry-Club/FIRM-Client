@@ -2,8 +2,8 @@ use alloc::collections::VecDeque;
 use alloc::vec::Vec;
 
 use crate::client_packets::FIRMMockPacket;
-use crate::constants::mock_constants::FIRMMockPacketType;
-use crate::constants::mock_constants::*;
+use crate::constants::mock::FIRMMockPacketType;
+use crate::constants::mock::*;
 
 pub struct MockParser {
     /// Rolling buffer of unprocessed bytes.
@@ -54,7 +54,7 @@ impl MockParser {
     /// Feeds a new chunk of bytes into the parser.
     ///
     /// Parses as many log packets as possible and enqueues framed mock packets.
-    /// 
+    ///
     /// This code is just copied from the Python decoder script.
     pub fn parse_bytes(&mut self, chunk: &[u8]) {
         if self.eof_reached {
@@ -73,8 +73,7 @@ impl MockParser {
                 // whitespace padding between log packets
                 self.num_repeat_whitespace += 1;
                 // End-of-data if whitespace repeats enough times, matching the Python decoder.
-                if self.num_repeat_whitespace > LOG_FILE_EOF_PADDING_LENGTH
-                {
+                if self.num_repeat_whitespace > LOG_FILE_EOF_PADDING_LENGTH {
                     // Treat as EOF padding; drop buffered bytes.
                     self.bytes.clear();
                     self.eof_reached = true;
@@ -112,59 +111,31 @@ impl MockParser {
 
             self.last_clock_count = Some(clock_count);
 
-            match id {
-                BMP581_ID => {
-                    if position + BMP581_SIZE > self.bytes.len() {
-                        position = log_packet_start;
-                        break;
-                    }
-                    let raw = &self.bytes[position..position + BMP581_SIZE];
-                    position += BMP581_SIZE;
-
-                    // Payload excludes the type byte.
-                    let mut payload = Vec::with_capacity(MOCK_PACKET_TIMESTAMP_SIZE + BMP581_SIZE);
-                    payload.extend_from_slice(timestamp);
-                    payload.extend_from_slice(raw);
-                    let pkt = FIRMMockPacket::new(FIRMMockPacketType::BarometerPacket, payload);
-                    self.parsed_packets.push_back((pkt, delay_seconds));
-                }
-                ICM45686_ID => {
-                    if position + ICM45686_SIZE > self.bytes.len() {
-                        position = log_packet_start;
-                        break;
-                    }
-                    let raw = &self.bytes[position..position + ICM45686_SIZE];
-                    position += ICM45686_SIZE;
-
-                    // Payload excludes the type byte.
-                    let mut payload = Vec::with_capacity(MOCK_PACKET_TIMESTAMP_SIZE + ICM45686_SIZE);
-                    payload.extend_from_slice(timestamp);
-                    payload.extend_from_slice(raw);
-                    let pkt = FIRMMockPacket::new(FIRMMockPacketType::IMUPacket, payload);
-                    self.parsed_packets.push_back((pkt, delay_seconds));
-                }
-                MMC5983MA_ID => {
-                    if position + MMC5983MA_SIZE > self.bytes.len() {
-                        position = log_packet_start;
-                        break;
-                    }
-                    let raw = &self.bytes[position..position + MMC5983MA_SIZE];
-                    position += MMC5983MA_SIZE;
-
-                    // Payload excludes the type byte.
-                    let mut payload = Vec::with_capacity(MOCK_PACKET_TIMESTAMP_SIZE + MMC5983MA_SIZE);
-                    payload.extend_from_slice(timestamp);
-                    payload.extend_from_slice(raw);
-                    let pkt = FIRMMockPacket::new(FIRMMockPacketType::MagnetometerPacket, payload);
-                    self.parsed_packets.push_back((pkt, delay_seconds));
-                }
+            let (packet_type, size) = match id {
+                BMP581_ID => (FIRMMockPacketType::BarometerPacket, BMP581_SIZE),
+                ICM45686_ID => (FIRMMockPacketType::IMUPacket, ICM45686_SIZE),
+                MMC5983MA_ID => (FIRMMockPacketType::MagnetometerPacket, MMC5983MA_SIZE),
                 _ => {
                     // Unknown/garbage byte. Don't give up immediately: advance by one byte and
                     // keep scanning so we can re-sync if we're offset or the file has junk.
                     position = log_packet_start + 1;
                     continue;
                 }
+            };
+
+            if position + size > self.bytes.len() {
+                position = log_packet_start;
+                break;
             }
+
+            let raw = &self.bytes[position..position + size];
+            position += size;
+
+            let mut payload = Vec::with_capacity(MOCK_PACKET_TIMESTAMP_SIZE + size);
+            payload.extend_from_slice(timestamp);
+            payload.extend_from_slice(raw);
+            let pkt = FIRMMockPacket::new(packet_type, payload);
+            self.parsed_packets.push_back((pkt, delay_seconds));
         }
 
         if position >= self.bytes.len() {
@@ -226,9 +197,15 @@ mod tests {
         let (mock_packet, delay) = parser.get_packet_with_delay().unwrap();
         assert_eq!(delay, 0.0);
         assert_eq!(mock_packet.packet_type(), FIRMMockPacketType::IMUPacket);
-        assert_eq!(mock_packet.payload().len(), MOCK_PACKET_TIMESTAMP_SIZE + ICM45686_SIZE);
+        assert_eq!(
+            mock_packet.payload().len(),
+            MOCK_PACKET_TIMESTAMP_SIZE + ICM45686_SIZE
+        );
         assert_eq!(mock_packet.len() as usize, mock_packet.payload().len());
-        assert_eq!(&mock_packet.payload()[0..MOCK_PACKET_TIMESTAMP_SIZE], &[0x00, 0x00, 0x01]);
+        assert_eq!(
+            &mock_packet.payload()[0..MOCK_PACKET_TIMESTAMP_SIZE],
+            &[0x00, 0x00, 0x01]
+        );
         assert!(parser.get_packet_with_delay().is_none());
     }
 
@@ -252,8 +229,14 @@ mod tests {
         let (mock_packet2, d2) = parser.get_packet_with_delay().unwrap();
         assert_eq!(d1, 0.0);
 
-        assert_eq!(mock_packet1.packet_type(), FIRMMockPacketType::BarometerPacket);
-        assert_eq!(mock_packet2.packet_type(), FIRMMockPacketType::BarometerPacket);
+        assert_eq!(
+            mock_packet1.packet_type(),
+            FIRMMockPacketType::BarometerPacket
+        );
+        assert_eq!(
+            mock_packet2.packet_type(),
+            FIRMMockPacketType::BarometerPacket
+        );
         assert_eq!(mock_packet1.payload(), log_packet_bytes1[1..].as_ref());
         assert_eq!(mock_packet2.payload(), log_packet_bytes2[1..].as_ref());
 
@@ -280,8 +263,14 @@ mod tests {
 
         parser.parse_bytes(chunk2);
         let mock_packet = parser.get_packet().unwrap();
-        assert_eq!(mock_packet.packet_type(), FIRMMockPacketType::MagnetometerPacket);
-        assert_eq!(mock_packet.payload().len(), MOCK_PACKET_TIMESTAMP_SIZE + MMC5983MA_SIZE);
+        assert_eq!(
+            mock_packet.packet_type(),
+            FIRMMockPacketType::MagnetometerPacket
+        );
+        assert_eq!(
+            mock_packet.payload().len(),
+            MOCK_PACKET_TIMESTAMP_SIZE + MMC5983MA_SIZE
+        );
         assert!(parser.get_packet().is_none());
     }
 }

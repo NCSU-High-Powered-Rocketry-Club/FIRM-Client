@@ -1,6 +1,6 @@
 use anyhow::Result;
 use firm_core::client_packets::{FIRMCommandPacket, FIRMMockPacket};
-use firm_core::constants::mock_constants::HEADER_TOTAL_SIZE;
+use firm_core::constants::mock_constants::{HEADER_PARSE_DELAY, HEADER_TOTAL_SIZE};
 use firm_core::constants::mock_constants::FIRMMockPacketType;
 use firm_core::data_parser::SerialParser;
 use firm_core::framed_packet::Framed;
@@ -16,7 +16,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, channel};
 use std::thread::{self, JoinHandle};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 pub mod mock_serial;
 
@@ -202,6 +202,13 @@ impl FIRMClient {
                 // Then drain pending mock packets and write them to the port.
                 while let Ok(pkt) = mock_receiver.try_recv() {
                     let pkt_bytes = pkt.to_bytes();
+                    // let hex = pkt_bytes
+                    //     .iter()
+                    //     .map(|b| format!("{:02X}", b))
+                    //     .collect::<Vec<_>>()
+                    //     .join(" ");
+                    // println!("Mock pkt bytes: {hex}");
+                    
                     if let Err(e) = port.write_all(&pkt_bytes) {
                         let _ = error_sender.send(e.to_string());
                         running_clone.store(false, Ordering::Relaxed);
@@ -392,11 +399,16 @@ impl FIRMClient {
         let header_packet = FIRMMockPacket::new(FIRMMockPacketType::HeaderPacket, header.clone());
         self.send_mock_packet(header_packet)?;
 
+        // After we send the header we pause for a short time to let the device process it
+        thread::sleep(HEADER_PARSE_DELAY);
+
         let mut parser = MockParser::new();
         parser.read_header(&header);
 
-        let mut buf = vec![0u8; chunk_size.max(1)];
+        let mut buf = vec![0u8; chunk_size];
         let mut packets_sent = 0usize;
+        let stream_start = Instant::now();
+        let mut total_delay_seconds = 0.0f64;
 
         loop {
             let n = file.read(&mut buf)?;
@@ -405,25 +417,49 @@ impl FIRMClient {
             }
 
             parser.parse_bytes(&buf[..n]);
+            let mock_start = Instant::now();
 
             while let Some((pkt, delay_seconds)) = parser.get_packet_with_delay() {
-                if realtime && delay_seconds > 0.0 {
-                    thread::sleep(Duration::from_secs_f64(delay_seconds / speed));
-                }
+                total_delay_seconds += delay_seconds;
 
                 // Mock packets are raw framed data packets; send them as raw bytes.
                 self.send_mock_packet(pkt)?;
                 packets_sent += 1;
+
+                if realtime && delay_seconds > 0.0 {
+                    let stream_elapsed = stream_start.elapsed().as_secs_f64();
+                    // Only sleep if we're not already behind
+                    if stream_elapsed <= total_delay_seconds / speed {
+                        thread::sleep(Duration::from_secs_f64(delay_seconds / speed));
+                    }
+                }
+            }
+
+            if parser.eof_reached() {
+                println!(
+                    "Finished streaming mock log file in {:.2?}, sent {} packets",
+                    mock_start.elapsed(),
+                    packets_sent
+                );
+
+                break;
             }
         }
 
         // Drain any remaining packets buffered by the parser.
         while let Some((pkt, delay_seconds)) = parser.get_packet_with_delay() {
-            if realtime && delay_seconds > 0.0 {
-                thread::sleep(Duration::from_secs_f64(delay_seconds / speed));
-            }
+            total_delay_seconds += delay_seconds;
+
             self.send_mock_packet(pkt)?;
             packets_sent += 1;
+
+            if realtime && delay_seconds > 0.0 {
+                let stream_elapsed = stream_start.elapsed().as_secs_f64();
+                // Only sleep if we're not already behind
+                if stream_elapsed <= total_delay_seconds / speed {
+                    thread::sleep(Duration::from_secs_f64(delay_seconds / speed));
+                }
+            }
         }
 
         // TODO: check this works
@@ -461,7 +497,7 @@ impl FIRMClient {
         self.running.load(Ordering::Relaxed)
     }
 
-        /// Sends a mock command, waits for acknowledgement, then starts sending mock data packets.
+    /// Sends a mock command, waits for acknowledgement, then starts sending mock data packets.
     fn mock(&mut self, timeout: Duration) -> Result<Option<bool>> {
         self.send_command(FIRMCommandPacket::build_mock_command())?;
         self.wait_for_matching_response(timeout, |res| match res {

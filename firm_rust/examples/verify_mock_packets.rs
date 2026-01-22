@@ -8,8 +8,8 @@ use std::fs::File;
 use std::io::Read;
 
 // Edit these before running.
-const LOG_PATH: &str = r"C:\Users\jackg\Downloads\LOG2.TXT";
-const CHUNK_SIZE: usize = 100000;
+const LOG_PATH: &str = r"C:\Users\jackg\Downloads\LOG47.TXT";
+const CHUNK_SIZE: usize = 65000;
 
 fn main() -> Result<()> {
     let mut parser = MockParser::new();
@@ -58,7 +58,7 @@ fn main() -> Result<()> {
                 other => println!("Unexpected packet type: {other:?}"),
             }
 
-            if count_total <= 5 {
+            if count_total <= 500 {
                 let id_char = match parsed.packet_type() {
                     FIRMMockPacketType::HeaderPacket => 'H',
                     FIRMMockPacketType::BarometerPacket => 'B',
@@ -66,7 +66,7 @@ fn main() -> Result<()> {
                     FIRMMockPacketType::MagnetometerPacket => 'M',
                 };
                 println!(
-                    "#{count_total} id={} payload_len={} delay_s={:.6}",
+                    "#{count_total} id={} payload_len={} delay_s={:.8}",
                     id_char,
                     parsed.payload().len(),
                     delay_s

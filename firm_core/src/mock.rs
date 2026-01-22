@@ -19,6 +19,9 @@ pub struct MockParser {
 
     // Whitespace repeat counter (used by the Python decoder to detect end-of-data).
     num_repeat_whitespace: usize,
+
+    // End-of-data detected (via whitespace padding).
+    eof_reached: bool,
 }
 
 impl MockParser {
@@ -30,6 +33,7 @@ impl MockParser {
             header_parsed: false,
             last_clock_count: None,
             num_repeat_whitespace: 0,
+            eof_reached: false,
         }
     }
 
@@ -42,6 +46,7 @@ impl MockParser {
         self.parsed_packets.clear();
         self.last_clock_count = None;
         self.num_repeat_whitespace = 0;
+        self.eof_reached = false;
 
         self.header_parsed = true;
     }
@@ -52,6 +57,10 @@ impl MockParser {
     /// 
     /// This code is just copied from the Python decoder script.
     pub fn parse_bytes(&mut self, chunk: &[u8]) {
+        if self.eof_reached {
+            return;
+        }
+
         self.bytes.extend_from_slice(chunk);
 
         // Parse log packets
@@ -64,12 +73,11 @@ impl MockParser {
                 // whitespace padding between log packets
                 self.num_repeat_whitespace += 1;
                 // End-of-data if whitespace repeats enough times, matching the Python decoder.
-                if self.num_repeat_whitespace
-                    > core::cmp::max(BMP581_SIZE, core::cmp::max(ICM45686_SIZE, MMC5983MA_SIZE))
-                        + 4
+                if self.num_repeat_whitespace > LOG_FILE_EOF_PADDING_LENGTH
                 {
                     // Treat as EOF padding; drop buffered bytes.
                     self.bytes.clear();
+                    self.eof_reached = true;
                     break;
                 }
                 position += 1;
@@ -78,15 +86,15 @@ impl MockParser {
             self.num_repeat_whitespace = 0;
 
             // Need timestamp.
-            if position + 1 + 3 > self.bytes.len() {
+            if position + 1 + MOCK_PACKET_TIMESTAMP_SIZE > self.bytes.len() {
                 position = log_packet_start;
                 break;
             }
 
             position += 1;
-            let t = &self.bytes[position..position + 3];
-            position += 3;
-            let clock_count = u32::from_be_bytes([0, t[0], t[1], t[2]]);
+            let timestamp = &self.bytes[position..position + MOCK_PACKET_TIMESTAMP_SIZE];
+            position += MOCK_PACKET_TIMESTAMP_SIZE;
+            let clock_count = u32::from_be_bytes([0, timestamp[0], timestamp[1], timestamp[2]]);
 
             // Compute the delay from the previous log packet timestamp.
             // The log clock is 24-bit and ticks at 168 MHz.
@@ -101,6 +109,7 @@ impl MockParser {
                     (delta as f64) / 168e6
                 }
             };
+
             self.last_clock_count = Some(clock_count);
 
             match id {
@@ -113,8 +122,8 @@ impl MockParser {
                     position += BMP581_SIZE;
 
                     // Payload excludes the type byte.
-                    let mut payload = Vec::with_capacity(3 + BMP581_SIZE);
-                    payload.extend_from_slice(t);
+                    let mut payload = Vec::with_capacity(MOCK_PACKET_TIMESTAMP_SIZE + BMP581_SIZE);
+                    payload.extend_from_slice(timestamp);
                     payload.extend_from_slice(raw);
                     let pkt = FIRMMockPacket::new(FIRMMockPacketType::BarometerPacket, payload);
                     self.parsed_packets.push_back((pkt, delay_seconds));
@@ -128,8 +137,8 @@ impl MockParser {
                     position += ICM45686_SIZE;
 
                     // Payload excludes the type byte.
-                    let mut payload = Vec::with_capacity(3 + ICM45686_SIZE);
-                    payload.extend_from_slice(t);
+                    let mut payload = Vec::with_capacity(MOCK_PACKET_TIMESTAMP_SIZE + ICM45686_SIZE);
+                    payload.extend_from_slice(timestamp);
                     payload.extend_from_slice(raw);
                     let pkt = FIRMMockPacket::new(FIRMMockPacketType::IMUPacket, payload);
                     self.parsed_packets.push_back((pkt, delay_seconds));
@@ -143,8 +152,8 @@ impl MockParser {
                     position += MMC5983MA_SIZE;
 
                     // Payload excludes the type byte.
-                    let mut payload = Vec::with_capacity(3 + MMC5983MA_SIZE);
-                    payload.extend_from_slice(t);
+                    let mut payload = Vec::with_capacity(MOCK_PACKET_TIMESTAMP_SIZE + MMC5983MA_SIZE);
+                    payload.extend_from_slice(timestamp);
                     payload.extend_from_slice(raw);
                     let pkt = FIRMMockPacket::new(FIRMMockPacketType::MagnetometerPacket, payload);
                     self.parsed_packets.push_back((pkt, delay_seconds));
@@ -158,12 +167,22 @@ impl MockParser {
             }
         }
 
+        if position >= self.bytes.len() {
+            self.bytes.clear();
+            return;
+        }
+
         self.bytes = self.bytes[position..].to_vec();
     }
 
     /// Pops the next parsed mock packet and returns it with its delay since the last one.
     pub fn get_packet_with_delay(&mut self) -> Option<(FIRMMockPacket, f64)> {
         self.parsed_packets.pop_front()
+    }
+
+    /// Returns true once end-of-data padding is detected.
+    pub fn eof_reached(&self) -> bool {
+        self.eof_reached
     }
 
     /// Pops the next parsed mock packet (no delay info).
@@ -189,7 +208,7 @@ mod tests {
         let be = clock.to_be_bytes();
         let t = [be[1], be[2], be[3]];
 
-        let mut out = vec![0u8; 1 + 3 + raw_len];
+        let mut out = vec![0u8; 1 + MOCK_PACKET_TIMESTAMP_SIZE + raw_len];
         out[0] = id;
         out[1..4].copy_from_slice(&t);
         out
@@ -207,9 +226,9 @@ mod tests {
         let (mock_packet, delay) = parser.get_packet_with_delay().unwrap();
         assert_eq!(delay, 0.0);
         assert_eq!(mock_packet.packet_type(), FIRMMockPacketType::IMUPacket);
-        assert_eq!(mock_packet.payload().len(), 3 + ICM45686_SIZE);
+        assert_eq!(mock_packet.payload().len(), MOCK_PACKET_TIMESTAMP_SIZE + ICM45686_SIZE);
         assert_eq!(mock_packet.len() as usize, mock_packet.payload().len());
-        assert_eq!(&mock_packet.payload()[0..3], &[0x00, 0x00, 0x01]);
+        assert_eq!(&mock_packet.payload()[0..MOCK_PACKET_TIMESTAMP_SIZE], &[0x00, 0x00, 0x01]);
         assert!(parser.get_packet_with_delay().is_none());
     }
 
@@ -244,7 +263,7 @@ mod tests {
     }
 
     #[test]
-    fn split_bytes_and_garbage_resyncs() {
+    fn test_split_bytes_and_garbage_resyncs() {
         let header = make_header();
         let log_packet_bytes = make_log_packet_bytes(MMC5983MA_ID, 0x123456, MMC5983MA_SIZE);
 
@@ -262,7 +281,7 @@ mod tests {
         parser.parse_bytes(chunk2);
         let mock_packet = parser.get_packet().unwrap();
         assert_eq!(mock_packet.packet_type(), FIRMMockPacketType::MagnetometerPacket);
-        assert_eq!(mock_packet.payload().len(), 3 + MMC5983MA_SIZE);
+        assert_eq!(mock_packet.payload().len(), MOCK_PACKET_TIMESTAMP_SIZE + MMC5983MA_SIZE);
         assert!(parser.get_packet().is_none());
     }
 }

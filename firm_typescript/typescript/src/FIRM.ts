@@ -7,7 +7,6 @@ import init, {
 import { FIRMPacket, FIRMResponse, DeviceInfo, DeviceConfig, DeviceProtocol } from './types.js';
 
 const RESPONSE_TIMEOUT_MS = 5000;
-const CALIBRATION_TIMEOUT_MS = 20000;
 
 /** Options for connecting to a FIRM device over Web Serial. */
 export interface FIRMConnectOptions {
@@ -61,6 +60,23 @@ export class FIRMClient {
 
   private constructor(wasm: FIRMDataParser) {
     this.dataParser = wasm;
+  }
+
+  private async sleep(ms: number): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private async safeCall(obj: unknown, fn: string): Promise<void> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const target = obj as any;
+    if (!target || typeof target[fn] !== 'function') return;
+    try {
+      if (fn === 'close' || fn === 'cancel') {
+        await target[fn]();
+      } else {
+        target[fn]();
+      }
+    } catch {}
   }
 
   /**
@@ -122,20 +138,14 @@ export class FIRMClient {
     } finally {
       this.running = false;
       this.flushWaitersWithNull();
-      for (const [obj, fn] of [
-        [this.reader, 'cancel'],
-        [this.reader, 'releaseLock'],
-        [this.writer, 'close'],
-        [this.writer, 'releaseLock'],
-        [this.port, 'close'],
-      ]) {
-        try {
-          obj &&
-            typeof obj[fn] === 'function' &&
-            (fn === 'close' || fn === 'cancel' ? await obj[fn]() : obj[fn]());
-        } catch {}
-      }
-      this.reader = this.writer = this.port = null;
+      await this.safeCall(this.reader, 'cancel');
+      await this.safeCall(this.reader, 'releaseLock');
+      await this.safeCall(this.writer, 'close');
+      await this.safeCall(this.writer, 'releaseLock');
+      await this.safeCall(this.port, 'close');
+      this.reader = null;
+      this.writer = null;
+      this.port = null;
     }
   }
 
@@ -255,7 +265,7 @@ export class FIRMClient {
         | null;
       if (!pkt) break;
       if (realtime && pkt.delaySeconds > 0) {
-        await new Promise((r) => setTimeout(r, (pkt.delaySeconds * 1000) / speed));
+        await this.sleep((pkt.delaySeconds * 1000) / speed);
       }
       await this.sendBytes(pkt.bytes);
       count += 1;
@@ -473,44 +483,11 @@ export class FIRMClient {
       this.closed = true;
 
       this.running = false;
-      if (this.reader) {
-        try {
-          await this.reader.cancel();
-        } catch {
-          // ignore
-        }
-        try {
-          this.reader.releaseLock();
-        } catch {
-          // ignore
-        }
-      }
-
-      if (this.writer) {
-        try {
-          await this.writer.close();
-        } catch {
-          // ignore
-        }
-        try {
-          this.writer.releaseLock();
-        } catch {
-          // ignore
-        }
-      }
-
-      if (this.port) {
-        try {
-          await this.port.close();
-        } catch {
-          // ignore
-        }
-
-        this.reader = null;
-        this.writer = null;
-        this.port = null;
-      }
-
+      await this.safeCall(this.reader, 'cancel');
+      await this.safeCall(this.reader, 'releaseLock');
+      await this.safeCall(this.writer, 'close');
+      await this.safeCall(this.writer, 'releaseLock');
+      await this.safeCall(this.port, 'close');
       this.reader = null;
       this.writer = null;
       this.port = null;

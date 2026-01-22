@@ -2,15 +2,15 @@ from firm_client import FIRMClient
 
 
 PORT = "COM8"
-LOG_PATH = r"C:\Users\jackg\Downloads\LOG198.TXT"
+LOG_PATH = r"C:\Users\jackg\Downloads\LOG47.TXT"
 
 BAUD_RATE = 2_000_000
 SERIAL_TIMEOUT_SECONDS = 0.1
 
 START_TIMEOUT_SECONDS = 5.0
 REALTIME = True
-SPEED = 1.0
-CHUNK_SIZE = 1024
+SPEED = .7
+CHUNK_SIZE = 80000
 
 
 def main() -> None:

@@ -76,6 +76,8 @@ pub mod command_constants {
 }
 
 pub mod mock_constants {
+    use std::time::Duration;
+
     use crate::constants::packet_constants::PacketHeader;
 
     pub const MOCK_SENSOR_PACKET_HEADER: u16 = PacketHeader::MockSensor as u16;
@@ -111,9 +113,13 @@ pub mod mock_constants {
     pub const ICM45686_ID: u8 = b'I';
     pub const MMC5983MA_ID: u8 = b'M';
 
+    // The length of the payloads not including the 3 byte timestamp
     pub const BMP581_SIZE: usize = 6;
     pub const ICM45686_SIZE: usize = 15;
     pub const MMC5983MA_SIZE: usize = 7;
+
+    pub const LOG_FILE_EOF_PADDING_LENGTH: usize = 20;
+    pub const MOCK_PACKET_TIMESTAMP_SIZE: usize = 3;
 
     pub const HEADER_SIZE_TEXT: usize = 14; // "FIRM LOG vx.x"
     pub const HEADER_UID_SIZE: usize = 8;
@@ -134,4 +140,6 @@ pub mod mock_constants {
         + HEADER_PADDING_SIZE
         + HEADER_CAL_SIZE
         + HEADER_NUM_SCALE_FACTOR_SIZE;
+
+    pub const HEADER_PARSE_DELAY: Duration = Duration::from_millis(100);
 }

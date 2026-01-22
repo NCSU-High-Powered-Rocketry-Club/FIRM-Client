@@ -49,9 +49,11 @@ pub struct DeviceConfig {
     pub protocol: DeviceProtocol,
 }
 
-/// Represents a decoded FIRM telemetry packet with converted physical units.
+/// Represents a decoded FIRM telemetry packet with converted physical units. In our Python code
+/// it's called FIRMDataPacket, but to avoid confusion with the Rust packet struct
+/// we name this FIRMData.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "python", pyo3::pyclass(get_all, freelist = 20, frozen))]
+#[cfg_attr(feature = "python", pyo3::pyclass(name = "FIRMDataPacket", get_all, freelist = 20, frozen))]
 pub struct FIRMData {
     pub timestamp_seconds: f64,
 

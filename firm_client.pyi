@@ -21,7 +21,7 @@ class DeviceConfig:
     frequency: int
     protocol: DeviceProtocol
 
-class FIRMData:
+class FIRMDataPacket:
     """Represents a data packet received from the FIRM device."""
 
     timestamp_seconds: float
@@ -108,7 +108,7 @@ class FIRMClient:
     def stop(self) -> None: ...
     """Stops the client by stopping the data reading thread and closing the serial port."""
 
-    def get_data_packets(self, block: bool = False) -> list[FIRMData]: ...
+    def get_data_packets(self, block: bool = False) -> list[FIRMDataPacket]: ...
     """Retrieves available data packets from the FIRM device.
     
     Args:
@@ -135,6 +135,16 @@ class FIRMClient:
         timeout_seconds: float = 5.0,
     ) -> bool: ...
     """Sets device config and waits up to timeout_seconds for acknowledgement."""
+
+    def stream_mock_log_file(
+        self,
+        log_path: str,
+        realtime: bool = True,
+        speed: float = 1.0,
+        chunk_size: int = 1024,
+        start_timeout_seconds: float = 5.0,
+    ) -> int: ...
+    """Streams a mock log file to the FIRM device."""
 
     def cancel(self, timeout_seconds: float = 5.0) -> bool: ...
     """Sends cancel and waits up to timeout_seconds for acknowledgement."""

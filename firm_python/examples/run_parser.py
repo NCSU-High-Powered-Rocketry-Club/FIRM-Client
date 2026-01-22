@@ -2,7 +2,7 @@ from firm_client import FIRMClient
 
 
 def main() -> None:
-    port_name = "/dev/ttyACM0"  # Update this to your actual port
+    port_name = "COM8"
     baud_rate = 2_000_000
     initial_dt = 0
 

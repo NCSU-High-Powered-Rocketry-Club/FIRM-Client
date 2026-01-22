@@ -21,6 +21,16 @@ pub mod packet_constants {
         pub const fn as_u16(self) -> u16 {
             self as u16
         }
+
+        pub const fn from_u16(v: u16) -> Option<Self> {
+            match v {
+                x if x == PacketHeader::Data as u16 => Some(PacketHeader::Data),
+                x if x == PacketHeader::Response as u16 => Some(PacketHeader::Response),
+                x if x == PacketHeader::MockSensor as u16 => Some(PacketHeader::MockSensor),
+                x if x == PacketHeader::Command as u16 => Some(PacketHeader::Command),
+                _ => None,
+            }
+        }
     }
 }
 
@@ -77,11 +87,6 @@ pub mod command_constants {
 
 pub mod mock_constants {
     use std::time::Duration;
-
-    use crate::constants::packet_constants::PacketHeader;
-
-    pub const MOCK_SENSOR_PACKET_HEADER: u16 = PacketHeader::MockSensor as u16;
-
     /// Mock sensor packet type identifier stored in the second u16 header field.
     #[repr(u16)]
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]

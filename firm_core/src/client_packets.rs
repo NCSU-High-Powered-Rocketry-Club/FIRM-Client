@@ -6,7 +6,7 @@ use crate::{
     utils::str_to_bytes,
 };
 use crate::constants::command_constants::{FIRMCommand, DEVICE_NAME_LENGTH, FREQUENCY_LENGTH};
-use crate::constants::mock_constants::{FIRMMockPacketType, MOCK_SENSOR_PACKET_HEADER};
+use crate::constants::mock_constants::{FIRMMockPacketType};
 use crate::constants::packet_constants::PacketHeader;
 
 pub struct FIRMCommandPacket {
@@ -16,7 +16,7 @@ pub struct FIRMCommandPacket {
 
 impl FIRMCommandPacket {
     pub fn new(command_type: FIRMCommand, payload: Vec<u8>) -> Self {
-        let header = PacketHeader::Command as u16;
+        let header = PacketHeader::Command;
         let identifier = command_type as u16;
         Self {
             command_type,
@@ -81,7 +81,7 @@ pub struct FIRMMockPacket {
 
 impl FIRMMockPacket {
     pub fn new(packet_type: FIRMMockPacketType, payload: Vec<u8>) -> Self {
-        let header = MOCK_SENSOR_PACKET_HEADER;
+        let header = PacketHeader::MockSensor;
         let identifier = packet_type as u16;
         Self {
             packet_type,
@@ -112,7 +112,7 @@ impl Framed for FIRMMockPacket {
 mod tests {
     use super::{FIRMCommandPacket, FIRMMockPacket};
     use crate::constants::command_constants::{CRC_LENGTH, DEVICE_NAME_LENGTH, FREQUENCY_LENGTH, FIRMCommand};
-    use crate::constants::mock_constants::{FIRMMockPacketType, MOCK_SENSOR_PACKET_HEADER};
+    use crate::constants::mock_constants::{FIRMMockPacketType};
     use crate::constants::packet_constants::PacketHeader;
     use crate::firm_packets::{DeviceConfig, DeviceProtocol};
     use crate::framed_packet::Framed;
@@ -197,7 +197,7 @@ mod tests {
     fn test_firm_mock_packet_new() {
         let payload = vec![1u8, 2, 3];
         let packet = FIRMMockPacket::new(FIRMMockPacketType::BarometerPacket, payload.clone());
-        assert_eq!(packet.header(), MOCK_SENSOR_PACKET_HEADER);
+        assert_eq!(packet.header(), PacketHeader::MockSensor);
         assert_eq!(packet.packet_type(), FIRMMockPacketType::BarometerPacket);
         assert_eq!(packet.len(), payload.len() as u32);
         assert_eq!(packet.payload(), payload.as_slice());
@@ -208,7 +208,7 @@ mod tests {
         let payload: Vec<u8> = vec![0x10, 0x20, 0x30, 0x40, 0x50];
         let packet = FIRMMockPacket::new(FIRMMockPacketType::IMUPacket, payload);
         let bytes = packet.to_bytes();
-        assert_eq!(header_from_bytes(&bytes), MOCK_SENSOR_PACKET_HEADER);
+        assert_eq!(header_from_bytes(&bytes), PacketHeader::MockSensor.as_u16());
         assert_eq!(identifier_from_bytes(&bytes), b'I' as u16);
         assert_eq!(u32::from_le_bytes(bytes[4..8].try_into().unwrap()), packet.len());
         assert_eq!(u16::from_le_bytes(bytes[bytes.len() - 2..].try_into().unwrap()), packet.crc());
@@ -222,7 +222,7 @@ mod tests {
         let packet = FIRMMockPacket::new(FIRMMockPacketType::HeaderPacket, payload);
         let bytes = packet.to_bytes();
         let parsed = FIRMMockPacket::from_bytes(&bytes).unwrap();
-        assert_eq!(parsed.header(), MOCK_SENSOR_PACKET_HEADER);
+        assert_eq!(parsed.header(), PacketHeader::MockSensor);
         assert_eq!(parsed.packet_type(), FIRMMockPacketType::HeaderPacket);
         assert_eq!(parsed.len() as usize, parsed.payload().len());
         assert_eq!(parsed.payload(), packet.payload());

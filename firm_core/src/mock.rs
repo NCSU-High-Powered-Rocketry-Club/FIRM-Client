@@ -5,7 +5,7 @@ use crate::client_packets::FIRMMockPacket;
 use crate::constants::mock_constants::FIRMMockPacketType;
 use crate::constants::mock_constants::*;
 
-pub struct MockParser {
+pub struct LogParser {
     /// Rolling buffer of unprocessed bytes.
     bytes: Vec<u8>,
     /// Queue of parsed mock packets and their inter-packet delay.
@@ -24,8 +24,8 @@ pub struct MockParser {
     eof_reached: bool,
 }
 
-impl MockParser {
-    /// Creates a new empty `MockParser`.
+impl LogParser {
+    /// Creates a new empty `LogParser`.
     pub fn new() -> Self {
         Self {
             bytes: Vec::new(),
@@ -176,7 +176,7 @@ impl MockParser {
     }
 
     /// Pops the next parsed mock packet and returns it with its delay since the last one.
-    pub fn get_packet_with_delay(&mut self) -> Option<(FIRMMockPacket, f64)> {
+    pub fn get_packet_and_time_delay(&mut self) -> Option<(FIRMMockPacket, f64)> {
         self.parsed_packets.pop_front()
     }
 
@@ -219,17 +219,17 @@ mod tests {
         let header = make_header();
         let log_packet_bytes = make_log_packet_bytes(ICM45686_ID, 1, ICM45686_SIZE);
 
-        let mut parser = MockParser::new();
+        let mut parser = LogParser::new();
         parser.read_header(&header);
         parser.parse_bytes(&log_packet_bytes);
 
-        let (mock_packet, delay) = parser.get_packet_with_delay().unwrap();
+        let (mock_packet, delay) = parser.get_packet_and_time_delay().unwrap();
         assert_eq!(delay, 0.0);
         assert_eq!(mock_packet.packet_type(), FIRMMockPacketType::IMUPacket);
         assert_eq!(mock_packet.payload().len(), MOCK_PACKET_TIMESTAMP_SIZE + ICM45686_SIZE);
         assert_eq!(mock_packet.len() as usize, mock_packet.payload().len());
         assert_eq!(&mock_packet.payload()[0..MOCK_PACKET_TIMESTAMP_SIZE], &[0x00, 0x00, 0x01]);
-        assert!(parser.get_packet_with_delay().is_none());
+        assert!(parser.get_packet_and_time_delay().is_none());
     }
 
     #[test]
@@ -244,12 +244,12 @@ mod tests {
         bytes.extend_from_slice(&log_packet_bytes1);
         bytes.extend_from_slice(&log_packet_bytes2);
 
-        let mut parser = MockParser::new();
+        let mut parser = LogParser::new();
         parser.read_header(&header);
         parser.parse_bytes(&bytes);
 
-        let (mock_packet1, d1) = parser.get_packet_with_delay().unwrap();
-        let (mock_packet2, d2) = parser.get_packet_with_delay().unwrap();
+        let (mock_packet1, d1) = parser.get_packet_and_time_delay().unwrap();
+        let (mock_packet2, d2) = parser.get_packet_and_time_delay().unwrap();
         assert_eq!(d1, 0.0);
 
         assert_eq!(mock_packet1.packet_type(), FIRMMockPacketType::BarometerPacket);
@@ -259,7 +259,7 @@ mod tests {
 
         let expected = 168.0f64 / 168e6;
         assert!((d2 - expected).abs() < 1e-12);
-        assert!(parser.get_packet_with_delay().is_none());
+        assert!(parser.get_packet_and_time_delay().is_none());
     }
 
     #[test]
@@ -272,7 +272,7 @@ mod tests {
         chunk1.extend_from_slice(&log_packet_bytes[..5]);
         let chunk2 = &log_packet_bytes[5..];
 
-        let mut parser = MockParser::new();
+        let mut parser = LogParser::new();
         parser.read_header(&header);
 
         parser.parse_bytes(&chunk1);

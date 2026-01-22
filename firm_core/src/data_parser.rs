@@ -161,18 +161,9 @@ mod tests {
     use crate::constants::command_constants::FIRMCommand;
     use crate::constants::packet_constants::{PacketHeader, *};
     use crate::framed_packet::FramedPacket;
-    use crate::firm_packets::{FIRMResponse};
 
-    fn build_framed_packet(header: u16, identifier: u16, payload: &[u8]) -> Vec<u8> {
+    fn build_framed_packet(header: PacketHeader, identifier: u16, payload: &[u8]) -> Vec<u8> {
         FramedPacket::new(header, identifier, payload.to_vec()).to_bytes()
-    }
-
-    fn data_header() -> (u16, u16) {
-        (PacketHeader::Data as u16, 0)
-    }
-
-    fn response_header(marker: u16) -> (u16, u16) {
-        (PacketHeader::Response as u16, marker)
     }
 
     #[test]
@@ -181,8 +172,7 @@ mod tests {
         payload[0..8].copy_from_slice(&42.0f64.to_le_bytes());
         payload[8..12].copy_from_slice(&25.0f32.to_le_bytes());
 
-        let (hdr, id) = data_header();
-        let bytes = build_framed_packet(hdr, id, &payload);
+        let bytes = build_framed_packet(PacketHeader::Data, 0, &payload);
         let mut parser = SerialParser::new();
         parser.parse_bytes(&bytes);
 
@@ -197,8 +187,7 @@ mod tests {
     fn test_serial_parser_parses_response_packet_split_across_calls() {
         // Marker is in the identifier for response packets; payload is just the response data.
         let payload = [1u8];
-        let (hdr, id) = response_header(FIRMCommand::SetDeviceConfig as u16);
-        let bytes = build_framed_packet(hdr, id, &payload);
+        let bytes = build_framed_packet(PacketHeader::Response, FIRMCommand::SetDeviceConfig as u16, &payload);
         let mid = bytes.len() / 2;
 
         let mut parser = SerialParser::new();
@@ -215,10 +204,9 @@ mod tests {
     #[test]
     fn test_serial_parser_rejects_bad_crc() {
         let payload = vec![0u8; 120];
-        let (hdr, id) = data_header();
-        let mut bytes = build_framed_packet(hdr, id, &payload);
+        let mut bytes = build_framed_packet(PacketHeader::Data, 0, &payload);
 
-        // Flip a payload bit so CRC no longer matches.
+        // Flip a payload bit so CRC no longer matche`s.
         let payload_start = HEADER_SIZE + IDENTIFIER_SIZE + LENGTH_SIZE;
         bytes[payload_start] ^= 0x01;
 

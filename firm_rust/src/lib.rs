@@ -7,7 +7,7 @@ use firm_core::framed_packet::Framed;
 use firm_core::firm_packets::{
     DeviceConfig, DeviceInfo, DeviceProtocol, FIRMData, FIRMResponse,
 };
-use firm_core::mock::MockParser;
+use firm_core::mock::LogParser;
 use serialport::SerialPort;
 use std::collections::VecDeque;
 use std::io::{self, Read, Write};
@@ -367,7 +367,7 @@ impl FIRMClient {
         })
     }
 
-    /// Streams framed mock sensor packets from a `.bin` log file.
+    /// Streams framed mock sensor packets from a `.TXT` log file.
     ///
     /// This will:
     /// 1) Send the mock command and wait for ack
@@ -402,7 +402,7 @@ impl FIRMClient {
         // After we send the header we pause for a short time to let the device process it
         thread::sleep(HEADER_PARSE_DELAY);
 
-        let mut parser = MockParser::new();
+        let mut parser = LogParser::new();
         parser.read_header(&header);
 
         let mut buf = vec![0u8; chunk_size];
@@ -419,7 +419,7 @@ impl FIRMClient {
             parser.parse_bytes(&buf[..n]);
             let mock_start = Instant::now();
 
-            while let Some((pkt, delay_seconds)) = parser.get_packet_with_delay() {
+            while let Some((pkt, delay_seconds)) = parser.get_packet_and_time_delay() {
                 total_delay_seconds += delay_seconds;
 
                 // Mock packets are raw framed data packets; send them as raw bytes.
@@ -447,7 +447,7 @@ impl FIRMClient {
         }
 
         // Drain any remaining packets buffered by the parser.
-        while let Some((pkt, delay_seconds)) = parser.get_packet_with_delay() {
+        while let Some((pkt, delay_seconds)) = parser.get_packet_and_time_delay() {
             total_delay_seconds += delay_seconds;
 
             self.send_mock_packet(pkt)?;
@@ -639,7 +639,7 @@ mod tests {
         payload[0..8].copy_from_slice(&1.5f64.to_le_bytes());
         payload[8..12].copy_from_slice(&25.0f32.to_le_bytes());
 
-        let mocked_packet = FramedPacket::new(PacketHeader::Data as u16, 0, payload);
+        let mocked_packet = FramedPacket::new(PacketHeader::Data, 0, payload);
         device.inject_framed_packet(mocked_packet);
 
         // Need to give some time for the background thread to read the data

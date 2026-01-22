@@ -17,7 +17,7 @@ pub trait Framed: Sized {
 
     fn from_bytes(bytes: &[u8]) -> Result<Self, FrameError>;
 
-    fn header(&self) -> u16 {
+    fn header(&self) -> PacketHeader {
         self.frame().header()
     }
 
@@ -48,7 +48,7 @@ pub trait Framed: Sized {
 /// CRC is computed over everything before the CRC: `header + identifier + len + payload`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FramedPacket {
-    header: u16,
+    header: PacketHeader,
     identifier: u16,
     payload: Vec<u8>,
     crc: u16,
@@ -57,7 +57,7 @@ pub struct FramedPacket {
 impl FramedPacket {
     pub const MIN_SIZE: usize = HEADER_SIZE + IDENTIFIER_SIZE + LENGTH_SIZE + CRC_SIZE;
 
-    pub fn new(header: u16, identifier: u16, payload: Vec<u8>) -> Self {
+    pub fn new(header: PacketHeader, identifier: u16, payload: Vec<u8>) -> Self {
         let crc = Self::compute_crc(header, identifier, payload.len() as u32, &payload);
         Self {
             header,
@@ -67,7 +67,7 @@ impl FramedPacket {
         }
     }
 
-    pub fn header(&self) -> u16 {
+    pub fn header(&self) -> PacketHeader {
         self.header
     }
 
@@ -92,7 +92,7 @@ impl FramedPacket {
         let mut out = Vec::with_capacity(
             HEADER_SIZE + IDENTIFIER_SIZE + LENGTH_SIZE + self.payload.len() + CRC_SIZE,
         );
-        out.extend_from_slice(&self.header.to_le_bytes());
+        out.extend_from_slice(&self.header.as_u16().to_le_bytes());
         out.extend_from_slice(&self.identifier.to_le_bytes());
         out.extend_from_slice(&len.to_le_bytes());
         out.extend_from_slice(&self.payload);
@@ -107,7 +107,8 @@ impl FramedPacket {
             return Err(FrameError::TooShort);
         }
 
-        let header = u16::from_le_bytes(bytes[0..HEADER_SIZE].try_into().unwrap());
+        let header_raw = u16::from_le_bytes(bytes[0..HEADER_SIZE].try_into().unwrap());
+        let header = PacketHeader::from_u16(header_raw).ok_or(FrameError::UnknownMarker(header_raw))?;
         let identifier = u16::from_le_bytes(
             bytes[HEADER_SIZE..HEADER_SIZE + IDENTIFIER_SIZE]
                 .try_into()
@@ -141,10 +142,10 @@ impl FramedPacket {
     }
 
     /// Computes CRC over `[header][length][payload]`.
-    pub fn compute_crc(header: u16, identifier: u16, len: u32, payload: &[u8]) -> u16 {
+    pub fn compute_crc(header: PacketHeader, identifier: u16, len: u32, payload: &[u8]) -> u16 {
         let mut crc_input =
             Vec::with_capacity(HEADER_SIZE + IDENTIFIER_SIZE + LENGTH_SIZE + payload.len());
-        crc_input.extend_from_slice(&header.to_le_bytes());
+        crc_input.extend_from_slice(&header.as_u16().to_le_bytes());
         crc_input.extend_from_slice(&identifier.to_le_bytes());
         crc_input.extend_from_slice(&len.to_le_bytes());
         crc_input.extend_from_slice(payload);
@@ -158,7 +159,7 @@ mod tests {
 
     #[test]
     fn framed_packet_roundtrip() {
-        let header = 0xA55Au16;
+        let header = PacketHeader::Data;
         let identifier = 0x0000u16;
         let payload = vec![1u8, 2, 3, 4, 5];
         let pkt = FramedPacket::new(header, identifier, payload.clone());

@@ -361,7 +361,7 @@ mod tests {
     }
 
     fn build_response_packet(marker: u16, payload: &[u8]) -> Result<FIRMResponsePacket, FrameError> {
-        let bytes = FramedPacket::new(PacketHeader::Response as u16, marker, payload.to_vec()).to_bytes();
+        let bytes = FramedPacket::new(PacketHeader::Response, marker, payload.to_vec()).to_bytes();
         FIRMResponsePacket::from_bytes(&bytes)
     }
 

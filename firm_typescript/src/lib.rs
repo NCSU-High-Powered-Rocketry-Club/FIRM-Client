@@ -3,7 +3,7 @@ use firm_core::constants::mock_constants::{FIRMMockPacketType, HEADER_TOTAL_SIZE
 use firm_core::data_parser::SerialParser;
 use firm_core::firm_packets::{DeviceConfig, DeviceProtocol};
 use firm_core::framed_packet::Framed;
-use firm_core::mock::MockParser;
+use firm_core::mock::LogParser;
 use js_sys::{Object, Reflect, Uint8Array};
 use wasm_bindgen::prelude::*;
 
@@ -94,7 +94,7 @@ impl FIRMDataParser {
 
 #[wasm_bindgen(js_name = MockLogParser)]
 pub struct MockLogParser {
-    inner: MockParser,
+    inner: LogParser,
 }
 
 #[wasm_bindgen(js_class = MockLogParser)]
@@ -102,7 +102,7 @@ impl MockLogParser {
     #[wasm_bindgen(constructor)]
     pub fn new() -> MockLogParser {
         MockLogParser {
-            inner: MockParser::new(),
+            inner: LogParser::new(),
         }
     }
 
@@ -118,7 +118,7 @@ impl MockLogParser {
 
     #[wasm_bindgen]
     pub fn get_packet_with_delay(&mut self) -> JsValue {
-        match self.inner.get_packet_with_delay() {
+        match self.inner.get_packet_and_time_delay() {
             Some((pkt, delay_seconds)) => {
                 let bytes = pkt.to_bytes();
                 let obj = Object::new();

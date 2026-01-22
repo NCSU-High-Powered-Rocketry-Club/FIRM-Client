@@ -3,7 +3,7 @@ use firm_core::client_packets::FIRMMockPacket;
 use firm_core::constants::mock_constants::FIRMMockPacketType;
 use firm_core::constants::mock_constants::HEADER_TOTAL_SIZE;
 use firm_core::framed_packet::Framed;
-use firm_core::mock::MockParser;
+use firm_core::mock::LogParser;
 use std::fs::File;
 use std::io::Read;
 
@@ -12,7 +12,7 @@ const LOG_PATH: &str = r"C:\Users\jackg\Downloads\LOG47.TXT";
 const CHUNK_SIZE: usize = 65000;
 
 fn main() -> Result<()> {
-    let mut parser = MockParser::new();
+    let mut parser = LogParser::new();
 
     let mut file = File::open(LOG_PATH)?;
     
@@ -44,7 +44,7 @@ fn main() -> Result<()> {
         parser.parse_bytes(&buf[..n]);
 
         // Just verifies the round-trip serialization/parsing of packets
-        while let Some((pkt, delay_s)) = parser.get_packet_with_delay() {
+        while let Some((pkt, delay_s)) = parser.get_packet_and_time_delay() {
             let bytes = pkt.to_bytes();
             let parsed = FIRMMockPacket::from_bytes(&bytes)
                 .expect("failed to parse bytes we just serialized (header/len/crc mismatch)");
@@ -79,7 +79,7 @@ fn main() -> Result<()> {
     }
 
     // Drain any remaining packets buffered by the parser.
-    while let Some((pkt, _delay_s)) = parser.get_packet_with_delay() {
+    while let Some((pkt, _delay_s)) = parser.get_packet_and_time_delay() {
         let bytes = pkt.to_bytes();
         let parsed = FIRMMockPacket::from_bytes(&bytes)
             .expect("failed to parse bytes we just serialized (header/len/crc mismatch)");

@@ -324,7 +324,7 @@
           const sent = await firmInstance.streamMockLogFile(file, {
             realtime: true,
             speed: 1.0,
-            chunkSize: 8192,
+            chunkSize: 100000,
           });
           setStatus('[UI] Mock stream complete.');
           configOutput.textContent = `Sent ${sent} mock packets.`;

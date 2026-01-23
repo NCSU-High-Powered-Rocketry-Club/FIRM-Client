@@ -154,12 +154,12 @@ impl FIRMClient {
                 // Then drain pending mock packets and write them to the port.
                 while let Ok(packet) = mock_receiver.try_recv() {
                     let packet_bytes = packet.to_bytes();
-                    let hex = packet_bytes
-                        .iter()
-                        .map(|b| format!("{:02X}", b))
-                        .collect::<Vec<_>>()
-                        .join(" ");
-                    println!("Mock packet bytes: {hex}");
+                    // let hex = packet_bytes
+                    //     .iter()
+                    //     .map(|b| format!("{:02X}", b))
+                    //     .collect::<Vec<_>>()
+                    //     .join(" ");
+                    // println!("Mock packet bytes: {hex}");
 
                     if let Err(e) = port.write_all(&packet_bytes) {
                         let _ = error_sender.send(e.to_string());
@@ -414,7 +414,6 @@ impl FIRMClient {
             }
         }
 
-        // TODO: check this works
         // Send a cancel command when it finishes
         self.cancel(Duration::from_secs(5))?;
 

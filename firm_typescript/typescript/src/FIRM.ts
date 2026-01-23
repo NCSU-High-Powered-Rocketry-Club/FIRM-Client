@@ -19,6 +19,7 @@ export interface MockStreamOptions {
   speed?: number;
   chunkSize?: number;
   startTimeoutMs?: number;
+  batchBytes?: number;
 }
 
 /**
@@ -156,13 +157,17 @@ export class FIRMClient {
   async sendBytes(bytes: Uint8Array): Promise<void> {
     if (!this.writer) throw new Error('Writer not available');
 
-    this.outgoingBytesListeners.forEach((fn) => {
-      try {
-        fn(bytes);
-      } catch (e) {
-        console.warn('[FIRM] outgoing bytes listener error:', e);
-      }
-    });
+    // this.outgoingBytesListeners.forEach((fn) => {
+    //   try {
+    //     fn(bytes);
+    //   } catch (e) {
+    //     console.warn('[FIRM] outgoing bytes listener error:', e);
+    //   }
+    // });
+
+    // FIXME: If you remove the sleep it crashes FIRM, also this is in ms not seconds
+    await this.sleep(.005)
+    await this.writer.ready;
     await this.writer.write(bytes);
   }
 
@@ -221,6 +226,7 @@ export class FIRMClient {
     const speed = options.speed ?? 1.0;
     const chunkSize = options.chunkSize ?? 8192;
     const startTimeoutMs = options.startTimeoutMs ?? RESPONSE_TIMEOUT_MS;
+    const batchBytes = options.batchBytes ?? 64 * 1024;
 
     if (speed <= 0) throw new Error('speed must be > 0');
 
@@ -242,14 +248,36 @@ export class FIRMClient {
     const parser = new MockLogParser();
     parser.read_header(header);
     await this.sendBytes(parser.build_header_packet(header));
+    await this.sleep(100);
 
     let sent = 0;
+    const streamStart = performance.now();
+    let totalDelaySeconds = 0;
     for (let offset = 0; offset < body.length; offset += chunkSize) {
       parser.parse_bytes(body.slice(offset, offset + chunkSize));
-      sent += await this.drainMockPackets(parser, realtime, speed);
+      const drained = await this.drainMockPackets(
+        parser,
+        realtime,
+        speed,
+        streamStart,
+        totalDelaySeconds,
+      );
+      sent += drained.sent;
+      totalDelaySeconds = drained.totalDelaySeconds;
     }
 
-    sent += await this.drainMockPackets(parser, realtime, speed);
+    const drained = await this.drainMockPackets(
+      parser,
+      realtime,
+      speed,
+      streamStart,
+      totalDelaySeconds,
+    );
+    sent += drained.sent;
+    totalDelaySeconds = drained.totalDelaySeconds;
+
+    // Send cancel command when streaming finishes
+    await this.sendBytes(FIRMCommandBuilder.build_cancel());
     return sent;
   }
 
@@ -257,20 +285,32 @@ export class FIRMClient {
     parser: MockLogParser,
     realtime: boolean,
     speed: number,
-  ): Promise<number> {
+    streamStartMs: number,
+    totalDelaySeconds: number,
+  ): Promise<{ sent: number; totalDelaySeconds: number }> {
     let count = 0;
+
     while (true) {
       const pkt = parser.get_packet_with_delay() as
         | { bytes: Uint8Array; delaySeconds: number }
         | null;
       if (!pkt) break;
-      if (realtime && pkt.delaySeconds > 0) {
-        await this.sleep((pkt.delaySeconds * 1000) / speed);
-      }
+      totalDelaySeconds += pkt.delaySeconds;
+      
+      // Send packet
       await this.sendBytes(pkt.bytes);
       count += 1;
+
+      if (realtime && pkt.delaySeconds > 0) {
+        const streamElapsedSeconds = (performance.now() - streamStartMs) / 1000;
+        // Only sleep if we are not already behind schedule
+        if (streamElapsedSeconds <= totalDelaySeconds / speed) {
+          await this.sleep((pkt.delaySeconds * 1000) / speed);
+        }
+      }
     }
-    return count;
+
+    return { sent: count, totalDelaySeconds };
   }
 
   /**
@@ -375,7 +415,10 @@ export class FIRMClient {
 
     // 2. Wait for new responses
     return new Promise<T>((resolve, reject) => {
+      let settled = false;
       const timeoutId = setTimeout(() => {
+        if (settled) return;
+        settled = true;
         cleanup();
         reject(new Error('Timeout waiting for response'));
       }, timeoutMs);
@@ -388,8 +431,11 @@ export class FIRMClient {
           if (idx !== -1) {
             this.responseQueue.splice(idx, 1);
           }
-          cleanup();
-          resolve(match);
+          if (!settled) {
+            settled = true;
+            cleanup();
+            resolve(match);
+          }
         }
       };
 

@@ -1,19 +1,29 @@
+use clap::Parser;
 use firm_core::client_packets::FIRMLogPacket;
-use firm_core::constants::mock::FIRMLogPacketType;
-use firm_core::constants::mock::HEADER_TOTAL_SIZE;
+use firm_core::constants::log_parsing::FIRMLogPacketType;
+use firm_core::constants::log_parsing::HEADER_TOTAL_SIZE;
 use firm_core::framed_packet::Framed;
-use firm_core::mock::LogParser;
+use firm_core::log_parsing::LogParser;
 use std::fs::File;
 use std::io::Read;
 use std::process::ExitCode;
 
-const LOG_PATH: &str = "C:\\Users\\jackg\\Downloads\\LOG1.TXT";
-const CHUNK_SIZE: usize = 1000;
+#[derive(Parser, Debug)]
+#[command()]
+struct Args {
+    /// Path to the log file to verify
+    log_path: String,
+
+    /// Size of file chunks to read at a time
+    #[arg(short, long, default_value_t = 100_000)]
+    chunk_size: usize,
+}
 
 fn main() -> ExitCode {
+    let args = Args::parse();
     let mut parser = LogParser::new();
 
-    let mut file = File::open(LOG_PATH).expect("Failed to open log file");
+    let mut file = File::open(&args.log_path).expect("Failed to open log file");
 
     let mut header: Vec<u8> = vec![0u8; HEADER_TOTAL_SIZE];
     file.read_exact(&mut header).expect("Failed to read header");
@@ -27,7 +37,7 @@ fn main() -> ExitCode {
 
     parser.read_header(&header);
 
-    let mut buf: Vec<u8> = vec![0u8; CHUNK_SIZE];
+    let mut buf: Vec<u8> = vec![0u8; args.chunk_size];
 
     let mut count_total = 0usize;
     let mut count_bmp = 0usize;
@@ -57,7 +67,7 @@ fn main() -> ExitCode {
                 other => println!("Unexpected packet type: {other:?}"),
             }
 
-            if count_total <= 500 {
+            if count_total <= 5 {
                 let payload_len = parsed.payload().len();
                 let id_char = parsed.packet_type().as_char();
 

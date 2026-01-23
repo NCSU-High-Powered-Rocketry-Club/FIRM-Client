@@ -1,10 +1,10 @@
 use anyhow::Result;
 use firm_core::client_packets::{FIRMCommandPacket, FIRMLogPacket};
-use firm_core::constants::mock::{FIRMLogPacketType, HEADER_PARSE_DELAY, HEADER_TOTAL_SIZE};
+use firm_core::constants::log_parsing::{FIRMLogPacketType, HEADER_PARSE_DELAY, HEADER_TOTAL_SIZE};
 use firm_core::data_parser::SerialParser;
 use firm_core::firm_packets::{DeviceConfig, DeviceInfo, DeviceProtocol, FIRMData, FIRMResponse};
 use firm_core::framed_packet::Framed;
-use firm_core::mock::LogParser;
+use firm_core::log_parsing::LogParser;
 use serialport::SerialPort;
 use std::collections::VecDeque;
 use std::fs::File;
@@ -325,7 +325,7 @@ impl FIRMClient {
     /// 1) Send the mock command and wait for ack
     /// 2) Read the log header (`firm_core::mock::LOG_HEADER_SIZE` bytes)
     /// 3) Parse the remaining file bytes as log records
-    /// 4) Send framed mock sensor packets (`FIRMMockPacket::to_bytes()`) to the device
+    /// 4) Send framed mock sensor packets (`FIRMLogPacket::to_bytes()`) to the device
     ///
     /// If `realtime` is true, the stream is paced based on the log timestamps. `speed` is a
     /// multiplier (1.0 = real-time, 2.0 = 2x faster, 0.5 = half-speed).

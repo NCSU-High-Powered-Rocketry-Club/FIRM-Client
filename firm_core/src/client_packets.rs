@@ -1,7 +1,7 @@
 use alloc::vec::Vec;
 
 use crate::constants::command::{DEVICE_NAME_LENGTH, FIRMCommand, FREQUENCY_LENGTH};
-use crate::constants::mock::FIRMLogPacketType;
+use crate::constants::log_parsing::FIRMLogPacketType;
 use crate::constants::packet::PacketHeader;
 use crate::{
     firm_packets::*,
@@ -84,7 +84,7 @@ pub struct FIRMLogPacket {
 
 impl FIRMLogPacket {
     pub fn new(packet_type: FIRMLogPacketType, payload: Vec<u8>) -> Self {
-        let header = PacketHeader::MockSensor;
+        let header = PacketHeader::LogSensor;
         let identifier = packet_type as u16;
         Self {
             packet_type,
@@ -117,7 +117,7 @@ mod tests {
     use crate::constants::command::{
         CRC_LENGTH, DEVICE_NAME_LENGTH, FIRMCommand, FREQUENCY_LENGTH,
     };
-    use crate::constants::mock::FIRMLogPacketType;
+    use crate::constants::log_parsing::FIRMLogPacketType;
     use crate::constants::packet::PacketHeader;
     use crate::firm_packets::{DeviceConfig, DeviceProtocol};
     use crate::framed_packet::Framed;
@@ -230,7 +230,7 @@ mod tests {
     fn test_firm_mock_packet_new() {
         let payload = vec![1u8, 2, 3];
         let packet = FIRMLogPacket::new(FIRMLogPacketType::BarometerPacket, payload.clone());
-        assert_eq!(packet.header(), PacketHeader::MockSensor);
+        assert_eq!(packet.header(), PacketHeader::LogSensor);
         assert_eq!(packet.packet_type(), FIRMLogPacketType::BarometerPacket);
         assert_eq!(packet.len(), payload.len() as u32);
         assert_eq!(packet.payload(), payload.as_slice());
@@ -241,7 +241,7 @@ mod tests {
         let payload: Vec<u8> = vec![0x10, 0x20, 0x30, 0x40, 0x50];
         let packet = FIRMLogPacket::new(FIRMLogPacketType::IMUPacket, payload);
         let bytes = packet.to_bytes();
-        assert_eq!(header_from_bytes(&bytes), PacketHeader::MockSensor.as_u16());
+        assert_eq!(header_from_bytes(&bytes), PacketHeader::LogSensor.as_u16());
         assert_eq!(identifier_from_bytes(&bytes), b'I' as u16);
         assert_eq!(
             u32::from_le_bytes(bytes[4..8].try_into().unwrap()),
@@ -261,7 +261,7 @@ mod tests {
         let packet = FIRMLogPacket::new(FIRMLogPacketType::HeaderPacket, payload);
         let bytes = packet.to_bytes();
         let parsed = FIRMLogPacket::from_bytes(&bytes).unwrap();
-        assert_eq!(parsed.header(), PacketHeader::MockSensor);
+        assert_eq!(parsed.header(), PacketHeader::LogSensor);
         assert_eq!(parsed.packet_type(), FIRMLogPacketType::HeaderPacket);
         assert_eq!(parsed.len() as usize, parsed.payload().len());
         assert_eq!(parsed.payload(), packet.payload());

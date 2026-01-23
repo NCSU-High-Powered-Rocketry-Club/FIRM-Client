@@ -1,9 +1,9 @@
 use firm_core::client_packets::{FIRMCommandPacket, FIRMLogPacket};
-use firm_core::constants::mock::{FIRMLogPacketType, HEADER_TOTAL_SIZE};
+use firm_core::constants::log_parsing::{FIRMLogPacketType, HEADER_TOTAL_SIZE};
 use firm_core::data_parser::SerialParser;
 use firm_core::firm_packets::{DeviceConfig, DeviceProtocol};
 use firm_core::framed_packet::Framed;
-use firm_core::mock::LogParser;
+use firm_core::log_parsing::LogParser;
 use js_sys::{Object, Reflect, Uint8Array};
 use wasm_bindgen::prelude::*;
 

@@ -13,7 +13,7 @@ pub mod packet {
     pub enum PacketHeader {
         Data = 0xA55A,
         Response = 0x5AA5,
-        MockSensor = 0x6BB6,
+        LogSensor = 0x6BB6,
         Command = 0xB66B,
     }
 
@@ -26,7 +26,7 @@ pub mod packet {
             match v {
                 x if x == PacketHeader::Data as u16 => Some(PacketHeader::Data),
                 x if x == PacketHeader::Response as u16 => Some(PacketHeader::Response),
-                x if x == PacketHeader::MockSensor as u16 => Some(PacketHeader::MockSensor),
+                x if x == PacketHeader::LogSensor as u16 => Some(PacketHeader::LogSensor),
                 x if x == PacketHeader::Command as u16 => Some(PacketHeader::Command),
                 _ => None,
             }
@@ -78,12 +78,12 @@ pub mod command {
     pub const FREQUENCY_LENGTH: usize = 2;
 }
 
-pub mod mock {
+pub mod log_parsing {
     use crate::constants::packet::PacketHeader;
     use std::time::Duration;
 
-    pub const MOCK_SENSOR_PACKET_HEADER: u16 = PacketHeader::MockSensor as u16;
-    /// Mock sensor packet type identifier stored in the second u16 header field.
+    pub const LOG_SENSOR_PACKET_HEADER: u16 = PacketHeader::LogSensor as u16;
+    /// Log sensor packet type identifier stored in the second u16 header field.
     #[repr(u16)]
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub enum FIRMLogPacketType {
@@ -126,7 +126,7 @@ pub mod mock {
     pub const MMC5983MA_SIZE: usize = 7;
 
     pub const LOG_FILE_EOF_PADDING_LENGTH: usize = 20;
-    pub const MOCK_PACKET_TIMESTAMP_SIZE: usize = 4;
+    pub const LOG_PACKET_TIMESTAMP_SIZE: usize = 4;
 
     pub const HEADER_SIZE_TEXT: usize = 14; // "FIRM LOG vx.x"
     pub const HEADER_UID_SIZE: usize = 8;

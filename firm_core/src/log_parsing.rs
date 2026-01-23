@@ -2,13 +2,13 @@ use alloc::collections::VecDeque;
 use alloc::vec::Vec;
 
 use crate::client_packets::FIRMLogPacket;
-use crate::constants::mock::FIRMLogPacketType;
-use crate::constants::mock::*;
+use crate::constants::log_parsing::FIRMLogPacketType;
+use crate::constants::log_parsing::*;
 
 pub struct LogParser {
     /// Rolling buffer of unprocessed bytes.
     bytes: Vec<u8>,
-    /// Queue of parsed mock packets and their inter-packet delay.
+    /// Queue of parsed log packets and their inter-packet delay.
     parsed_packets: VecDeque<(FIRMLogPacket, f64)>,
 
     // Log header state.
@@ -59,7 +59,7 @@ impl LogParser {
 
     /// Feeds a new chunk of bytes into the parser.
     ///
-    /// Parses as many log packets as possible and enqueues framed mock packets.
+    /// Parses as many log packets as possible and enqueues framed log packets.
     ///
     /// This code is just copied from the Python decoder script.
     pub fn parse_bytes(&mut self, chunk: &[u8]) {
@@ -91,14 +91,14 @@ impl LogParser {
             self.num_repeat_whitespace = 0;
 
             // Need timestamp.
-            if position + 1 + MOCK_PACKET_TIMESTAMP_SIZE > self.bytes.len() {
+            if position + 1 + LOG_PACKET_TIMESTAMP_SIZE > self.bytes.len() {
                 position = log_packet_start;
                 break;
             }
 
             position += 1;
-            let timestamp = &self.bytes[position..position + MOCK_PACKET_TIMESTAMP_SIZE];
-            position += MOCK_PACKET_TIMESTAMP_SIZE;
+            let timestamp = &self.bytes[position..position + LOG_PACKET_TIMESTAMP_SIZE];
+            position += LOG_PACKET_TIMESTAMP_SIZE;
             let clock_count = u32::from_le_bytes(
                 timestamp
                     .try_into()
@@ -137,7 +137,7 @@ impl LogParser {
             let raw = &self.bytes[position..position + size];
             position += size;
 
-            let mut payload = Vec::with_capacity(MOCK_PACKET_TIMESTAMP_SIZE + size);
+            let mut payload = Vec::with_capacity(LOG_PACKET_TIMESTAMP_SIZE + size);
             payload.extend_from_slice(timestamp);
             payload.extend_from_slice(raw);
             let pkt = FIRMLogPacket::new(packet_type, payload);
@@ -152,7 +152,7 @@ impl LogParser {
         self.bytes = self.bytes[position..].to_vec();
     }
 
-    /// Pops the next parsed mock packet and returns it with its delay since the last one.
+    /// Pops the next parsed log packet and returns it with its delay since the last one.
     pub fn get_packet_and_time_delay(&mut self) -> Option<(FIRMLogPacket, f64)> {
         self.parsed_packets.pop_front()
     }
@@ -162,7 +162,7 @@ impl LogParser {
         self.eof_reached
     }
 
-    /// Pops the next parsed mock packet (no delay info).
+    /// Pops the next parsed log packet (no delay info).
     pub fn get_packet(&mut self) -> Option<FIRMLogPacket> {
         self.parsed_packets.pop_front().map(|(pkt, _)| pkt)
     }
@@ -183,9 +183,9 @@ mod tests {
         // Timestamp is stored as a 32-bit little-endian counter (4 bytes).
         let le = clock_count.to_le_bytes();
 
-        let mut out = vec![0u8; 1 + MOCK_PACKET_TIMESTAMP_SIZE + raw_len];
+        let mut out = vec![0u8; 1 + LOG_PACKET_TIMESTAMP_SIZE + raw_len];
         out[0] = id;
-        out[1..(1 + MOCK_PACKET_TIMESTAMP_SIZE)].copy_from_slice(&le);
+        out[1..(1 + LOG_PACKET_TIMESTAMP_SIZE)].copy_from_slice(&le);
         out
     }
 
@@ -198,16 +198,16 @@ mod tests {
         parser.read_header(&header);
         parser.parse_bytes(&log_packet_bytes);
 
-        let (mock_packet, delay) = parser.get_packet_and_time_delay().unwrap();
+        let (log_packet, delay) = parser.get_packet_and_time_delay().unwrap();
         assert_eq!(delay, 0.0);
-        assert_eq!(mock_packet.packet_type(), FIRMLogPacketType::IMUPacket);
+        assert_eq!(log_packet.packet_type(), FIRMLogPacketType::IMUPacket);
         assert_eq!(
-            mock_packet.payload().len(),
-            MOCK_PACKET_TIMESTAMP_SIZE + ICM45686_SIZE
+            log_packet.payload().len(),
+            LOG_PACKET_TIMESTAMP_SIZE + ICM45686_SIZE
         );
-        assert_eq!(mock_packet.len() as usize, mock_packet.payload().len());
+        assert_eq!(log_packet.len() as usize, log_packet.payload().len());
         assert_eq!(
-            &mock_packet.payload()[0..MOCK_PACKET_TIMESTAMP_SIZE],
+            &log_packet.payload()[0..LOG_PACKET_TIMESTAMP_SIZE],
             &[0x01, 0x00, 0x00, 0x00]
         );
         assert!(parser.get_packet_and_time_delay().is_none());
@@ -229,20 +229,20 @@ mod tests {
         parser.read_header(&header);
         parser.parse_bytes(&bytes);
 
-        let (mock_packet1, d1) = parser.get_packet_and_time_delay().unwrap();
-        let (mock_packet2, d2) = parser.get_packet_and_time_delay().unwrap();
+        let (log_packet1, d1) = parser.get_packet_and_time_delay().unwrap();
+        let (log_packet2, d2) = parser.get_packet_and_time_delay().unwrap();
         assert_eq!(d1, 0.0);
 
         assert_eq!(
-            mock_packet1.packet_type(),
+            log_packet1.packet_type(),
             FIRMLogPacketType::BarometerPacket
         );
         assert_eq!(
-            mock_packet2.packet_type(),
+            log_packet2.packet_type(),
             FIRMLogPacketType::BarometerPacket
         );
-        assert_eq!(mock_packet1.payload(), log_packet_bytes1[1..].as_ref());
-        assert_eq!(mock_packet2.payload(), log_packet_bytes2[1..].as_ref());
+        assert_eq!(log_packet1.payload(), log_packet_bytes1[1..].as_ref());
+        assert_eq!(log_packet2.payload(), log_packet_bytes2[1..].as_ref());
 
         let expected = 168.0f64 / 168e6;
         assert!((d2 - expected).abs() < 1e-12);
@@ -266,14 +266,14 @@ mod tests {
         assert!(parser.get_packet().is_none());
 
         parser.parse_bytes(chunk2);
-        let mock_packet = parser.get_packet().unwrap();
+        let log_packet = parser.get_packet().unwrap();
         assert_eq!(
-            mock_packet.packet_type(),
+            log_packet.packet_type(),
             FIRMLogPacketType::MagnetometerPacket
         );
         assert_eq!(
-            mock_packet.payload().len(),
-            MOCK_PACKET_TIMESTAMP_SIZE + MMC5983MA_SIZE
+            log_packet.payload().len(),
+            LOG_PACKET_TIMESTAMP_SIZE + MMC5983MA_SIZE
         );
         assert!(parser.get_packet().is_none());
     }

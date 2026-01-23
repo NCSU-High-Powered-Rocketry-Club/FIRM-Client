@@ -1,5 +1,5 @@
-use firm_core::client_packets::{FIRMCommandPacket, FIRMMockPacket};
-use firm_core::constants::mock::{FIRMMockPacketType, HEADER_TOTAL_SIZE};
+use firm_core::client_packets::{FIRMCommandPacket, FIRMLogPacket};
+use firm_core::constants::mock::{FIRMLogPacketType, HEADER_TOTAL_SIZE};
 use firm_core::data_parser::SerialParser;
 use firm_core::firm_packets::{DeviceConfig, DeviceProtocol};
 use firm_core::framed_packet::Framed;
@@ -136,6 +136,6 @@ impl MockLogParser {
 
     #[wasm_bindgen]
     pub fn build_header_packet(&self, header: &[u8]) -> Vec<u8> {
-        FIRMMockPacket::new(FIRMMockPacketType::HeaderPacket, header.to_vec()).to_bytes()
+        FIRMLogPacket::new(FIRMLogPacketType::HeaderPacket, header.to_vec()).to_bytes()
     }
 }

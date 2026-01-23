@@ -1,15 +1,17 @@
+use core::time;
+
 use alloc::collections::VecDeque;
 use alloc::vec::Vec;
 
-use crate::client_packets::FIRMMockPacket;
-use crate::constants::mock::FIRMMockPacketType;
+use crate::client_packets::FIRMLogPacket;
+use crate::constants::mock::FIRMLogPacketType;
 use crate::constants::mock::*;
 
 pub struct LogParser {
     /// Rolling buffer of unprocessed bytes.
     bytes: Vec<u8>,
     /// Queue of parsed mock packets and their inter-packet delay.
-    parsed_packets: VecDeque<(FIRMMockPacket, f64)>,
+    parsed_packets: VecDeque<(FIRMLogPacket, f64)>,
 
     // Log header state.
     header_parsed: bool,
@@ -93,18 +95,18 @@ impl LogParser {
             position += 1;
             let timestamp = &self.bytes[position..position + MOCK_PACKET_TIMESTAMP_SIZE];
             position += MOCK_PACKET_TIMESTAMP_SIZE;
-            let clock_count = u32::from_be_bytes([0, timestamp[0], timestamp[1], timestamp[2]]);
+            let clock_count = u32::from_le_bytes(
+                timestamp
+                    .try_into()
+                    .expect("timestamp slice length mismatch"),
+            );
 
             // Compute the delay from the previous log packet timestamp.
-            // The log clock is 24-bit and ticks at 168 MHz.
+            // The log clock is 32-bit and ticks at 168 MHz.
             let delay_seconds = match self.last_clock_count {
                 None => 0.0,
                 Some(prev) => {
-                    let delta = if clock_count < prev {
-                        (clock_count + (1 << 24)) - prev
-                    } else {
-                        clock_count - prev
-                    };
+                    let delta = clock_count.wrapping_sub(prev);
                     (delta as f64) / 168e6
                 }
             };
@@ -112,9 +114,9 @@ impl LogParser {
             self.last_clock_count = Some(clock_count);
 
             let (packet_type, size) = match id {
-                BMP581_ID => (FIRMMockPacketType::BarometerPacket, BMP581_SIZE),
-                ICM45686_ID => (FIRMMockPacketType::IMUPacket, ICM45686_SIZE),
-                MMC5983MA_ID => (FIRMMockPacketType::MagnetometerPacket, MMC5983MA_SIZE),
+                BMP581_ID => (FIRMLogPacketType::BarometerPacket, BMP581_SIZE),
+                ICM45686_ID => (FIRMLogPacketType::IMUPacket, ICM45686_SIZE),
+                MMC5983MA_ID => (FIRMLogPacketType::MagnetometerPacket, MMC5983MA_SIZE),
                 _ => {
                     // Unknown/garbage byte. Don't give up immediately: advance by one byte and
                     // keep scanning so we can re-sync if we're offset or the file has junk.
@@ -134,7 +136,7 @@ impl LogParser {
             let mut payload = Vec::with_capacity(MOCK_PACKET_TIMESTAMP_SIZE + size);
             payload.extend_from_slice(timestamp);
             payload.extend_from_slice(raw);
-            let pkt = FIRMMockPacket::new(packet_type, payload);
+            let pkt = FIRMLogPacket::new(packet_type, payload);
             self.parsed_packets.push_back((pkt, delay_seconds));
         }
 
@@ -147,7 +149,7 @@ impl LogParser {
     }
 
     /// Pops the next parsed mock packet and returns it with its delay since the last one.
-    pub fn get_packet_and_time_delay(&mut self) -> Option<(FIRMMockPacket, f64)> {
+    pub fn get_packet_and_time_delay(&mut self) -> Option<(FIRMLogPacket, f64)> {
         self.parsed_packets.pop_front()
     }
 
@@ -157,7 +159,7 @@ impl LogParser {
     }
 
     /// Pops the next parsed mock packet (no delay info).
-    pub fn get_packet(&mut self) -> Option<FIRMMockPacket> {
+    pub fn get_packet(&mut self) -> Option<FIRMLogPacket> {
         self.parsed_packets.pop_front().map(|(pkt, _)| pkt)
     }
 }
@@ -173,15 +175,13 @@ mod tests {
         header
     }
 
-    fn make_log_packet_bytes(id: u8, clock_count_24bit: u32, raw_len: usize) -> Vec<u8> {
-        // Timestamp is stored as a 24-bit big-endian counter (3 bytes).
-        let clock = clock_count_24bit & 0x00FF_FFFF;
-        let be = clock.to_be_bytes();
-        let t = [be[1], be[2], be[3]];
+    fn make_log_packet_bytes(id: u8, clock_count: u32, raw_len: usize) -> Vec<u8> {
+        // Timestamp is stored as a 32-bit little-endian counter (4 bytes).
+        let le = clock_count.to_le_bytes();
 
         let mut out = vec![0u8; 1 + MOCK_PACKET_TIMESTAMP_SIZE + raw_len];
         out[0] = id;
-        out[1..4].copy_from_slice(&t);
+        out[1..(1 + MOCK_PACKET_TIMESTAMP_SIZE)].copy_from_slice(&le);
         out
     }
 
@@ -196,13 +196,16 @@ mod tests {
 
         let (mock_packet, delay) = parser.get_packet_and_time_delay().unwrap();
         assert_eq!(delay, 0.0);
-        assert_eq!(mock_packet.packet_type(), FIRMMockPacketType::IMUPacket);
+        assert_eq!(mock_packet.packet_type(), FIRMLogPacketType::IMUPacket);
         assert_eq!(
             mock_packet.payload().len(),
             MOCK_PACKET_TIMESTAMP_SIZE + ICM45686_SIZE
         );
         assert_eq!(mock_packet.len() as usize, mock_packet.payload().len());
-        assert_eq!(&mock_packet.payload()[0..MOCK_PACKET_TIMESTAMP_SIZE], &[0x00, 0x00, 0x01]);
+        assert_eq!(
+            &mock_packet.payload()[0..MOCK_PACKET_TIMESTAMP_SIZE],
+            &[0x01, 0x00, 0x00, 0x00]
+        );
         assert!(parser.get_packet_and_time_delay().is_none());
     }
 
@@ -228,11 +231,11 @@ mod tests {
 
         assert_eq!(
             mock_packet1.packet_type(),
-            FIRMMockPacketType::BarometerPacket
+            FIRMLogPacketType::BarometerPacket
         );
         assert_eq!(
             mock_packet2.packet_type(),
-            FIRMMockPacketType::BarometerPacket
+            FIRMLogPacketType::BarometerPacket
         );
         assert_eq!(mock_packet1.payload(), log_packet_bytes1[1..].as_ref());
         assert_eq!(mock_packet2.payload(), log_packet_bytes2[1..].as_ref());
@@ -262,7 +265,7 @@ mod tests {
         let mock_packet = parser.get_packet().unwrap();
         assert_eq!(
             mock_packet.packet_type(),
-            FIRMMockPacketType::MagnetometerPacket
+            FIRMLogPacketType::MagnetometerPacket
         );
         assert_eq!(
             mock_packet.payload().len(),

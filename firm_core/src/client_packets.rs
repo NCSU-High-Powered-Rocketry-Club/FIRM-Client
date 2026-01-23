@@ -1,7 +1,7 @@
 use alloc::vec::Vec;
 
 use crate::constants::command::{DEVICE_NAME_LENGTH, FIRMCommand, FREQUENCY_LENGTH};
-use crate::constants::mock::FIRMMockPacketType;
+use crate::constants::mock::FIRMLogPacketType;
 use crate::constants::packet::PacketHeader;
 use crate::{
     firm_packets::*,
@@ -77,13 +77,13 @@ impl Framed for FIRMCommandPacket {
     }
 }
 
-pub struct FIRMMockPacket {
-    packet_type: FIRMMockPacketType,
+pub struct FIRMLogPacket {
+    packet_type: FIRMLogPacketType,
     frame: FramedPacket,
 }
 
-impl FIRMMockPacket {
-    pub fn new(packet_type: FIRMMockPacketType, payload: Vec<u8>) -> Self {
+impl FIRMLogPacket {
+    pub fn new(packet_type: FIRMLogPacketType, payload: Vec<u8>) -> Self {
         let header = PacketHeader::MockSensor;
         let identifier = packet_type as u16;
         Self {
@@ -92,12 +92,12 @@ impl FIRMMockPacket {
         }
     }
 
-    pub fn packet_type(&self) -> FIRMMockPacketType {
+    pub fn packet_type(&self) -> FIRMLogPacketType {
         self.packet_type
     }
 }
 
-impl Framed for FIRMMockPacket {
+impl Framed for FIRMLogPacket {
     fn frame(&self) -> &FramedPacket {
         &self.frame
     }
@@ -105,19 +105,19 @@ impl Framed for FIRMMockPacket {
     /// Parses a framed mock sensor packet from raw bytes. This method is just for testing.
     fn from_bytes(bytes: &[u8]) -> Result<Self, crate::framed_packet::FrameError> {
         let frame = FramedPacket::from_bytes(bytes)?;
-        let packet_type = FIRMMockPacketType::from_u16(frame.identifier())
-            .unwrap_or(FIRMMockPacketType::HeaderPacket);
+        let packet_type = FIRMLogPacketType::from_u16(frame.identifier())
+            .unwrap_or(FIRMLogPacketType::HeaderPacket);
         Ok(Self { packet_type, frame })
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{FIRMCommandPacket, FIRMMockPacket};
+    use super::{FIRMCommandPacket, FIRMLogPacket};
     use crate::constants::command::{
         CRC_LENGTH, DEVICE_NAME_LENGTH, FIRMCommand, FREQUENCY_LENGTH,
     };
-    use crate::constants::mock::FIRMMockPacketType;
+    use crate::constants::mock::FIRMLogPacketType;
     use crate::constants::packet::PacketHeader;
     use crate::firm_packets::{DeviceConfig, DeviceProtocol};
     use crate::framed_packet::Framed;
@@ -229,9 +229,9 @@ mod tests {
     #[test]
     fn test_firm_mock_packet_new() {
         let payload = vec![1u8, 2, 3];
-        let packet = FIRMMockPacket::new(FIRMMockPacketType::BarometerPacket, payload.clone());
+        let packet = FIRMLogPacket::new(FIRMLogPacketType::BarometerPacket, payload.clone());
         assert_eq!(packet.header(), PacketHeader::MockSensor);
-        assert_eq!(packet.packet_type(), FIRMMockPacketType::BarometerPacket);
+        assert_eq!(packet.packet_type(), FIRMLogPacketType::BarometerPacket);
         assert_eq!(packet.len(), payload.len() as u32);
         assert_eq!(packet.payload(), payload.as_slice());
     }
@@ -239,7 +239,7 @@ mod tests {
     #[test]
     fn test_firm_mock_packet_to_bytes() {
         let payload: Vec<u8> = vec![0x10, 0x20, 0x30, 0x40, 0x50];
-        let packet = FIRMMockPacket::new(FIRMMockPacketType::IMUPacket, payload);
+        let packet = FIRMLogPacket::new(FIRMLogPacketType::IMUPacket, payload);
         let bytes = packet.to_bytes();
         assert_eq!(header_from_bytes(&bytes), PacketHeader::MockSensor.as_u16());
         assert_eq!(identifier_from_bytes(&bytes), b'I' as u16);
@@ -258,11 +258,11 @@ mod tests {
     #[test]
     fn test_firm_mock_packet_roundtrip_from_bytes() {
         let payload = vec![9u8, 8, 7];
-        let packet = FIRMMockPacket::new(FIRMMockPacketType::HeaderPacket, payload);
+        let packet = FIRMLogPacket::new(FIRMLogPacketType::HeaderPacket, payload);
         let bytes = packet.to_bytes();
-        let parsed = FIRMMockPacket::from_bytes(&bytes).unwrap();
+        let parsed = FIRMLogPacket::from_bytes(&bytes).unwrap();
         assert_eq!(parsed.header(), PacketHeader::MockSensor);
-        assert_eq!(parsed.packet_type(), FIRMMockPacketType::HeaderPacket);
+        assert_eq!(parsed.packet_type(), FIRMLogPacketType::HeaderPacket);
         assert_eq!(parsed.len() as usize, parsed.payload().len());
         assert_eq!(parsed.payload(), packet.payload());
         assert_eq!(parsed.crc(), packet.crc());

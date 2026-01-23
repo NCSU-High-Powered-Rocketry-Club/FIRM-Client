@@ -8,7 +8,6 @@ pub enum FrameError {
     LengthMismatch { expected: usize, got: usize },
     BadCrc { expected: u16, got: u16 },
     UnknownIdentifier(u16),
-    InvalidPayloadLength { expected: usize, got: usize },
 }
 
 /// Trait implemented by all packet types that are framed using FramedPacket.
@@ -135,16 +134,16 @@ impl FramedPacket {
         let payload_end = payload_start + len;
         let payload = bytes[payload_start..payload_end].to_vec();
 
-        let got_crc = u16::from_le_bytes(
+        let received_crc = u16::from_le_bytes(
             bytes[payload_end..payload_end + CRC_SIZE]
                 .try_into()
                 .unwrap(),
         );
-        let expected_crc = Self::compute_crc(header, identifier, len as u32, &payload);
-        if got_crc != expected_crc {
+        let computed_crc = Self::compute_crc(header, identifier, len as u32, &payload);
+        if received_crc != computed_crc {
             return Err(FrameError::BadCrc {
-                expected: expected_crc,
-                got: got_crc,
+                expected: computed_crc,
+                got: received_crc,
             });
         }
 
@@ -152,7 +151,7 @@ impl FramedPacket {
             header,
             identifier,
             payload,
-            crc: got_crc,
+            crc: received_crc,
         })
     }
 

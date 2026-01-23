@@ -86,14 +86,14 @@ pub mod mock {
     /// Mock sensor packet type identifier stored in the second u16 header field.
     #[repr(u16)]
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub enum FIRMMockPacketType {
+    pub enum FIRMLogPacketType {
         HeaderPacket = HEADER_ID as u16,
         BarometerPacket = BMP581_ID as u16,
         IMUPacket = ICM45686_ID as u16,
         MagnetometerPacket = MMC5983MA_ID as u16,
     }
 
-    impl FIRMMockPacketType {
+    impl FIRMLogPacketType {
         pub const fn as_u16(self) -> u16 {
             self as u16
         }
@@ -126,7 +126,7 @@ pub mod mock {
     pub const MMC5983MA_SIZE: usize = 7;
 
     pub const LOG_FILE_EOF_PADDING_LENGTH: usize = 20;
-    pub const MOCK_PACKET_TIMESTAMP_SIZE: usize = 3;
+    pub const MOCK_PACKET_TIMESTAMP_SIZE: usize = 4;
 
     pub const HEADER_SIZE_TEXT: usize = 14; // "FIRM LOG vx.x"
     pub const HEADER_UID_SIZE: usize = 8;

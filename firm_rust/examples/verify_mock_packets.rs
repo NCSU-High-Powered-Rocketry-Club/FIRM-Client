@@ -1,6 +1,5 @@
-use clap::Parser;
-use firm_core::client_packets::FIRMMockPacket;
-use firm_core::constants::mock::FIRMMockPacketType;
+use firm_core::client_packets::FIRMLogPacket;
+use firm_core::constants::mock::FIRMLogPacketType;
 use firm_core::constants::mock::HEADER_TOTAL_SIZE;
 use firm_core::framed_packet::Framed;
 use firm_core::mock::LogParser;
@@ -8,22 +7,13 @@ use std::fs::File;
 use std::io::Read;
 use std::process::ExitCode;
 
-#[derive(Parser, Debug)]
-#[command()]
-struct Args {
-    /// Path to the log file to verify
-    log_path: String,
-
-    /// Size of file chunks to read at a time
-    #[arg(short, long, default_value_t = 100_000)]
-    chunk_size: usize,
-}
+const LOG_PATH: &str = "C:\\Users\\jackg\\Downloads\\LOG1.TXT";
+const CHUNK_SIZE: usize = 1000;
 
 fn main() -> ExitCode {
-    let args = Args::parse();
     let mut parser = LogParser::new();
-
-    let mut file = File::open(&args.log_path).expect("Failed to open log file");
+    
+    let mut file = File::open(LOG_PATH).expect("Failed to open log file");
 
     let mut header: Vec<u8> = vec![0u8; HEADER_TOTAL_SIZE];
     file.read_exact(&mut header).expect("Failed to read header");
@@ -37,7 +27,7 @@ fn main() -> ExitCode {
 
     parser.read_header(&header);
 
-    let mut buf: Vec<u8> = vec![0u8; args.chunk_size];
+    let mut buf: Vec<u8> = vec![0u8; CHUNK_SIZE];
 
     let mut count_total = 0usize;
     let mut count_bmp = 0usize;
@@ -55,19 +45,19 @@ fn main() -> ExitCode {
         // Just verifies the round-trip serialization/parsing of packets
         while let Some((pkt, delay_s)) = parser.get_packet_and_time_delay() {
             let bytes = pkt.to_bytes();
-            let parsed = FIRMMockPacket::from_bytes(&bytes)
+            let parsed = FIRMLogPacket::from_bytes(&bytes)
                 .expect("failed to parse bytes we just serialized (header/len/crc mismatch)");
             assert_eq!(parsed.payload(), pkt.payload());
 
             count_total += 1;
             match parsed.packet_type() {
-                FIRMMockPacketType::BarometerPacket => count_bmp += 1,
-                FIRMMockPacketType::IMUPacket => count_imu += 1,
-                FIRMMockPacketType::MagnetometerPacket => count_mag += 1,
+                FIRMLogPacketType::BarometerPacket => count_bmp += 1,
+                FIRMLogPacketType::IMUPacket => count_imu += 1,
+                FIRMLogPacketType::MagnetometerPacket => count_mag += 1,
                 other => println!("Unexpected packet type: {other:?}"),
             }
 
-            if count_total <= 5 {
+            if count_total <= 500 {
                 let payload_len = parsed.payload().len();
                 let id_char = parsed.packet_type().as_char();
 

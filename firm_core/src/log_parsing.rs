@@ -6,6 +6,8 @@ use crate::constants::log_parsing::*;
 
 const MAX_BYTES_BUFFER: usize = 256;
 const MAX_PARSED_PACKETS: usize = 32;
+// Maximum log packet payload size: timestamp (4 bytes) + largest sensor data (ICM45686 = 15 bytes)
+const MAX_LOG_PACKET_PAYLOAD: usize = LOG_PACKET_TIMESTAMP_SIZE + ICM45686_SIZE;
 
 pub struct LogParser {
     /// Rolling buffer of unprocessed bytes.
@@ -142,7 +144,7 @@ impl LogParser {
             let raw = &self.bytes[position..position + size];
             position += size;
 
-            let mut payload = Vec::<u8, { LOG_PACKET_TIMESTAMP_SIZE + 20 }>::new();
+            let mut payload = Vec::<u8, MAX_LOG_PACKET_PAYLOAD>::new();
             payload.extend_from_slice(timestamp).ok();
             payload.extend_from_slice(raw).ok();
             

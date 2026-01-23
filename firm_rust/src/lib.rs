@@ -283,7 +283,7 @@ impl FIRMClient {
 
     /// Requests device info and waits for the response.
     pub fn get_device_info(&mut self, timeout: Duration) -> Result<Option<DeviceInfo>> {
-        self.send_command(FIRMCommandPacket::build_get_device_info_command())?;
+        self.send_command(FIRMCommandPacket::build_get_device_info_command()?)?;
         self.wait_for_matching_response(timeout, |res| match res {
             FIRMResponse::GetDeviceInfo(info) => Some(info.clone()),
             _ => None,
@@ -292,7 +292,7 @@ impl FIRMClient {
 
     /// Requests device configuration and waits for the response.
     pub fn get_device_config(&mut self, timeout: Duration) -> Result<Option<DeviceConfig>> {
-        self.send_command(FIRMCommandPacket::build_get_device_config_command())?;
+        self.send_command(FIRMCommandPacket::build_get_device_config_command()?)?;
         self.wait_for_matching_response(timeout, |res| match res {
             FIRMResponse::GetDeviceConfig(cfg) => Some(cfg.clone()),
             _ => None,
@@ -312,7 +312,7 @@ impl FIRMClient {
             frequency,
             protocol,
         };
-        self.send_command(FIRMCommandPacket::build_set_device_config_command(config))?;
+        self.send_command(FIRMCommandPacket::build_set_device_config_command(config)?)?;
         self.wait_for_matching_response(timeout, |res| match res {
             FIRMResponse::SetDeviceConfig(ok) => Some(*ok),
             _ => None,
@@ -348,7 +348,7 @@ impl FIRMClient {
         file.read_exact(&mut header)?;
 
         // Send the log header to the device, framed as a mock packet
-        let header_packet = FIRMLogPacket::new(FIRMLogPacketType::HeaderPacket, header.clone());
+        let header_packet = FIRMLogPacket::new(FIRMLogPacketType::HeaderPacket, &header)?;
         self.send_mock_packet(header_packet)?;
 
         // After we send the header we pause for a short time to let the device process it
@@ -423,7 +423,7 @@ impl FIRMClient {
 
     /// Sends a cancel command and waits for acknowledgement.
     pub fn cancel(&mut self, timeout: Duration) -> Result<Option<bool>> {
-        self.send_command(FIRMCommandPacket::build_cancel_command())?;
+        self.send_command(FIRMCommandPacket::build_cancel_command()?)?;
         self.wait_for_matching_response(timeout, |res| match res {
             FIRMResponse::Cancel(ok) => Some(*ok),
             _ => None,
@@ -432,7 +432,7 @@ impl FIRMClient {
 
     /// Sends a reboot command.
     pub fn reboot(&self) -> Result<()> {
-        self.send_command(FIRMCommandPacket::build_reboot_command())
+        self.send_command(FIRMCommandPacket::build_reboot_command()?)
     }
 
     /// Checks for any errors that have occurred in the background thread.
@@ -451,7 +451,7 @@ impl FIRMClient {
 
     /// Sends a mock command, waits for acknowledgement, then starts sending mock data packets.
     fn mock(&mut self, timeout: Duration) -> Result<Option<bool>> {
-        self.send_command(FIRMCommandPacket::build_mock_command())?;
+        self.send_command(FIRMCommandPacket::build_mock_command()?)?;
         self.wait_for_matching_response(timeout, |res| match res {
             FIRMResponse::Mock(ok) => Some(*ok),
             _ => None,
@@ -624,7 +624,7 @@ mod tests {
         payload[0..8].copy_from_slice(&timestamp_seconds.to_le_bytes());
         payload[8..12].copy_from_slice(&25.0f32.to_le_bytes());
 
-        let mocked_packet = FramedPacket::new(PacketHeader::Data, 0, payload);
+        let mocked_packet = FramedPacket::new(PacketHeader::Data, 0, &payload).unwrap();
         device.inject_framed_packet(mocked_packet);
 
         // Need to give some time for the background thread to read the data
@@ -645,9 +645,11 @@ mod tests {
         let bytes = FramedPacket::new(
             PacketHeader::Response,
             FIRMCommand::SetDeviceConfig.to_u16(),
-            payload.to_vec(),
+            &payload,
         )
-        .to_bytes();
+        .unwrap()
+        .to_bytes()
+        .to_vec();
         let response_packet = FIRMResponsePacket::from_bytes(&bytes).unwrap();
 
         device.inject_framed_packet(response_packet.frame().clone());
@@ -683,8 +685,9 @@ mod tests {
         let response_packet = FramedPacket::new(
             PacketHeader::Response,
             FIRMCommand::SetDeviceConfig.to_u16(),
-            response_payload.to_vec(),
-        );
+            &response_payload,
+        )
+        .unwrap();
         device.inject_framed_packet(response_packet);
 
         // Send the set device config command
@@ -714,8 +717,9 @@ mod tests {
         let response_packet = FramedPacket::new(
             PacketHeader::Response,
             FIRMCommand::GetDeviceInfo.to_u16(),
-            payload,
-        );
+            &payload,
+        )
+        .unwrap();
         device.inject_framed_packet(response_packet);
 
         let result = client.get_device_info(Duration::from_millis(100));
@@ -748,8 +752,9 @@ mod tests {
         let response_packet = FramedPacket::new(
             PacketHeader::Response,
             FIRMCommand::GetDeviceConfig.to_u16(),
-            payload,
-        );
+            &payload,
+        )
+        .unwrap();
         device.inject_framed_packet(response_packet);
 
         let result = client.get_device_config(Duration::from_millis(100));
@@ -773,8 +778,9 @@ mod tests {
         let response_packet = FramedPacket::new(
             PacketHeader::Response,
             FIRMCommand::Cancel.to_u16(),
-            response_payload.to_vec(),
-        );
+            &response_payload,
+        )
+        .unwrap();
         device.inject_framed_packet(response_packet);
 
         let result = client.cancel(Duration::from_millis(100));

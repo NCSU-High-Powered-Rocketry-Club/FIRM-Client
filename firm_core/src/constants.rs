@@ -80,7 +80,6 @@ pub mod command {
 
 pub mod log_parsing {
     use crate::constants::packet::PacketHeader;
-    use std::time::Duration;
 
     pub const LOG_SENSOR_PACKET_HEADER: u16 = PacketHeader::LogSensor as u16;
     /// Log sensor packet type identifier stored in the second u16 header field.
@@ -148,5 +147,7 @@ pub mod log_parsing {
         + HEADER_CAL_SIZE
         + HEADER_NUM_SCALE_FACTOR_SIZE;
 
-    pub const HEADER_PARSE_DELAY: Duration = Duration::from_millis(100);
+    // Duration is only available with std, so make this constant conditional
+    #[cfg(feature = "default")]
+    pub const HEADER_PARSE_DELAY: core::time::Duration = core::time::Duration::from_millis(100);
 }

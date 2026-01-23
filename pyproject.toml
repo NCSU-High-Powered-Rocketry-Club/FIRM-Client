@@ -20,7 +20,9 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Rust",
 ]
-dependencies = []
+dependencies = [
+    "matplotlib>=3.10.8",
+]
 
 [project.urls]
 "Homepage" = "https://ncsurocketry.org"

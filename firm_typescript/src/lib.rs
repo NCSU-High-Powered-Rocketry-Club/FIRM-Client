@@ -57,6 +57,12 @@ pub struct FIRMDataParser {
     inner: SerialParser,
 }
 
+impl Default for FIRMDataParser {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[wasm_bindgen(js_class = FIRMDataParser)]
 impl FIRMDataParser {
     #[wasm_bindgen(constructor)]
@@ -91,6 +97,12 @@ impl FIRMDataParser {
 #[wasm_bindgen(js_name = MockLogParser)]
 pub struct MockLogParser {
     inner: LogParser,
+}
+
+impl Default for MockLogParser {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[wasm_bindgen(js_class = MockLogParser)]

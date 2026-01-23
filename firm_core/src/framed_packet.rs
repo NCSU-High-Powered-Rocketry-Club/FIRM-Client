@@ -32,6 +32,10 @@ pub trait Framed: Sized {
         self.frame().len()
     }
 
+    fn is_empty(&self) -> bool {
+        self.frame().is_empty()
+    }
+
     fn crc(&self) -> u16 {
         self.frame().crc()
     }
@@ -86,6 +90,10 @@ impl FramedPacket {
         self.payload.len() as u32
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.payload.is_empty()
+    }
+
     pub fn to_bytes(&self) -> Vec<u8> {
         let len = self.payload.len() as u32;
         let mut out = Vec::with_capacity(
@@ -107,8 +115,8 @@ impl FramedPacket {
         }
 
         let header_raw = u16::from_le_bytes(bytes[0..HEADER_SIZE].try_into().unwrap());
-        let header = PacketHeader::from_u16(header_raw)
-            .ok_or(FrameError::UnknownIdentifier(header_raw))?;
+        let header =
+            PacketHeader::from_u16(header_raw).ok_or(FrameError::UnknownIdentifier(header_raw))?;
         let identifier = u16::from_le_bytes(
             bytes[HEADER_SIZE..HEADER_SIZE + IDENTIFIER_SIZE]
                 .try_into()

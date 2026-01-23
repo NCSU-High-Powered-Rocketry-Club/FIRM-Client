@@ -1,13 +1,20 @@
 use crate::constants::command::*;
 use crate::framed_packet::{FrameError, Framed, FramedPacket};
 use crate::utils::bytes_to_str;
-use heapless::String;
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
 #[cfg(feature = "wasm")]
 use wasm_bindgen::prelude::*;
+
+// For Python bindings, we need std::string::String for PyO3 compatibility
+#[cfg(feature = "python")]
+type FirmString<const N: usize> = String;
+
+// For non-Python (no_std or wasm), use heapless::String
+#[cfg(not(feature = "python"))]
+type FirmString<const N: usize> = heapless::String<N>;
 
 /// Represents the communication protocol used by the FIRM device.
 #[repr(u8)]
@@ -25,7 +32,7 @@ pub enum DeviceProtocol {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "python", pyclass(get_all, set_all))]
 pub struct DeviceInfo {
-    pub firmware_version: String<FIRMWARE_VERSION_LENGTH>, // Max 8 characters
+    pub firmware_version: FirmString<FIRMWARE_VERSION_LENGTH>, // Max 8 characters
     #[cfg_attr(feature = "wasm", serde(serialize_with = "serialize_u64_as_string"))]
     // We need this because JS can't handle u64
     pub id: u64,
@@ -45,7 +52,7 @@ where
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "python", pyclass(get_all, set_all))]
 pub struct DeviceConfig {
-    pub name: String<DEVICE_NAME_LENGTH>, // Max 32 characters
+    pub name: FirmString<DEVICE_NAME_LENGTH>, // Max 32 characters
     pub frequency: u16,
     pub protocol: DeviceProtocol,
 }
@@ -105,7 +112,7 @@ pub enum FIRMResponse {
     SetDeviceConfig(bool),
     Mock(bool),
     Cancel(bool),
-    Error(String<64>),
+    Error(FirmString<64>),
 }
 
 /// Wire-level framed data packet.
@@ -291,8 +298,8 @@ impl FIRMResponse {
                     &data[DEVICE_ID_LENGTH..DEVICE_ID_LENGTH + FIRMWARE_VERSION_LENGTH];
                 let id = u64::from_le_bytes(id_bytes.try_into().unwrap());
                 let firmware_version_str = bytes_to_str(firmware_version_bytes);
-                let mut firmware_version = String::new();
-                firmware_version.push_str(firmware_version_str).ok();
+                let firmware_version =
+                    Self::make_string::<FIRMWARE_VERSION_LENGTH>(firmware_version_str);
 
                 let info = DeviceInfo {
                     id,
@@ -305,8 +312,7 @@ impl FIRMResponse {
                 let name_bytes: [u8; DEVICE_NAME_LENGTH] =
                     data[0..DEVICE_NAME_LENGTH].try_into().unwrap();
                 let name_str = bytes_to_str(&name_bytes);
-                let mut name = String::new();
-                name.push_str(name_str).ok();
+                let name = Self::make_string::<DEVICE_NAME_LENGTH>(name_str);
                 let frequency = u16::from_le_bytes(
                     data[DEVICE_NAME_LENGTH..DEVICE_NAME_LENGTH + FREQUENCY_LENGTH]
                         .try_into()
@@ -343,11 +349,23 @@ impl FIRMResponse {
             }
             // Reboot currently has no decoded response type.
             FIRMCommand::Reboot => {
-                let mut error_msg = String::new();
-                error_msg.push_str("No decoded response for Reboot").ok();
+                let error_msg = Self::make_string::<64>("No decoded response for Reboot");
                 FIRMResponse::Error(error_msg)
             }
         }
+    }
+
+    // Helper to create FirmString from &str, handling both Python (std::String) and no_std (heapless::String)
+    #[cfg(feature = "python")]
+    fn make_string<const N: usize>(s: &str) -> FirmString<N> {
+        s.to_string()
+    }
+
+    #[cfg(not(feature = "python"))]
+    fn make_string<const N: usize>(s: &str) -> FirmString<N> {
+        let mut result = heapless::String::new();
+        result.push_str(s).ok();
+        result
     }
 }
 
@@ -380,8 +398,7 @@ mod tests {
         identifier: u16,
         payload: &[u8],
     ) -> Result<FIRMResponsePacket, FrameError> {
-        let bytes =
-            FramedPacket::new(PacketHeader::Response, identifier, payload)?.to_bytes();
+        let bytes = FramedPacket::new(PacketHeader::Response, identifier, payload)?.to_bytes();
         FIRMResponsePacket::from_bytes(&bytes)
     }
 
@@ -413,10 +430,17 @@ mod tests {
             .copy_from_slice(&fw_bytes);
 
         let pkt = build_response_packet(FIRMCommand::GetDeviceInfo as u16, &payload).unwrap();
-        
-        let mut expected_fw = heapless::String::new();
-        let _ = expected_fw.push_str("v1.2.3");
-        
+
+        #[cfg(feature = "python")]
+        let expected_fw = "v1.2.3".to_string();
+
+        #[cfg(not(feature = "python"))]
+        let expected_fw = {
+            let mut s = heapless::String::new();
+            let _ = s.push_str("v1.2.3");
+            s
+        };
+
         assert_eq!(
             pkt.response(),
             &FIRMResponse::GetDeviceInfo(DeviceInfo {
@@ -441,10 +465,17 @@ mod tests {
         payload[DEVICE_NAME_LENGTH + FREQUENCY_LENGTH] = 0x03;
 
         let pkt = build_response_packet(FIRMCommand::GetDeviceConfig as u16, &payload).unwrap();
-        
-        let mut expected_name = heapless::String::new();
-        let _ = expected_name.push_str("MyDevice");
-        
+
+        #[cfg(feature = "python")]
+        let expected_name = "MyDevice".to_string();
+
+        #[cfg(not(feature = "python"))]
+        let expected_name = {
+            let mut s = heapless::String::new();
+            let _ = s.push_str("MyDevice");
+            s
+        };
+
         assert_eq!(
             pkt.response(),
             &FIRMResponse::GetDeviceConfig(DeviceConfig {

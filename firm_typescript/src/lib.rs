@@ -13,11 +13,17 @@ pub struct FIRMCommandBuilder;
 #[wasm_bindgen]
 impl FIRMCommandBuilder {
     pub fn build_get_device_info() -> Vec<u8> {
-        FIRMCommandPacket::build_get_device_info_command().to_bytes()
+        FIRMCommandPacket::build_get_device_info_command()
+            .expect("Failed to build command")
+            .to_bytes()
+            .to_vec()
     }
 
     pub fn build_get_device_config() -> Vec<u8> {
-        FIRMCommandPacket::build_get_device_config_command().to_bytes()
+        FIRMCommandPacket::build_get_device_config_command()
+            .expect("Failed to build command")
+            .to_bytes()
+            .to_vec()
     }
 
     pub fn build_set_device_config(
@@ -31,19 +37,31 @@ impl FIRMCommandBuilder {
             protocol,
         };
 
-        FIRMCommandPacket::build_set_device_config_command(config).to_bytes()
+        FIRMCommandPacket::build_set_device_config_command(config)
+            .expect("Failed to build command")
+            .to_bytes()
+            .to_vec()
     }
 
     pub fn build_cancel() -> Vec<u8> {
-        FIRMCommandPacket::build_cancel_command().to_bytes()
+        FIRMCommandPacket::build_cancel_command()
+            .expect("Failed to build command")
+            .to_bytes()
+            .to_vec()
     }
 
     pub fn build_reboot() -> Vec<u8> {
-        FIRMCommandPacket::build_reboot_command().to_bytes()
+        FIRMCommandPacket::build_reboot_command()
+            .expect("Failed to build command")
+            .to_bytes()
+            .to_vec()
     }
 
     pub fn build_mock() -> Vec<u8> {
-        FIRMCommandPacket::build_mock_command().to_bytes()
+        FIRMCommandPacket::build_mock_command()
+            .expect("Failed to build command")
+            .to_bytes()
+            .to_vec()
     }
 }
 
@@ -148,6 +166,9 @@ impl MockLogParser {
 
     #[wasm_bindgen]
     pub fn build_header_packet(&self, header: &[u8]) -> Vec<u8> {
-        FIRMLogPacket::new(FIRMLogPacketType::HeaderPacket, header.to_vec()).to_bytes()
+        FIRMLogPacket::new(FIRMLogPacketType::HeaderPacket, &header)
+            .expect("Failed to create header packet")
+            .to_bytes()
+            .to_vec()
     }
 }

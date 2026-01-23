@@ -5,7 +5,7 @@ use crate::constants::log_parsing::FIRMLogPacketType;
 use crate::constants::packet::PacketHeader;
 use crate::{
     firm_packets::*,
-    framed_packet::{Framed, FramedPacket, FrameError},
+    framed_packet::{FrameError, Framed, FramedPacket},
     utils::str_to_bytes,
 };
 
@@ -52,7 +52,9 @@ impl FIRMCommandPacket {
         let mut payload: Vec<u8, { DEVICE_NAME_LENGTH + FREQUENCY_LENGTH + 1 }> = Vec::new();
         let name_bytes = str_to_bytes::<DEVICE_NAME_LENGTH>(&config.name);
         payload.extend_from_slice(&name_bytes).ok();
-        payload.extend_from_slice(&config.frequency.to_le_bytes()).ok();
+        payload
+            .extend_from_slice(&config.frequency.to_le_bytes())
+            .ok();
         payload.push(config.protocol as u8).ok();
 
         Self::new(FIRMCommand::SetDeviceConfig, &payload)
@@ -142,7 +144,10 @@ mod tests {
         assert_eq!(crc_from_bytes(bytes), calculate_crc(bytes));
     }
 
-    fn assert_zero_payload_command(make: fn() -> Result<FIRMCommandPacket, crate::framed_packet::FrameError>, expected_identifier: u16) {
+    fn assert_zero_payload_command(
+        make: fn() -> Result<FIRMCommandPacket, crate::framed_packet::FrameError>,
+        expected_identifier: u16,
+    ) {
         let command_packet = make().unwrap().to_bytes();
         assert_common_packet_invariants(&command_packet);
         assert_eq!(
@@ -159,7 +164,10 @@ mod tests {
 
     #[test]
     fn test_firm_command_packet_to_bytes_zero_payload_commands() {
-        let cases: &[(u16, fn() -> Result<FIRMCommandPacket, crate::framed_packet::FrameError>)] = &[
+        let cases: &[(
+            u16,
+            fn() -> Result<FIRMCommandPacket, crate::framed_packet::FrameError>,
+        )] = &[
             (
                 FIRMCommand::GetDeviceInfo as u16,
                 FIRMCommandPacket::build_get_device_info_command,
@@ -189,17 +197,25 @@ mod tests {
 
     #[test]
     fn test_firm_command_packet_to_bytes_set_device_config() {
-        let mut config_name = heapless::String::new();
-        let _ = config_name.push_str("FIRM");
-        
+        #[cfg(feature = "python")]
+        let config_name = "FIRM".to_string();
+
+        #[cfg(not(feature = "python"))]
+        let config_name = {
+            let mut s = heapless::String::new();
+            let _ = s.push_str("FIRM");
+            s
+        };
+
         let config = DeviceConfig {
             name: config_name,
             frequency: 50,
             protocol: DeviceProtocol::UART,
         };
 
-        let command_packet =
-            FIRMCommandPacket::build_set_device_config_command(config.clone()).unwrap().to_bytes();
+        let command_packet = FIRMCommandPacket::build_set_device_config_command(config.clone())
+            .unwrap()
+            .to_bytes();
         assert_common_packet_invariants(&command_packet);
 
         assert_eq!(

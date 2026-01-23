@@ -147,7 +147,7 @@ impl LogParser {
             let mut payload = Vec::<u8, MAX_LOG_PACKET_PAYLOAD>::new();
             payload.extend_from_slice(timestamp).ok();
             payload.extend_from_slice(raw).ok();
-            
+
             if let Ok(pkt) = FIRMLogPacket::new(packet_type, &payload) {
                 let _ = self.parsed_packets.push_back((pkt, delay_seconds));
             }

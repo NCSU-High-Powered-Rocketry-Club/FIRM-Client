@@ -196,7 +196,8 @@ impl FIRMClient {
 #[pymethods]
 impl MockDeviceHandle {
     fn inject_response(&self, identifier: u16, payload: Vec<u8>) {
-        let packet = FramedPacket::new(PacketHeader::Response, identifier, payload);
+        let packet = FramedPacket::new(PacketHeader::Response, identifier, &payload)
+            .expect("Failed to create framed packet");
         self.inner.inject_framed_packet(packet);
     }
 

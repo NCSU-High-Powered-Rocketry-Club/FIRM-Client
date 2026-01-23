@@ -16,5 +16,5 @@ wasm-bindgen = { version = "0.2.106", optional = true }
 
 [features]
 default = []
-python = ["dep:pyo3"]
+python = ["dep:pyo3", "serde/alloc"]
 wasm = ["dep:wasm-bindgen"]

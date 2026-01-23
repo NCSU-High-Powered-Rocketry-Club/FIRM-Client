@@ -51,6 +51,9 @@ pub struct FIRMClient {
     port: Option<Box<dyn SerialPort>>,
 
     response_buffer: VecDeque<FIRMResponse>,
+
+    mock_stream_stop: Arc<AtomicBool>,
+    mock_stream_handle: Option<JoinHandle<anyhow::Result<usize>>>,
 }
 
 impl FIRMClient {
@@ -100,6 +103,9 @@ impl FIRMClient {
             mock_receiver: Some(mock_receiver),
             port: Some(port),
             response_buffer: VecDeque::new(),
+
+            mock_stream_stop: Arc::new(AtomicBool::new(false)),
+            mock_stream_handle: None,
         }
     }
 
@@ -154,12 +160,12 @@ impl FIRMClient {
                 // Then drain pending mock packets and write them to the port.
                 while let Ok(packet) = mock_receiver.try_recv() {
                     let packet_bytes = packet.to_bytes();
-                    let hex = packet_bytes
-                        .iter()
-                        .map(|b| format!("{:02X}", b))
-                        .collect::<Vec<_>>()
-                        .join(" ");
-                    println!("Mock packet bytes: {hex}");
+                    // let hex = packet_bytes
+                    //     .iter()
+                    //     .map(|b| format!("{:02X}", b))
+                    //     .collect::<Vec<_>>()
+                    //     .join(" ");
+                    // println!("Mock packet bytes: {hex}");
 
                     if let Err(e) = port.write_all(&packet_bytes) {
                         let _ = error_sender.send(e.to_string());
@@ -210,6 +216,10 @@ impl FIRMClient {
 
     /// Stops the background thread and closes the serial port.
     pub fn stop(&mut self) {
+        // Stop any async mock stream first so it doesn't keep writing while we shut down.
+        let _ = self.stop_mock_log_stream(false);
+        let _ = self.try_join_mock_log_stream();
+
         self.running.store(false, Ordering::Relaxed);
         // todo: explain this properly when I understand it better (it's mostly for restarting)
         if let Some(handle) = self.join_handle.take()
@@ -337,88 +347,127 @@ impl FIRMClient {
         speed: f64,
         chunk_size: usize,
     ) -> Result<usize> {
-        if speed <= 0.0 {
-            return Err(anyhow::anyhow!("speed must be > 0"));
+        self.start_mock_mode(start_timeout)?;
+
+        let stop_flag = AtomicBool::new(false);
+        let packets_sent = stream_mock_log_file_worker(
+            log_path,
+            realtime,
+            speed,
+            chunk_size,
+            &stop_flag,
+            &self.mock_sender,
+        )?;
+
+        // Keep prior behavior: when this blocking call finishes, send a cancel command and wait
+        // for acknowledgement.
+        self.cancel(Duration::from_secs(5))?;
+
+        Ok(packets_sent)
+    }
+
+    /// Starts streaming a `.TXT` mock log file on a background thread.
+    ///
+    /// While the mock stream is running you can continue to call `get_data_packets()` or other
+    /// APIs to read/log FIRM's output.
+    ///
+    /// Use `is_mock_log_streaming()` to check status and `try_join_mock_log_stream()` to
+    /// retrieve the sent packet count when finished.
+    pub fn start_mock_log_stream(
+        &mut self,
+        log_path: String,
+        start_timeout: Duration,
+        realtime: bool,
+        speed: f64,
+        chunk_size: usize,
+        cancel_on_finish: bool,
+    ) -> Result<()> {
+        // If a previous stream finished but wasn't joined, join it now to clear state.
+        let _ = self.try_join_mock_log_stream();
+
+        if self.is_mock_log_streaming() {
+            return Err(anyhow::anyhow!("Mock stream already running"));
         }
 
         self.start_mock_mode(start_timeout)?;
 
-        let mut file = File::open(log_path)?;
-        let mut header = vec![0u8; HEADER_TOTAL_SIZE];
-        file.read_exact(&mut header)?;
+        self.mock_stream_stop.store(false, Ordering::Relaxed);
+        let stop = self.mock_stream_stop.clone();
+        let mock_sender = self.mock_sender.clone();
+        let command_sender = self.command_sender.clone();
+        let error_sender = self.error_sender.clone();
 
-        // Send the log header to the device, framed as a mock packet
-        let header_packet = FIRMLogPacket::new(FIRMLogPacketType::HeaderPacket, header.clone());
-        self.send_mock_packet(header_packet)?;
+        let handle = thread::spawn(move || {
+            let result = stream_mock_log_file_worker(
+                &log_path,
+                realtime,
+                speed,
+                chunk_size,
+                &stop,
+                &mock_sender,
+            );
 
-        // After we send the header we pause for a short time to let the device process it
-        thread::sleep(HEADER_PARSE_DELAY);
-
-        let mut parser = LogParser::new();
-        parser.read_header(&header);
-
-        let mut buf = vec![0u8; chunk_size];
-        let mut packets_sent = 0usize;
-        let stream_start = Instant::now();
-        let mut total_delay_seconds = 0.0f64;
-
-        loop {
-            let n = file.read(&mut buf)?;
-            if n == 0 {
-                break;
+            if cancel_on_finish {
+                // Fire-and-forget: we can't wait for ack from this background thread.
+                let _ = command_sender.send(FIRMCommandPacket::build_cancel_command());
             }
 
-            parser.parse_bytes(&buf[..n]);
-            let mock_start = Instant::now();
-
-            while let Some((packet, delay_seconds)) = parser.get_packet_and_time_delay() {
-                total_delay_seconds += delay_seconds;
-
-                // Mock packets are raw framed data packets; send them as raw bytes.
-                self.send_mock_packet(packet)?;
-                packets_sent += 1;
-
-                if realtime && delay_seconds > 0.0 {
-                    let stream_elapsed = stream_start.elapsed().as_secs_f64();
-                    // Only sleep if we're not already behind
-                    if stream_elapsed <= total_delay_seconds / speed {
-                        thread::sleep(Duration::from_secs_f64(delay_seconds / speed));
-                    }
-                }
+            if let Err(ref e) = result {
+                let _ = error_sender.send(e.to_string());
             }
+            result
+        });
 
-            if parser.eof_reached() {
-                println!(
-                    "Finished streaming mock log file in {:.2?}, sent {} packets",
-                    mock_start.elapsed(),
-                    packets_sent
-                );
+        self.mock_stream_handle = Some(handle);
+        Ok(())
+    }
 
-                break;
-            }
+    /// Returns `true` if a background mock stream is currently running.
+    pub fn is_mock_log_streaming(&self) -> bool {
+        self.mock_stream_handle
+            .as_ref()
+            .is_some_and(|h| !h.is_finished())
+    }
+
+    /// Requests that the background mock stream stop.
+    ///
+    /// If `cancel_device` is true, a cancel command is sent (fire-and-forget).
+    pub fn stop_mock_log_stream(&mut self, cancel_device: bool) -> Result<()> {
+        self.mock_stream_stop.store(true, Ordering::Relaxed);
+
+        if cancel_device {
+            // Fire-and-forget.
+            let _ = self
+                .command_sender
+                .send(FIRMCommandPacket::build_cancel_command());
         }
 
-        // Drain any remaining packets buffered by the parser.
-        while let Some((packet, delay_seconds)) = parser.get_packet_and_time_delay() {
-            total_delay_seconds += delay_seconds;
+        Ok(())
+    }
 
-            self.send_mock_packet(packet)?;
-            packets_sent += 1;
-
-            if realtime && delay_seconds > 0.0 {
-                let stream_elapsed = stream_start.elapsed().as_secs_f64();
-                // Only sleep if we're not already behind
-                if stream_elapsed <= total_delay_seconds / speed {
-                    thread::sleep(Duration::from_secs_f64(delay_seconds / speed));
-                }
-            }
+    /// If the background mock stream has finished, joins it and returns the number of packets
+    /// it sent.
+    pub fn try_join_mock_log_stream(&mut self) -> Result<Option<usize>> {
+        let Some(handle) = self.mock_stream_handle.as_ref() else {
+            return Ok(None);
+        };
+        if !handle.is_finished() {
+            return Ok(None);
         }
 
-        // TODO: check this works
-        // Send a cancel command when it finishes
-        self.cancel(Duration::from_secs(5))?;
+        self.join_mock_log_stream()
+    }
 
-        Ok(packets_sent)
+    /// Joins the background mock stream, blocking until it finishes.
+    pub fn join_mock_log_stream(&mut self) -> Result<Option<usize>> {
+        let Some(handle) = self.mock_stream_handle.take() else {
+            return Ok(None);
+        };
+
+        let res = handle
+            .join()
+            .map_err(|_| anyhow::anyhow!("Mock stream thread panicked"))??;
+        Ok(Some(res))
     }
 
     /// Sends a cancel command and waits for acknowledgement.
@@ -476,14 +525,6 @@ impl FIRMClient {
         self.command_sender
             .send(command)
             .map_err(|_| io::Error::other("Command channel closed"))?;
-        Ok(())
-    }
-
-    /// Sends a mock packet to the device.
-    fn send_mock_packet(&self, packet: FIRMLogPacket) -> Result<()> {
-        self.mock_sender
-            .send(packet)
-            .map_err(|_| io::Error::other("Mock channel closed"))?;
         Ok(())
     }
 
@@ -562,6 +603,110 @@ impl FIRMClient {
             }
         }
     }
+}
+
+fn sleep_interruptible(total: Duration, stop: &AtomicBool) {
+    let step = Duration::from_millis(10);
+    let mut remaining = total;
+    while remaining > Duration::ZERO && !stop.load(Ordering::Relaxed) {
+        let s = remaining.min(step);
+        thread::sleep(s);
+        remaining = remaining.saturating_sub(s);
+    }
+}
+
+fn stream_mock_log_file_worker(
+    log_path: &str,
+    realtime: bool,
+    speed: f64,
+    chunk_size: usize,
+    stop: &AtomicBool,
+    mock_sender: &Sender<FIRMLogPacket>,
+) -> Result<usize> {
+    if speed <= 0.0 {
+        return Err(anyhow::anyhow!("speed must be > 0"));
+    }
+
+    let mut file = File::open(log_path)?;
+    let mut header = vec![0u8; HEADER_TOTAL_SIZE];
+    file.read_exact(&mut header)?;
+
+    // Send the log header to the device, framed as a mock packet.
+    let header_packet = FIRMLogPacket::new(FIRMLogPacketType::HeaderPacket, header.clone());
+    mock_sender
+        .send(header_packet)
+        .map_err(|_| io::Error::other("Mock channel closed"))?;
+
+    // After we send the header we pause for a short time to let the device process it.
+    sleep_interruptible(HEADER_PARSE_DELAY, stop);
+
+    let mut parser = LogParser::new();
+    parser.read_header(&header);
+
+    let mut buf = vec![0u8; chunk_size];
+    let mut packets_sent = 0usize;
+    let stream_start = Instant::now();
+    let mut total_delay_seconds = 0.0f64;
+
+    loop {
+        if stop.load(Ordering::Relaxed) {
+            break;
+        }
+
+        let n = file.read(&mut buf)?;
+        if n == 0 {
+            break;
+        }
+
+        parser.parse_bytes(&buf[..n]);
+
+        while let Some((packet, delay_seconds)) = parser.get_packet_and_time_delay() {
+            if stop.load(Ordering::Relaxed) {
+                break;
+            }
+
+            total_delay_seconds += delay_seconds;
+
+            mock_sender
+                .send(packet)
+                .map_err(|_| io::Error::other("Mock channel closed"))?;
+            packets_sent += 1;
+
+            if realtime && delay_seconds > 0.0 {
+                let stream_elapsed = stream_start.elapsed().as_secs_f64();
+                // Only sleep if we're not already behind.
+                if stream_elapsed <= total_delay_seconds / speed {
+                    sleep_interruptible(Duration::from_secs_f64(delay_seconds / speed), stop);
+                }
+            }
+        }
+
+        if parser.eof_reached() {
+            break;
+        }
+    }
+
+    // Drain any remaining packets buffered by the parser.
+    while !stop.load(Ordering::Relaxed) {
+        let Some((packet, delay_seconds)) = parser.get_packet_and_time_delay() else {
+            break;
+        };
+
+        total_delay_seconds += delay_seconds;
+        mock_sender
+            .send(packet)
+            .map_err(|_| io::Error::other("Mock channel closed"))?;
+        packets_sent += 1;
+
+        if realtime && delay_seconds > 0.0 {
+            let stream_elapsed = stream_start.elapsed().as_secs_f64();
+            if stream_elapsed <= total_delay_seconds / speed {
+                sleep_interruptible(Duration::from_secs_f64(delay_seconds / speed), stop);
+            }
+        }
+    }
+
+    Ok(packets_sent)
 }
 
 /// Ensures that the client is properly stopped when dropped, i.e. .stop() is called.

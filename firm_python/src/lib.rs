@@ -1,13 +1,19 @@
-use firm_core::firm_packets::{
-    DeviceConfig, DeviceInfo, DeviceProtocol, FIRMDataPacket, FIRMResponsePacket,
-};
+use firm_core::constants::packet::PacketHeader;
+use firm_core::firm_packets::{DeviceConfig, DeviceInfo, DeviceProtocol, FIRMData};
+use firm_core::framed_packet::FramedPacket;
 use firm_rust::FIRMClient as RustFirmClient;
+use firm_rust::mock_serial::MockDeviceHandle as RustMockDeviceHandle;
 use pyo3::prelude::*;
 
 #[pyclass(unsendable)]
 struct FIRMClient {
     inner: RustFirmClient,
     timeout: f64,
+}
+
+#[pyclass(unsendable)]
+struct MockDeviceHandle {
+    inner: RustMockDeviceHandle,
 }
 
 #[pymethods]
@@ -18,7 +24,7 @@ impl FIRMClient {
         let baudrate = baud_rate.unwrap_or(2_000_000);
         let timeout_val = timeout.unwrap_or(0.1);
         let client = RustFirmClient::new(port_name, baudrate, timeout_val)
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyIOError, _>(e.to_string()))?;
+            .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))?;
         Ok(FIRMClient {
             inner: client,
             timeout: timeout_val,
@@ -34,10 +40,50 @@ impl FIRMClient {
         self.inner.stop();
     }
 
-    #[pyo3(signature = (block=false))]
-    fn get_data_packets(&mut self, block: bool) -> PyResult<Vec<FIRMDataPacket>> {
+    #[staticmethod]
+    #[pyo3(signature = (timeout=0.1))]
+    fn new_mock(timeout: f64) -> PyResult<(Self, MockDeviceHandle)> {
+        let (client, device) = RustFirmClient::new_mock(timeout);
+        Ok((
+            FIRMClient {
+                inner: client,
+                timeout,
+            },
+            MockDeviceHandle { inner: device },
+        ))
+    }
+
+    #[pyo3(signature = (log_path, realtime=true, speed=1.0, chunk_size=8192, start_timeout_seconds=5.0))]
+    fn stream_mock_log_file(
+        &mut self,
+        log_path: &str,
+        realtime: bool,
+        speed: f64,
+        chunk_size: usize,
+        start_timeout_seconds: f64,
+    ) -> PyResult<usize> {
         if let Some(err) = self.inner.check_error() {
-            return Err(PyErr::new::<pyo3::exceptions::PyIOError, _>(err));
+            return Err(pyo3::exceptions::PyIOError::new_err(err));
+        }
+
+        let sent = self
+            .inner
+            .stream_mock_log_file(
+                log_path,
+                std::time::Duration::from_secs_f64(start_timeout_seconds),
+                realtime,
+                speed,
+                chunk_size,
+            )
+            .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))?;
+
+        Ok(sent)
+    }
+
+    #[pyo3(signature = (block=false))]
+    fn get_data_packets(&mut self, block: bool) -> PyResult<Vec<FIRMData>> {
+        if let Some(err) = self.inner.check_error() {
+            return Err(pyo3::exceptions::PyIOError::new_err(err));
         }
 
         let timeout = if block {
@@ -53,22 +99,10 @@ impl FIRMClient {
         Ok(packets)
     }
 
-    /// Sends raw command bytes to the device.
-    fn send_command_bytes(&mut self, command_bytes: Vec<u8>) -> PyResult<()> {
-        if let Some(err) = self.inner.check_error() {
-            return Err(PyErr::new::<pyo3::exceptions::PyIOError, _>(err));
-        }
-
-        self.inner
-            .send_command_bytes(command_bytes)
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyIOError, _>(e.to_string()))?;
-        Ok(())
-    }
-
     #[pyo3(signature = (timeout_seconds=5.0))]
     fn get_device_info(&mut self, timeout_seconds: f64) -> PyResult<Option<DeviceInfo>> {
         if let Some(err) = self.inner.check_error() {
-            return Err(PyErr::new::<pyo3::exceptions::PyIOError, _>(err));
+            return Err(pyo3::exceptions::PyIOError::new_err(err));
         }
 
         let info = self
@@ -81,7 +115,7 @@ impl FIRMClient {
     #[pyo3(signature = (timeout_seconds=5.0))]
     fn get_device_config(&mut self, timeout_seconds: f64) -> PyResult<Option<DeviceConfig>> {
         if let Some(err) = self.inner.check_error() {
-            return Err(PyErr::new::<pyo3::exceptions::PyIOError, _>(err));
+            return Err(pyo3::exceptions::PyIOError::new_err(err));
         }
 
         let cfg = self
@@ -100,7 +134,7 @@ impl FIRMClient {
         timeout_seconds: f64,
     ) -> PyResult<bool> {
         if let Some(err) = self.inner.check_error() {
-            return Err(PyErr::new::<pyo3::exceptions::PyIOError, _>(err));
+            return Err(pyo3::exceptions::PyIOError::new_err(err));
         }
 
         let res = self
@@ -119,7 +153,7 @@ impl FIRMClient {
     #[pyo3(signature = (timeout_seconds=5.0))]
     fn cancel(&mut self, timeout_seconds: f64) -> PyResult<bool> {
         if let Some(err) = self.inner.check_error() {
-            return Err(PyErr::new::<pyo3::exceptions::PyIOError, _>(err));
+            return Err(pyo3::exceptions::PyIOError::new_err(err));
         }
 
         let res = self
@@ -131,7 +165,7 @@ impl FIRMClient {
 
     fn reboot(&mut self) -> PyResult<()> {
         if let Some(err) = self.inner.check_error() {
-            return Err(PyErr::new::<pyo3::exceptions::PyIOError, _>(err));
+            return Err(pyo3::exceptions::PyIOError::new_err(err));
         }
 
         self.inner
@@ -159,10 +193,26 @@ impl FIRMClient {
     }
 }
 
+#[pymethods]
+impl MockDeviceHandle {
+    fn inject_response(&self, identifier: u16, payload: Vec<u8>) {
+        let packet = FramedPacket::new(PacketHeader::Response, identifier, payload);
+        self.inner.inject_framed_packet(packet);
+    }
+
+    #[pyo3(signature = (timeout_seconds))]
+    fn wait_for_command_identifier(&self, timeout_seconds: f64) -> PyResult<Option<u16>> {
+        self.inner
+            .wait_for_command_identifier(std::time::Duration::from_secs_f64(timeout_seconds))
+            .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))
+    }
+}
+
 #[pymodule(gil_used = false)]
 fn firm_client(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<FIRMClient>()?;
-    m.add_class::<FIRMDataPacket>()?;
+    m.add_class::<MockDeviceHandle>()?;
+    m.add_class::<FIRMData>()?;
     m.add_class::<DeviceProtocol>()?;
     m.add_class::<DeviceInfo>()?;
     m.add_class::<DeviceConfig>()?;

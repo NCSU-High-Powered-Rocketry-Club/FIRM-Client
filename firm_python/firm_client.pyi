@@ -4,22 +4,22 @@ from enum import IntEnum
 
 
 class DeviceProtocol(IntEnum):
+    """Enum of the supported device communication protocols."""
     USB: int
     UART: int
     I2C: int
     SPI: int
 
 class DeviceInfo:
+    """Represents information about the FIRM device."""
     firmware_version: str
     id: int
 
 class DeviceConfig:
+    """Represents the configuration of the FIRM device."""
     name: str
     frequency: int
     protocol: DeviceProtocol
-
-# TODO I dont like this
-FIRMResponse = dict[str, object]
 
 class FIRMDataPacket:
     """Represents a data packet received from the FIRM device."""
@@ -96,11 +96,11 @@ class FIRMClient:
     Args:
         port_name (str): The name of the serial port to connect to.
         baud_rate (int): The baud rate for the serial connection. This must match the baud rate set
-            on FIRM. Default is 112,500.
+            on FIRM. Default is 2,000,000.
         timeout (float): The timeout for serial read operations in seconds. Default is 0.1.
     """
     def __init__(
-        self, port_name: str, baud_rate: int = 112_500, timeout: float = 0.1
+        self, port_name: str, baud_rate: int = 2_000_000, timeout: float = 0.1
     ) -> None: ...
     def start(self) -> None: ...
     """Starts the client by starting a thread to read data from the FIRM device."""
@@ -119,12 +119,6 @@ class FIRMClient:
     def is_running(self) -> bool: ...
     """Return True if the client is currently running and reading data."""
 
-    def send_command_bytes(self, command_bytes: bytes) -> None: ...
-    """Sends raw command bytes to the device."""
-
-    def get_responses(self, block: bool = False) -> list[FIRMResponse]: ...
-    """Retrieves parsed command responses (as dicts)."""
-
     def get_device_info(self, timeout_seconds: float = 5.0) -> DeviceInfo | None: ...
     """Requests device info and waits up to timeout_seconds."""
 
@@ -141,6 +135,16 @@ class FIRMClient:
         timeout_seconds: float = 5.0,
     ) -> bool: ...
     """Sets device config and waits up to timeout_seconds for acknowledgement."""
+
+    def stream_mock_log_file(
+        self,
+        log_path: str,
+        realtime: bool = True,
+        speed: float = 1.0,
+        chunk_size: int = 1024,
+        start_timeout_seconds: float = 5.0,
+    ) -> int: ...
+    """Streams a mock log file to the FIRM device."""
 
     def cancel(self, timeout_seconds: float = 5.0) -> bool: ...
     """Sends cancel and waits up to timeout_seconds for acknowledgement."""

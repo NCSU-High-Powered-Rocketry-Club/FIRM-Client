@@ -1,0 +1,8 @@
+{
+    "python.analysis.extraPaths": [
+        "${workspaceFolder}/firm_python"
+    ],
+    "[rust]": {
+        "editor.formatOnSave": true
+    }
+}

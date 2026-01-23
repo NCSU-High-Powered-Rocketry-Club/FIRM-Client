@@ -87,6 +87,21 @@
         resize: vertical;
       }
 
+      #outgoingBytes {
+        width: 100%;
+        height: 140px;
+        background: #f9f9f9;
+        border: 2px solid var(--theme-color);
+        border-radius: 10px;
+        padding: 1rem;
+        font-family: monospace;
+        font-size: 0.8rem;
+        white-space: pre;
+        overflow-y: auto;
+        color: #333;
+        resize: vertical;
+      }
+
       .controls {
         display: none;
         flex-direction: column;
@@ -107,6 +122,10 @@
         padding: 0.7rem;
         border-radius: 5px;
         border: 1px solid #ccc;
+        flex-grow: 1;
+      }
+
+      input[type='file'] {
         flex-grow: 1;
       }
 
@@ -135,6 +154,10 @@
         <button id="cancelBtn">Cancel</button>
         <button id="rebootBtn">Reboot</button>
       </div>
+      <div class="control-row">
+        <input type="file" id="mockLogFile" />
+        <button id="mockStreamBtn">Stream Mock Log</button>
+      </div>
       <div
         id="configOutput"
         style="
@@ -156,6 +179,9 @@
     <h3>Incoming Serial Bytes:</h3>
     <textarea id="rawBytes" readonly>{ No raw bytes yet }</textarea>
 
+    <h3>Outgoing Serial Bytes:</h3>
+    <textarea id="outgoingBytes" readonly>{ No outgoing bytes yet }</textarea>
+
     <script type="module">
       // 2. USE THE MAPPED NAME HERE
       import { FIRM } from 'firm-client';
@@ -171,11 +197,15 @@
       const runMagCalBtn = document.getElementById('runMagCalBtn');
       const cancelBtn = document.getElementById('cancelBtn');
       const rebootBtn = document.getElementById('rebootBtn');
+      const mockLogFile = document.getElementById('mockLogFile');
+      const mockStreamBtn = document.getElementById('mockStreamBtn');
       const configOutput = document.getElementById('configOutput');
       const rawBytesEl = document.getElementById('rawBytes');
+      const outgoingBytesEl = document.getElementById('outgoingBytes');
 
       let firmInstance = null;
       let unsubscribeRawBytes = null;
+      let unsubscribeOutgoingBytes = null;
 
       function setStatus(msg) {
         status.textContent = msg;
@@ -282,6 +312,29 @@
         }
       });
 
+      mockStreamBtn.addEventListener('click', async () => {
+        if (!firmInstance) return;
+        const file = mockLogFile?.files?.[0];
+        if (!file) {
+          alert('Please select a log file first');
+          return;
+        }
+        setStatus('[UI] Streaming mock log...');
+        try {
+          const sent = await firmInstance.streamMockLogFile(file, {
+            realtime: true,
+            speed: 1.0,
+            chunkSize: 8192,
+          });
+          setStatus('[UI] Mock stream complete.');
+          configOutput.textContent = `Sent ${sent} mock packets.`;
+        } catch (err) {
+          console.error(err);
+          setStatus('[UI] Mock stream failed.');
+          configOutput.textContent = 'Error: ' + (err?.message ?? err);
+        }
+      });
+
       async function cleanupDisconnectedUI() {
         btn.disabled = true;
 
@@ -292,6 +345,11 @@
           unsubscribeRawBytes?.();
         } catch {}
         unsubscribeRawBytes = null;
+
+        try {
+          unsubscribeOutgoingBytes?.();
+        } catch {}
+        unsubscribeOutgoingBytes = null;
 
         try {
           await instanceToClose?.close?.();
@@ -309,7 +367,7 @@
         setStatus('[UI] Connecting...');
 
         try {
-          const firm = await FIRM.connect({ baudRate: 115200 });
+          const firm = await FIRM.connect({ baudRate: 2000000 });
           firmInstance = firm;
           setStatus('[UI] Connected. Streaming packets...');
           controls.style.display = 'flex';
@@ -317,6 +375,7 @@
           btn.disabled = true;
 
           let rawLog = '';
+          let outgoingLog = '';
           const MAX_CHARS = 20000;
           unsubscribeRawBytes = firm.onRawBytes((bytes) => {
             rawLog += bytesToHex(bytes) + '\n';
@@ -325,6 +384,15 @@
             }
             rawBytesEl.value = rawLog;
             rawBytesEl.scrollTop = rawBytesEl.scrollHeight;
+          });
+
+          unsubscribeOutgoingBytes = firm.onOutgoingBytes((bytes) => {
+            outgoingLog += bytesToHex(bytes) + '\n';
+            if (outgoingLog.length > MAX_CHARS) {
+              outgoingLog = outgoingLog.slice(outgoingLog.length - MAX_CHARS);
+            }
+            outgoingBytesEl.value = outgoingLog;
+            outgoingBytesEl.scrollTop = outgoingBytesEl.scrollHeight;
           });
 
           (async () => {

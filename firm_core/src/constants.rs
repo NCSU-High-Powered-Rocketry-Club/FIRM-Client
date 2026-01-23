@@ -1,37 +1,152 @@
-pub mod data_parser_constants {
-    /// Start byte sequence for packet identification. This is in little-endian format.
-    pub const DATA_PACKET_START_BYTES: [u8; 2] = [0x5A, 0xA5];
-    /// Start byte sequence for response identification. This is in little-endian format.
-    pub const RESPONSE_PACKET_START_BYTES: [u8; 2] = [0xA5, 0x5A];
-    /// Size of the packet header in bytes.
-    pub const HEADER_SIZE: usize = core::mem::size_of_val(&DATA_PACKET_START_BYTES);
-    /// Size of the length field in bytes.
-    pub const LENGTH_FIELD_SIZE: usize = 2;
-    /// Size of the padding before the payload in bytes.
-    pub const FIRST_PADDING_SIZE: usize = 4;
-    /// Length of the payload in bytes.
-    pub const PAYLOAD_LENGTH: usize = 120;
-    /// Size of the CRC field in bytes.
+pub mod packet {
+    /// Header is stored as two little-endian u16s on the wire.
+    pub const HEADER_SIZE: usize = 2;
+    pub const IDENTIFIER_SIZE: usize = 2;
+    pub const LENGTH_SIZE: usize = 4;
     pub const CRC_SIZE: usize = 2;
-    /// Size of the padding after the CRC in bytes.
-    pub const SECOND_PADDING_SIZE: usize = 6;
-    /// Total size of a full data packet in bytes.
-    pub const FULL_PACKET_SIZE: usize =
-        HEADER_SIZE + LENGTH_FIELD_SIZE + FIRST_PADDING_SIZE + PAYLOAD_LENGTH + CRC_SIZE + SECOND_PADDING_SIZE;
+
+    pub const MIN_PACKET_SIZE: usize = HEADER_SIZE + IDENTIFIER_SIZE + LENGTH_SIZE + CRC_SIZE;
+
+    /// First u16 in the framed header.
+    #[repr(u16)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum PacketHeader {
+        Data = 0xA55A,
+        Response = 0x5AA5,
+        LogSensor = 0x6BB6,
+        Command = 0xB66B,
+    }
+
+    impl PacketHeader {
+        pub const fn as_u16(self) -> u16 {
+            self as u16
+        }
+
+        pub const fn from_u16(v: u16) -> Option<Self> {
+            match v {
+                x if x == PacketHeader::Data as u16 => Some(PacketHeader::Data),
+                x if x == PacketHeader::Response as u16 => Some(PacketHeader::Response),
+                x if x == PacketHeader::LogSensor as u16 => Some(PacketHeader::LogSensor),
+                x if x == PacketHeader::Command as u16 => Some(PacketHeader::Command),
+                _ => None,
+            }
+        }
+    }
 }
 
-pub mod command_constants {
-    pub const DEVICE_INFO_MARKER: u8 = 0x01;
-    pub const DEVICE_CONFIG_MARKER: u8 = 0x02;
-    pub const SET_DEVICE_CONFIG_MARKER: u8 = 0x03;
-    pub const REBOOT_MARKER: u8 = 0x04;
-    pub const CANCEL_MARKER: u8 = 0xFF;
+pub mod command {
+    use crate::framed_packet::FrameError;
+
+    #[repr(u16)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum FIRMCommand {
+        GetDeviceInfo = 0x0001,
+        GetDeviceConfig = 0x0002,
+        SetDeviceConfig = 0x0003,
+        Reboot = 0x0004,
+        Mock = 0x0005,
+        Cancel = 0x00FF,
+    }
+
+    impl FIRMCommand {
+        pub const fn to_u16(self) -> u16 {
+            self as u16
+        }
+
+        pub const fn from_u16(identifier: u16) -> Result<Self, FrameError> {
+            match identifier {
+                id if id == FIRMCommand::GetDeviceInfo.to_u16() => Ok(FIRMCommand::GetDeviceInfo),
+                id if id == FIRMCommand::GetDeviceConfig.to_u16() => {
+                    Ok(FIRMCommand::GetDeviceConfig)
+                }
+                id if id == FIRMCommand::SetDeviceConfig.to_u16() => {
+                    Ok(FIRMCommand::SetDeviceConfig)
+                }
+                id if id == FIRMCommand::Reboot.to_u16() => Ok(FIRMCommand::Reboot),
+                id if id == FIRMCommand::Mock.to_u16() => Ok(FIRMCommand::Mock),
+                id if id == FIRMCommand::Cancel.to_u16() => Ok(FIRMCommand::Cancel),
+                _ => Err(FrameError::UnknownIdentifier(identifier)),
+            }
+        }
+    }
+
     pub const COMMAND_LENGTH: usize = 64;
     pub const CRC_LENGTH: usize = 2;
     pub const DEVICE_NAME_LENGTH: usize = 32;
     pub const DEVICE_ID_LENGTH: usize = 8;
     pub const FIRMWARE_VERSION_LENGTH: usize = 8;
     pub const FREQUENCY_LENGTH: usize = 2;
-    pub const COMMAND_START_BYTES: [u8; 2] = [0x55, 0xAA];
-    pub const PADDING_BYTE: u8 = 0x00;
+}
+
+pub mod log_parsing {
+    use crate::constants::packet::PacketHeader;
+    use std::time::Duration;
+
+    pub const LOG_SENSOR_PACKET_HEADER: u16 = PacketHeader::LogSensor as u16;
+    /// Log sensor packet type identifier stored in the second u16 header field.
+    #[repr(u16)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum FIRMLogPacketType {
+        HeaderPacket = HEADER_ID as u16,
+        BarometerPacket = BMP581_ID as u16,
+        IMUPacket = ICM45686_ID as u16,
+        MagnetometerPacket = MMC5983MA_ID as u16,
+    }
+
+    impl FIRMLogPacketType {
+        pub const fn as_u16(self) -> u16 {
+            self as u16
+        }
+
+        // TODO: make Result
+        pub const fn from_u16(v: u16) -> Option<Self> {
+            match v {
+                v if v == Self::HeaderPacket as u16 => Some(Self::HeaderPacket),
+                v if v == Self::BarometerPacket as u16 => Some(Self::BarometerPacket),
+                v if v == Self::IMUPacket as u16 => Some(Self::IMUPacket),
+                v if v == Self::MagnetometerPacket as u16 => Some(Self::MagnetometerPacket),
+                _ => None,
+            }
+        }
+
+        pub const fn as_char(self) -> char {
+            // SAFETY: All enum variants are valid ASCII values.
+            self as u8 as char
+        }
+    }
+
+    pub const HEADER_ID: u8 = b'H';
+    pub const BMP581_ID: u8 = b'B';
+    pub const ICM45686_ID: u8 = b'I';
+    pub const MMC5983MA_ID: u8 = b'M';
+
+    // The length of the payloads not including the 3 byte timestamp
+    pub const BMP581_SIZE: usize = 6;
+    pub const ICM45686_SIZE: usize = 15;
+    pub const MMC5983MA_SIZE: usize = 7;
+
+    pub const LOG_FILE_EOF_PADDING_LENGTH: usize = 20;
+    pub const LOG_PACKET_TIMESTAMP_SIZE: usize = 4;
+
+    pub const HEADER_SIZE_TEXT: usize = 14; // "FIRM LOG vx.x"
+    pub const HEADER_UID_SIZE: usize = 8;
+    pub const HEADER_DEVICE_NAME_LEN: usize = 32;
+    pub const HEADER_COMM_SIZE: usize = 4; // 1 byte usb, 1 byte uart, 1 byte spi, 1 byte i2c
+    pub const HEADER_FIRMWARE_VERSION_SIZE: usize = 8; // "vX.X.X.X"
+    pub const HEADER_FREQUENCY_SIZE: usize = 2;
+    pub const HEADER_PADDING_SIZE: usize = 2;
+    pub const HEADER_CAL_SIZE: usize = (3 + 9) * 3 * 4; // (offsets + 3x3 matrix) * 3 sensors * 4 bytes
+    pub const HEADER_NUM_SCALE_FACTOR_SIZE: usize = 5 * 4; // 5 floats
+
+    pub const HEADER_TOTAL_SIZE: usize = HEADER_SIZE_TEXT
+        + HEADER_UID_SIZE
+        + HEADER_DEVICE_NAME_LEN
+        + HEADER_COMM_SIZE
+        + HEADER_FIRMWARE_VERSION_SIZE
+        + HEADER_FREQUENCY_SIZE
+        + HEADER_PADDING_SIZE
+        + HEADER_CAL_SIZE
+        + HEADER_NUM_SCALE_FACTOR_SIZE;
+
+    pub const HEADER_PARSE_DELAY: Duration = Duration::from_millis(100);
 }

@@ -2,11 +2,12 @@ from firm_client import FIRMClient
 
 
 def main() -> None:
-    port_name = "/dev/ttyACM0"  # Update this to your actual port
+    port = "COM8"  # Update as needed (e.g., "COM8" or "/dev/ttyACM0")
     baud_rate = 2_000_000
+
     initial_dt = 0
 
-    with FIRMClient(port_name, baud_rate) as client:
+    with FIRMClient(port, baud_rate) as client:
         client.get_data_packets(block=True)  # Clear initial packets
         while client.is_running():
             packets = client.get_data_packets(block=True)
@@ -33,5 +34,4 @@ def main() -> None:
             initial_dt = packets[-1].timestamp_seconds
 
 
-if __name__ == "__main__":
-    main()
+main()

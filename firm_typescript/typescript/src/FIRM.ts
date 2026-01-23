@@ -1,13 +1,24 @@
-import init, { FIRMDataParser, FIRMCommandBuilder } from '../../pkg/firm_client.js';
+import init, {
+  FIRMDataParser,
+  FIRMCommandBuilder,
+  MockLogParser,
+  mock_header_size,
+} from '../../pkg/firm_client.js';
 import { FIRMPacket, FIRMResponse, DeviceInfo, DeviceConfig, DeviceProtocol } from './types.js';
 
 const RESPONSE_TIMEOUT_MS = 5000;
-const CALIBRATION_TIMEOUT_MS = 20000;
 
 /** Options for connecting to a FIRM device over Web Serial. */
 export interface FIRMConnectOptions {
-  /** Serial baud rate (default: 115200). */
+  /** Serial baud rate (default: 2000000). */
   baudRate?: number;
+}
+
+export interface MockStreamOptions {
+  realtime?: boolean;
+  speed?: number;
+  chunkSize?: number;
+  startTimeoutMs?: number;
 }
 
 /**
@@ -27,6 +38,9 @@ export class FIRMClient {
 
   /** Subscribers for raw incoming serial bytes. */
   private rawBytesListeners: ((bytes: Uint8Array) => void)[] = [];
+
+  /** Subscribers for raw outgoing serial bytes. */
+  private outgoingBytesListeners: ((bytes: Uint8Array) => void)[] = [];
 
   /** Reader for the Web Serial stream. */
   private reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
@@ -48,6 +62,23 @@ export class FIRMClient {
     this.dataParser = wasm;
   }
 
+  private async sleep(ms: number): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private async safeCall(obj: unknown, fn: string): Promise<void> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const target = obj as any;
+    if (!target || typeof target[fn] !== 'function') return;
+    try {
+      if (fn === 'close' || fn === 'cancel') {
+        await target[fn]();
+      } else {
+        target[fn]();
+      }
+    } catch {}
+  }
+
   /**
    * Connects to a serial device and starts the background read loop.
    *
@@ -58,7 +89,7 @@ export class FIRMClient {
     if (!('serial' in navigator)) throw new Error('Web Serial API not available');
     await init();
     const dataParser = new FIRMDataParser();
-    const baudRate = options.baudRate ?? 115200;
+    const baudRate = options.baudRate ?? 2000000;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const port = await (navigator as any).serial.requestPort();
     await port.open({ baudRate });
@@ -107,20 +138,14 @@ export class FIRMClient {
     } finally {
       this.running = false;
       this.flushWaitersWithNull();
-      for (const [obj, fn] of [
-        [this.reader, 'cancel'],
-        [this.reader, 'releaseLock'],
-        [this.writer, 'close'],
-        [this.writer, 'releaseLock'],
-        [this.port, 'close'],
-      ]) {
-        try {
-          obj &&
-            typeof obj[fn] === 'function' &&
-            (fn === 'close' || fn === 'cancel' ? await obj[fn]() : obj[fn]());
-        } catch {}
-      }
-      this.reader = this.writer = this.port = null;
+      await this.safeCall(this.reader, 'cancel');
+      await this.safeCall(this.reader, 'releaseLock');
+      await this.safeCall(this.writer, 'close');
+      await this.safeCall(this.writer, 'releaseLock');
+      await this.safeCall(this.port, 'close');
+      this.reader = null;
+      this.writer = null;
+      this.port = null;
     }
   }
 
@@ -130,6 +155,14 @@ export class FIRMClient {
    */
   async sendBytes(bytes: Uint8Array): Promise<void> {
     if (!this.writer) throw new Error('Writer not available');
+
+    this.outgoingBytesListeners.forEach((fn) => {
+      try {
+        fn(bytes);
+      } catch (e) {
+        console.warn('[FIRM] outgoing bytes listener error:', e);
+      }
+    });
     await this.writer.write(bytes);
   }
 
@@ -143,6 +176,20 @@ export class FIRMClient {
       const idx = this.rawBytesListeners.indexOf(listener);
       if (idx !== -1) {
         this.rawBytesListeners.splice(idx, 1);
+      }
+    };
+  }
+
+  /**
+   * @param listener Callback invoked with each outgoing write.
+   * @returns Unsubscribe function.
+   */
+  onOutgoingBytes(listener: (bytes: Uint8Array) => void): () => void {
+    this.outgoingBytesListeners.push(listener);
+    return () => {
+      const idx = this.outgoingBytesListeners.indexOf(listener);
+      if (idx !== -1) {
+        this.outgoingBytesListeners.splice(idx, 1);
       }
     };
   }
@@ -162,6 +209,68 @@ export class FIRMClient {
     } catch {
       return null;
     }
+  }
+
+  /**
+   * Streams a mock log file to the device (used for hardware mock mode).
+   */
+  async streamMockLogFile(file: File, options: MockStreamOptions = {}): Promise<number> {
+    if (!this.writer) throw new Error('Writer not available');
+
+    const realtime = options.realtime ?? true;
+    const speed = options.speed ?? 1.0;
+    const chunkSize = options.chunkSize ?? 8192;
+    const startTimeoutMs = options.startTimeoutMs ?? RESPONSE_TIMEOUT_MS;
+
+    if (speed <= 0) throw new Error('speed must be > 0');
+
+    await this.sendBytes(FIRMCommandBuilder.build_mock());
+    const ok = await this.waitForResponse(
+      (res) => ('Mock' in res ? res.Mock : undefined),
+      startTimeoutMs,
+    ).catch(() => null);
+
+    if (!ok) throw new Error('Mock mode not acknowledged');
+
+    const data = new Uint8Array(await file.arrayBuffer());
+    const headerSize = mock_header_size();
+    if (data.length < headerSize) throw new Error('Log file too small');
+
+    const header = data.slice(0, headerSize);
+    const body = data.slice(headerSize);
+
+    const parser = new MockLogParser();
+    parser.read_header(header);
+    await this.sendBytes(parser.build_header_packet(header));
+
+    let sent = 0;
+    for (let offset = 0; offset < body.length; offset += chunkSize) {
+      parser.parse_bytes(body.slice(offset, offset + chunkSize));
+      sent += await this.drainMockPackets(parser, realtime, speed);
+    }
+
+    sent += await this.drainMockPackets(parser, realtime, speed);
+    return sent;
+  }
+
+  private async drainMockPackets(
+    parser: MockLogParser,
+    realtime: boolean,
+    speed: number,
+  ): Promise<number> {
+    let count = 0;
+    while (true) {
+      const pkt = parser.get_packet_with_delay() as
+        | { bytes: Uint8Array; delaySeconds: number }
+        | null;
+      if (!pkt) break;
+      if (realtime && pkt.delaySeconds > 0) {
+        await this.sleep((pkt.delaySeconds * 1000) / speed);
+      }
+      await this.sendBytes(pkt.bytes);
+      count += 1;
+    }
+    return count;
   }
 
   /**
@@ -374,44 +483,11 @@ export class FIRMClient {
       this.closed = true;
 
       this.running = false;
-      if (this.reader) {
-        try {
-          await this.reader.cancel();
-        } catch {
-          // ignore
-        }
-        try {
-          this.reader.releaseLock();
-        } catch {
-          // ignore
-        }
-      }
-
-      if (this.writer) {
-        try {
-          await this.writer.close();
-        } catch {
-          // ignore
-        }
-        try {
-          this.writer.releaseLock();
-        } catch {
-          // ignore
-        }
-      }
-
-      if (this.port) {
-        try {
-          await this.port.close();
-        } catch {
-          // ignore
-        }
-
-        this.reader = null;
-        this.writer = null;
-        this.port = null;
-      }
-
+      await this.safeCall(this.reader, 'cancel');
+      await this.safeCall(this.reader, 'releaseLock');
+      await this.safeCall(this.writer, 'close');
+      await this.safeCall(this.writer, 'releaseLock');
+      await this.safeCall(this.port, 'close');
       this.reader = null;
       this.writer = null;
       this.port = null;

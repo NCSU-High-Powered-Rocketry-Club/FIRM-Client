@@ -1,17 +1,21 @@
 use anyhow::Result;
-use firm_core::commands::FIRMCommand;
+use firm_core::client_packets::{FIRMCommandPacket, FIRMLogPacket};
+use firm_core::constants::log_parsing::{FIRMLogPacketType, HEADER_PARSE_DELAY, HEADER_TOTAL_SIZE};
 use firm_core::data_parser::SerialParser;
-use firm_core::firm_packets::{
-    DeviceConfig, DeviceInfo, DeviceProtocol, FIRMDataPacket, FIRMResponsePacket,
-};
+use firm_core::firm_packets::{DeviceConfig, DeviceInfo, DeviceProtocol, FIRMData, FIRMResponse};
+use firm_core::framed_packet::Framed;
+use firm_core::log_parsing::LogParser;
 use serialport::SerialPort;
 use std::collections::VecDeque;
+use std::fs::File;
 use std::io::{self, Read, Write};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, channel};
 use std::thread::{self, JoinHandle};
-use std::time::Duration;
+use std::time::{Duration, Instant};
+
+pub mod mock_serial;
 
 /// Interface to the FIRM Client device.
 ///
@@ -32,19 +36,21 @@ use std::time::Duration;
 ///     }
 /// }
 pub struct FIRMClient {
-    packet_receiver: Receiver<FIRMDataPacket>,
-    response_receiver: Receiver<FIRMResponsePacket>,
+    packet_receiver: Receiver<FIRMData>,
+    response_receiver: Receiver<FIRMResponse>,
     error_receiver: Receiver<String>,
     running: Arc<AtomicBool>,
     join_handle: Option<JoinHandle<Box<dyn SerialPort>>>,
-    sender: Sender<FIRMDataPacket>,
-    response_sender: Sender<FIRMResponsePacket>,
+    sender: Sender<FIRMData>,
+    response_sender: Sender<FIRMResponse>,
     error_sender: Sender<String>,
-    command_sender: Sender<Vec<u8>>,
-    command_receiver: Option<Receiver<Vec<u8>>>,
+    command_sender: Sender<FIRMCommandPacket>,
+    command_receiver: Option<Receiver<FIRMCommandPacket>>,
+    mock_sender: Sender<FIRMLogPacket>,
+    mock_receiver: Option<Receiver<FIRMLogPacket>>,
     port: Option<Box<dyn SerialPort>>,
 
-    response_buffer: VecDeque<FIRMResponsePacket>,
+    response_buffer: VecDeque<FIRMResponse>,
 }
 
 impl FIRMClient {
@@ -56,24 +62,33 @@ impl FIRMClient {
     /// - `baud_rate` (`u32`) - The baud rate for the serial connection. Commonly 2,000,000 for FIRM devices.
     /// - `timeout` (`f64`) - Read timeout in seconds for the serial port.
     pub fn new(port_name: &str, baud_rate: u32, timeout: f64) -> Result<Self> {
-        let (sender, receiver) = channel();
-        let (response_sender, response_receiver) = channel();
-        let (error_sender, error_receiver) = channel();
-        let (command_sender, command_receiver) = channel();
-
+        // Sets up the serial port
         let port: Box<dyn SerialPort> = serialport::new(port_name, baud_rate)
-            .data_bits(serialport::DataBits::Eight)
-            .flow_control(serialport::FlowControl::None)
-            .parity(serialport::Parity::None)
-            .stop_bits(serialport::StopBits::One)
             .timeout(Duration::from_millis((timeout * 1000.0) as u64))
             .open()
             .map_err(io::Error::other)?;
 
-        Ok(Self {
+        Ok(Self::new_from_port(port))
+    }
+
+    /// Creates a mocked client with a paired mock serial port and device handle.
+    pub fn new_mock(timeout: f64) -> (Self, mock_serial::MockDeviceHandle) {
+        let (port, device) = mock_serial::MockSerialPort::pair(Duration::from_secs_f64(timeout));
+        let client = Self::new_from_port(port);
+        (client, device)
+    }
+
+    fn new_from_port(port: Box<dyn SerialPort>) -> Self {
+        let (sender, receiver) = channel();
+        let (response_sender, response_receiver) = channel();
+        let (error_sender, error_receiver) = channel();
+        let (command_sender, command_receiver) = channel();
+        let (mock_sender, mock_receiver) = channel();
+
+        Self {
             packet_receiver: receiver,
             response_receiver,
-            error_receiver: error_receiver,
+            error_receiver,
             running: Arc::new(AtomicBool::new(false)),
             join_handle: None,
             sender,
@@ -81,18 +96,21 @@ impl FIRMClient {
             error_sender,
             command_sender,
             command_receiver: Some(command_receiver),
+            mock_sender,
+            mock_receiver: Some(mock_receiver),
             port: Some(port),
             response_buffer: VecDeque::new(),
-        })
+        }
     }
 
     /// Starts the background thread to read from the serial port and parse packets.
     pub fn start(&mut self) {
+        // Return early if already running
         if self.join_handle.is_some() {
             return;
         }
 
-        // Get the port and command receiver: either the ones from new(), or none (restart)
+        // Gets the port or return if not available
         let mut port = match self.port.take() {
             Some(s) => s,
             None => return,
@@ -100,11 +118,12 @@ impl FIRMClient {
 
         let command_receiver = match self.command_receiver.take() {
             Some(r) => r,
-            None => {
-                let (new_sender, new_receiver) = channel();
-                self.command_sender = new_sender;
-                new_receiver
-            }
+            None => return,
+        };
+
+        let mock_receiver = match self.mock_receiver.take() {
+            Some(r) => r,
+            None => return,
         };
 
         self.running.store(true, Ordering::Relaxed);
@@ -117,40 +136,64 @@ impl FIRMClient {
 
         let handle: JoinHandle<Box<dyn SerialPort>> = thread::spawn(move || {
             let mut parser = SerialParser::new();
-            // Buffer for reading from serial port. 1024 bytes should be sufficient.
+            // Buffer for reading from serial port
             let mut buffer: [u8; 1024] = [0; 1024];
 
             while running_clone.load(Ordering::Relaxed) {
-                // Drain pending commands and write them to the port.
-                while let Ok(cmd_bytes) = command_receiver.try_recv() {
+                // Drain pending command packets first and write them to the port.
+                while let Ok(cmd) = command_receiver.try_recv() {
+                    let cmd_bytes = cmd.to_bytes();
                     if let Err(e) = port.write_all(&cmd_bytes) {
                         let _ = error_sender.send(e.to_string());
                         running_clone.store(false, Ordering::Relaxed);
                         return port;
                     }
-                    let _ = port.flush();
                 }
+                let _ = port.flush();
+
+                // Then drain pending mock packets and write them to the port.
+                while let Ok(packet) = mock_receiver.try_recv() {
+                    let packet_bytes = packet.to_bytes();
+                    let hex = packet_bytes
+                        .iter()
+                        .map(|b| format!("{:02X}", b))
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    println!("Mock packet bytes: {hex}");
+
+                    if let Err(e) = port.write_all(&packet_bytes) {
+                        let _ = error_sender.send(e.to_string());
+                        running_clone.store(false, Ordering::Relaxed);
+                        return port;
+                    }
+                }
+                let _ = port.flush();
 
                 // Read bytes from the serial port
                 match port.read(&mut buffer) {
-                    Ok(bytes_read) if bytes_read > 0 => {
+                    Ok(bytes_read @ 1..) => {
                         // Feed the read bytes into the parser
                         parser.parse_bytes(&buffer[..bytes_read]);
-                        while let Some(packet) = parser.get_data_packet() {
+
+                        // Reads all available data packets and send them to the main thread
+                        while let Some(firm_data_packet) = parser.get_data_packet() {
+                            let packet = firm_data_packet.data().clone();
                             if sender.send(packet).is_err() {
                                 return port; // Receiver dropped
                             }
                         }
 
-                        while let Some(response) = parser.get_response_packet() {
+                        // Reads all available response packets and send them to the main thread
+                        while let Some(firm_response_packet) = parser.get_response_packet() {
+                            let response = firm_response_packet.response().clone();
                             if response_sender.send(response).is_err() {
                                 return port; // Receiver dropped
                             }
                         }
                     }
-                    Ok(_) => {}
+                    Ok(0) => {}
                     // Timeouts might happen; just continue reading
-                    Err(ref e) if e.kind() == std::io::ErrorKind::TimedOut => {}
+                    Err(e) if e.kind() == std::io::ErrorKind::TimedOut => {}
                     // Other errors should be reported and stop the thread:
                     Err(e) => {
                         let _ = error_sender.send(e.to_string());
@@ -169,18 +212,24 @@ impl FIRMClient {
     pub fn stop(&mut self) {
         self.running.store(false, Ordering::Relaxed);
         // todo: explain this properly when I understand it better (it's mostly for restarting)
-        if let Some(handle) = self.join_handle.take() {
-            if let Ok(port) = handle.join() {
-                self.port = Some(port);
-            }
+        if let Some(handle) = self.join_handle.take()
+            && let Ok(port) = handle.join()
+        {
+            self.port = Some(port);
         }
 
-        // The command receiver is moved into the background thread on start(); recreate the
-        // channel after stopping so the client can be restarted.
+        // The receivers are moved into the background thread on start()
+        // This remakes them so the client can be restarted.
         if self.command_receiver.is_none() {
             let (new_sender, new_receiver) = channel();
             self.command_sender = new_sender;
             self.command_receiver = Some(new_receiver);
+        }
+
+        if self.mock_receiver.is_none() {
+            let (new_sender, new_receiver) = channel();
+            self.mock_sender = new_sender;
+            self.mock_receiver = Some(new_receiver);
         }
     }
 
@@ -192,7 +241,7 @@ impl FIRMClient {
     pub fn get_data_packets(
         &mut self,
         timeout: Option<Duration>,
-    ) -> Result<Vec<FIRMDataPacket>, RecvTimeoutError> {
+    ) -> Result<Vec<FIRMData>, RecvTimeoutError> {
         let mut packets = Vec::new();
 
         // If blocking, wait for at most one packet. The next loop will drain any others.
@@ -215,14 +264,14 @@ impl FIRMClient {
     pub fn get_response_packets(
         &mut self,
         timeout: Option<Duration>,
-    ) -> Result<Vec<FIRMResponsePacket>, RecvTimeoutError> {
-        let mut responses: Vec<FIRMResponsePacket> = self.response_buffer.drain(..).collect();
+    ) -> Result<Vec<FIRMResponse>, RecvTimeoutError> {
+        let mut responses: Vec<FIRMResponse> = self.response_buffer.drain(..).collect();
 
         // If blocking and we have nothing buffered, wait for one response.
-        if responses.is_empty() {
-            if let Some(duration) = timeout {
-                responses.push(self.response_receiver.recv_timeout(duration)?);
-            }
+        if responses.is_empty()
+            && let Some(duration) = timeout
+        {
+            responses.push(self.response_receiver.recv_timeout(duration)?);
         }
 
         while let Ok(res) = self.response_receiver.try_recv() {
@@ -232,30 +281,213 @@ impl FIRMClient {
         Ok(responses)
     }
 
-    /// Retrieves all available data packets without blocking.
-    pub fn get_all_packets(&mut self) -> Result<Vec<FIRMDataPacket>, RecvTimeoutError> {
-        self.get_data_packets(None)
+    /// Requests device info and waits for the response.
+    pub fn get_device_info(&mut self, timeout: Duration) -> Result<Option<DeviceInfo>> {
+        self.send_command(FIRMCommandPacket::build_get_device_info_command())?;
+        self.wait_for_matching_response(timeout, |res| match res {
+            FIRMResponse::GetDeviceInfo(info) => Some(info.clone()),
+            _ => None,
+        })
     }
 
-    /// Retrieves all available response packets without blocking.
-    pub fn get_all_responses(&mut self) -> Result<Vec<FIRMResponsePacket>, RecvTimeoutError> {
-        self.get_response_packets(None)
+    /// Requests device configuration and waits for the response.
+    pub fn get_device_config(&mut self, timeout: Duration) -> Result<Option<DeviceConfig>> {
+        self.send_command(FIRMCommandPacket::build_get_device_config_command())?;
+        self.wait_for_matching_response(timeout, |res| match res {
+            FIRMResponse::GetDeviceConfig(cfg) => Some(cfg.clone()),
+            _ => None,
+        })
+    }
+
+    /// Sets device configuration and waits for acknowledgement.
+    pub fn set_device_config(
+        &mut self,
+        name: String,
+        frequency: u16,
+        protocol: DeviceProtocol,
+        timeout: Duration,
+    ) -> Result<Option<bool>> {
+        let config = DeviceConfig {
+            name,
+            frequency,
+            protocol,
+        };
+        self.send_command(FIRMCommandPacket::build_set_device_config_command(config))?;
+        self.wait_for_matching_response(timeout, |res| match res {
+            FIRMResponse::SetDeviceConfig(ok) => Some(*ok),
+            _ => None,
+        })
+    }
+
+    /// Streams framed mock sensor packets from a `.TXT` log file.
+    ///
+    /// This will:
+    /// 1) Send the mock command and wait for ack
+    /// 2) Read the log header (`firm_core::mock::LOG_HEADER_SIZE` bytes)
+    /// 3) Parse the remaining file bytes as log records
+    /// 4) Send framed mock sensor packets (`FIRMLogPacket::to_bytes()`) to the device
+    ///
+    /// If `realtime` is true, the stream is paced based on the log timestamps. `speed` is a
+    /// multiplier (1.0 = real-time, 2.0 = 2x faster, 0.5 = half-speed).
+    pub fn stream_mock_log_file(
+        &mut self,
+        log_path: &str,
+        start_timeout: Duration,
+        realtime: bool,
+        speed: f64,
+        chunk_size: usize,
+    ) -> Result<usize> {
+        if speed <= 0.0 {
+            return Err(anyhow::anyhow!("speed must be > 0"));
+        }
+
+        self.start_mock_mode(start_timeout)?;
+
+        let mut file = File::open(log_path)?;
+        let mut header = vec![0u8; HEADER_TOTAL_SIZE];
+        file.read_exact(&mut header)?;
+
+        // Send the log header to the device, framed as a mock packet
+        let header_packet = FIRMLogPacket::new(FIRMLogPacketType::HeaderPacket, header.clone());
+        self.send_mock_packet(header_packet)?;
+
+        // After we send the header we pause for a short time to let the device process it
+        thread::sleep(HEADER_PARSE_DELAY);
+
+        let mut parser = LogParser::new();
+        parser.read_header(&header);
+
+        let mut buf = vec![0u8; chunk_size];
+        let mut packets_sent = 0usize;
+        let stream_start = Instant::now();
+        let mut total_delay_seconds = 0.0f64;
+
+        loop {
+            let n = file.read(&mut buf)?;
+            if n == 0 {
+                break;
+            }
+
+            parser.parse_bytes(&buf[..n]);
+            let mock_start = Instant::now();
+
+            while let Some((packet, delay_seconds)) = parser.get_packet_and_time_delay() {
+                total_delay_seconds += delay_seconds;
+
+                // Mock packets are raw framed data packets; send them as raw bytes.
+                self.send_mock_packet(packet)?;
+                packets_sent += 1;
+
+                if realtime && delay_seconds > 0.0 {
+                    let stream_elapsed = stream_start.elapsed().as_secs_f64();
+                    // Only sleep if we're not already behind
+                    if stream_elapsed <= total_delay_seconds / speed {
+                        thread::sleep(Duration::from_secs_f64(delay_seconds / speed));
+                    }
+                }
+            }
+
+            if parser.eof_reached() {
+                println!(
+                    "Finished streaming mock log file in {:.2?}, sent {} packets",
+                    mock_start.elapsed(),
+                    packets_sent
+                );
+
+                break;
+            }
+        }
+
+        // Drain any remaining packets buffered by the parser.
+        while let Some((packet, delay_seconds)) = parser.get_packet_and_time_delay() {
+            total_delay_seconds += delay_seconds;
+
+            self.send_mock_packet(packet)?;
+            packets_sent += 1;
+
+            if realtime && delay_seconds > 0.0 {
+                let stream_elapsed = stream_start.elapsed().as_secs_f64();
+                // Only sleep if we're not already behind
+                if stream_elapsed <= total_delay_seconds / speed {
+                    thread::sleep(Duration::from_secs_f64(delay_seconds / speed));
+                }
+            }
+        }
+
+        // TODO: check this works
+        // Send a cancel command when it finishes
+        self.cancel(Duration::from_secs(5))?;
+
+        Ok(packets_sent)
+    }
+
+    /// Sends a cancel command and waits for acknowledgement.
+    pub fn cancel(&mut self, timeout: Duration) -> Result<Option<bool>> {
+        self.send_command(FIRMCommandPacket::build_cancel_command())?;
+        self.wait_for_matching_response(timeout, |res| match res {
+            FIRMResponse::Cancel(ok) => Some(*ok),
+            _ => None,
+        })
+    }
+
+    /// Sends a reboot command.
+    pub fn reboot(&self) -> Result<()> {
+        self.send_command(FIRMCommandPacket::build_reboot_command())
+    }
+
+    /// Checks for any errors that have occurred in the background thread.
+    ///
+    /// # Returns
+    ///
+    /// - `Option<String>` - `Some(error_message)` if an error has occurred, otherwise `None`.
+    pub fn check_error(&self) -> Option<String> {
+        self.error_receiver.try_recv().ok()
+    }
+
+    /// Returns true if the client is currently running and reading data.
+    pub fn is_running(&self) -> bool {
+        self.running.load(Ordering::Relaxed)
+    }
+
+    /// Sends a mock command, waits for acknowledgement, then starts sending mock data packets.
+    fn mock(&mut self, timeout: Duration) -> Result<Option<bool>> {
+        self.send_command(FIRMCommandPacket::build_mock_command())?;
+        self.wait_for_matching_response(timeout, |res| match res {
+            FIRMResponse::Mock(ok) => Some(*ok),
+            _ => None,
+        })
+    }
+
+    /// Starts mock mode and requires an acknowledgement.
+    ///
+    /// Returns `Ok(())` only if the device explicitly acknowledges mock mode.
+    fn start_mock_mode(&mut self, timeout: Duration) -> Result<()> {
+        match self.mock(timeout)? {
+            Some(true) => Ok(()),
+            Some(false) => Err(anyhow::anyhow!("Device rejected mock mode")),
+            None => Err(anyhow::anyhow!(
+                "Timed out waiting for mock acknowledgement"
+            )),
+        }
     }
 
     /// Sends a high-level command to the device.
-    pub fn send_command(&self, command: FIRMCommand) -> Result<()> {
-        self.send_command_bytes(command.to_bytes())
-    }
-
-    /// Sends raw command bytes to the device.
-    pub fn send_command_bytes(&self, bytes: Vec<u8>) -> Result<()> {
+    fn send_command(&self, command: FIRMCommandPacket) -> Result<()> {
         self.command_sender
-            .send(bytes)
+            .send(command)
             .map_err(|_| io::Error::other("Command channel closed"))?;
         Ok(())
     }
 
-    fn wait_for_response(&mut self, timeout: Duration) -> Result<Option<FIRMResponsePacket>> {
+    /// Sends a mock packet to the device.
+    fn send_mock_packet(&self, packet: FIRMLogPacket) -> Result<()> {
+        self.mock_sender
+            .send(packet)
+            .map_err(|_| io::Error::other("Mock channel closed"))?;
+        Ok(())
+    }
+
+    fn wait_for_response(&mut self, timeout: Duration) -> Result<Option<FIRMResponse>> {
         // Prefer already-buffered responses.
         if let Some(res) = self.response_buffer.pop_front() {
             return Ok(Some(res));
@@ -277,23 +509,30 @@ impl FIRMClient {
     fn wait_for_matching_response<T>(
         &mut self,
         timeout: Duration,
-        mut matcher: impl FnMut(&FIRMResponsePacket) -> Option<T>,
+        mut matcher: impl FnMut(&FIRMResponse) -> Option<T>,
     ) -> Result<Option<T>> {
         // Pull any immediately-available responses into our buffer so we can search them first.
         while let Ok(res) = self.response_receiver.try_recv() {
             self.response_buffer.push_back(res);
         }
 
-        // First, search the buffer for a match without blocking.
-        if let Some((idx, value)) = self
-            .response_buffer
-            .iter()
-            .enumerate()
-            .find_map(|(i, res)| matcher(res).map(|v| (i, v)))
-        {
-            // Remove the matched response from the buffer and return it.
-            self.response_buffer.remove(idx);
-            return Ok(Some(value));
+        let mut try_get_response = |response_buffer: &mut VecDeque<FIRMResponse>| {
+            // First, search the buffer for a match without blocking.
+            if let Some((idx, value)) = response_buffer
+                .iter()
+                .enumerate()
+                .find_map(|(idx, res)| matcher(res).map(|value| (idx, value)))
+            {
+                // Remove the matched response from the buffer and return it.
+                response_buffer.remove(idx);
+                Some(value)
+            } else {
+                None
+            }
+        };
+
+        if let Some(result) = try_get_response(&mut self.response_buffer) {
+            return Ok(Some(result));
         }
 
         // Makes a deadline to enforce the overall timeout
@@ -318,84 +557,11 @@ impl FIRMClient {
             self.response_buffer.push_back(next);
 
             // Re-scan the buffer for a match now that we have new data.
-            if let Some((idx, value)) = self
-                .response_buffer
-                .iter()
-                .enumerate()
-                .find_map(|(i, res)| matcher(res).map(|v| (i, v)))
-            {
-                self.response_buffer.remove(idx);
-                return Ok(Some(value));
+            if let Some(result) = try_get_response(&mut self.response_buffer) {
+                return Ok(Some(result));
             }
         }
     }
-
-    /// Requests device info and waits for the response.
-    pub fn get_device_info(&mut self, timeout: Duration) -> Result<Option<DeviceInfo>> {
-        self.send_command(FIRMCommand::GetDeviceInfo)?;
-        self.wait_for_matching_response(timeout, |res| match res {
-            FIRMResponsePacket::GetDeviceInfo(info) => Some(info.clone()),
-            _ => None,
-        })
-    }
-
-    /// Requests device configuration and waits for the response.
-    pub fn get_device_config(&mut self, timeout: Duration) -> Result<Option<DeviceConfig>> {
-        self.send_command(FIRMCommand::GetDeviceConfig)?;
-        self.wait_for_matching_response(timeout, |res| match res {
-            FIRMResponsePacket::GetDeviceConfig(cfg) => Some(cfg.clone()),
-            _ => None,
-        })
-    }
-
-    /// Sets device configuration and waits for acknowledgement.
-    pub fn set_device_config(
-        &mut self,
-        name: String,
-        frequency: u16,
-        protocol: DeviceProtocol,
-        timeout: Duration,
-    ) -> Result<Option<bool>> {
-        let config = DeviceConfig {
-            name,
-            frequency,
-            protocol,
-        };
-        self.send_command(FIRMCommand::SetDeviceConfig(config))?;
-        self.wait_for_matching_response(timeout, |res| match res {
-            FIRMResponsePacket::SetDeviceConfig(ok) => Some(*ok),
-            _ => None,
-        })
-    }
-
-    /// Sends a cancel command and waits for acknowledgement.
-    pub fn cancel(&mut self, timeout: Duration) -> Result<Option<bool>> {
-        self.send_command(FIRMCommand::Cancel)?;
-        self.wait_for_matching_response(timeout, |res| match res {
-            FIRMResponsePacket::Cancel(ok) => Some(*ok),
-            _ => None,
-        })
-    }
-
-    /// Sends a reboot command.
-    pub fn reboot(&self) -> Result<()> {
-        self.send_command(FIRMCommand::Reboot)
-    }
-
-    /// Checks for any errors that have occurred in the background thread.
-    ///
-    /// # Returns
-    ///
-    /// - `Option<String>` - `Some(error_message)` if an error has occurred, otherwise `None`.
-    pub fn check_error(&self) -> Option<String> {
-        self.error_receiver.try_recv().ok()
-    }
-
-    /// Returns true if the client is currently running and reading data.
-    pub fn is_running(&self) -> bool {
-        self.running.load(Ordering::Relaxed)
-    }
-
 }
 
 /// Ensures that the client is properly stopped when dropped, i.e. .stop() is called.
@@ -407,12 +573,212 @@ impl Drop for FIRMClient {
 
 #[cfg(test)]
 mod tests {
+    use firm_core::{
+        constants::{
+            command::{
+                DEVICE_ID_LENGTH, DEVICE_NAME_LENGTH, FIRMCommand, FIRMWARE_VERSION_LENGTH,
+                FREQUENCY_LENGTH,
+            },
+            packet::PacketHeader,
+        },
+        firm_packets::FIRMResponsePacket,
+        framed_packet::FramedPacket,
+    };
+
     use super::*;
+
+    fn str_to_bytes<const N: usize>(string: &str) -> [u8; N] {
+        let mut out = [0u8; N];
+        let bytes = string.as_bytes();
+        let n = bytes.len().min(N);
+        out[..n].copy_from_slice(&bytes[..n]);
+        out
+    }
 
     #[test]
     fn test_new_failure() {
         // Test that creating a client with an invalid port fails immediately
-        let result = FIRMClient::new("invalid_port_name", 115200, 0.1);
+        let result = FIRMClient::new("invalid_port_name", 2_000_000, 0.1);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_start_stop() {
+        let (mut client, _device) = FIRMClient::new_mock(0.01);
+
+        assert!(!client.is_running());
+        client.start();
+        assert!(client.is_running());
+        client.stop();
+        assert!(!client.is_running());
+    }
+
+    #[test]
+    fn test_get_data_packet_over_mock_serial() {
+        let (mut client, device) = FIRMClient::new_mock(0.01);
+        client.start();
+
+        let timestamp_seconds = 1.5f64;
+
+        let mut payload = vec![0u8; 120];
+        payload[0..8].copy_from_slice(&timestamp_seconds.to_le_bytes());
+        payload[8..12].copy_from_slice(&25.0f32.to_le_bytes());
+
+        let mocked_packet = FramedPacket::new(PacketHeader::Data, 0, payload);
+        device.inject_framed_packet(mocked_packet);
+
+        // Need to give some time for the background thread to read the data
+        let packets = client
+            .get_data_packets(Some(Duration::from_millis(100)))
+            .unwrap();
+        assert!(!packets.is_empty());
+        assert!((packets[0].timestamp_seconds - timestamp_seconds).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_get_response_packet_over_mock_serial() {
+        let (mut client, device) = FIRMClient::new_mock(0.01);
+        client.start();
+
+        let payload = [1u8];
+
+        let bytes = FramedPacket::new(
+            PacketHeader::Response,
+            FIRMCommand::SetDeviceConfig.to_u16(),
+            payload.to_vec(),
+        )
+        .to_bytes();
+        let response_packet = FIRMResponsePacket::from_bytes(&bytes).unwrap();
+
+        device.inject_framed_packet(response_packet.frame().clone());
+
+        let packet = client
+            .get_response_packets(Some(Duration::from_millis(100)))
+            .unwrap();
+
+        // Make sure we didn't get any other type of packets
+        assert!(matches!(
+            client.get_data_packets(Some(Duration::from_millis(10))),
+            Err(RecvTimeoutError::Timeout)
+        ));
+
+        // Make sure we got the expected response
+        assert_eq!(packet.len(), payload.len());
+        assert_eq!(packet[0], FIRMResponse::SetDeviceConfig(true));
+
+        // Make sure we didn't get any extra response packets
+        assert!(matches!(
+            client.get_response_packets(Some(Duration::from_millis(10))),
+            Err(RecvTimeoutError::Timeout)
+        ));
+    }
+
+    #[test]
+    fn test_set_device_config_command() {
+        let (mut client, device) = FIRMClient::new_mock(0.01);
+        client.start();
+
+        // Prepare the response packet to be injected
+        let response_payload = [1u8]; // Acknowledgement byte
+        let response_packet = FramedPacket::new(
+            PacketHeader::Response,
+            FIRMCommand::SetDeviceConfig.to_u16(),
+            response_payload.to_vec(),
+        );
+        device.inject_framed_packet(response_packet);
+
+        // Send the set device config command
+        let result = client.set_device_config(
+            "TestDevice".to_string(),
+            100,
+            DeviceProtocol::UART,
+            Duration::from_millis(100),
+        );
+
+        // Verify the result
+        assert_eq!(result.unwrap(), Some(true));
+    }
+
+    #[test]
+    fn test_get_device_info_command() {
+        let (mut client, device) = FIRMClient::new_mock(0.01);
+        client.start();
+
+        let id = 0x1122334455667788u64;
+        let mut payload = vec![0u8; DEVICE_ID_LENGTH + FIRMWARE_VERSION_LENGTH];
+        payload[0..DEVICE_ID_LENGTH].copy_from_slice(&id.to_le_bytes());
+        let fw_bytes = str_to_bytes::<FIRMWARE_VERSION_LENGTH>("v1.2.3");
+        payload[DEVICE_ID_LENGTH..DEVICE_ID_LENGTH + FIRMWARE_VERSION_LENGTH]
+            .copy_from_slice(&fw_bytes);
+
+        let response_packet = FramedPacket::new(
+            PacketHeader::Response,
+            FIRMCommand::GetDeviceInfo.to_u16(),
+            payload,
+        );
+        device.inject_framed_packet(response_packet);
+
+        let result = client.get_device_info(Duration::from_millis(100));
+
+        assert_eq!(
+            result.unwrap(),
+            Some(DeviceInfo {
+                firmware_version: "v1.2.3".to_string(),
+                id,
+            })
+        );
+    }
+
+    #[test]
+    fn test_get_device_config_command() {
+        let (mut client, device) = FIRMClient::new_mock(0.01);
+        client.start();
+
+        let name = "TestDevice";
+        let frequency: u16 = 100;
+        let protocol = DeviceProtocol::UART;
+
+        let mut payload = vec![0u8; DEVICE_NAME_LENGTH + FREQUENCY_LENGTH + 1];
+        let name_bytes = str_to_bytes::<DEVICE_NAME_LENGTH>(name);
+        payload[0..DEVICE_NAME_LENGTH].copy_from_slice(&name_bytes);
+        payload[DEVICE_NAME_LENGTH..DEVICE_NAME_LENGTH + FREQUENCY_LENGTH]
+            .copy_from_slice(&frequency.to_le_bytes());
+        payload[DEVICE_NAME_LENGTH + FREQUENCY_LENGTH] = 2;
+
+        let response_packet = FramedPacket::new(
+            PacketHeader::Response,
+            FIRMCommand::GetDeviceConfig.to_u16(),
+            payload,
+        );
+        device.inject_framed_packet(response_packet);
+
+        let result = client.get_device_config(Duration::from_millis(100));
+
+        assert_eq!(
+            result.unwrap(),
+            Some(DeviceConfig {
+                name: name.to_string(),
+                frequency,
+                protocol,
+            })
+        );
+    }
+
+    #[test]
+    fn test_cancel_command() {
+        let (mut client, device) = FIRMClient::new_mock(0.01);
+        client.start();
+
+        let response_payload = [1u8];
+        let response_packet = FramedPacket::new(
+            PacketHeader::Response,
+            FIRMCommand::Cancel.to_u16(),
+            response_payload.to_vec(),
+        );
+        device.inject_framed_packet(response_packet);
+
+        let result = client.cancel(Duration::from_millis(100));
+
+        assert_eq!(result.unwrap(), Some(true));
     }
 }

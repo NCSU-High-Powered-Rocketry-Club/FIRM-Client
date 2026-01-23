@@ -1,22 +1,22 @@
 use firm_rust::FIRMClient;
-use std::{process::exit, thread, time::Duration};
+use std::{process::ExitCode, thread, time::Duration};
 
-fn main() {
+fn main() -> ExitCode {
     let ports = serialport::available_ports().expect("No ports found!");
 
     if ports.is_empty() {
         eprintln!("No serial ports detected");
-        exit(1);
+        return ExitCode::FAILURE;
     }
 
     let port_name = &ports[0].port_name;
     println!("Connecting to {}", port_name);
 
-    let mut client = match FIRMClient::new(port_name, 115_200, 0.1) {
+    let mut client = match FIRMClient::new(port_name, 2_000_000, 0.1) {
         Ok(c) => c,
         Err(e) => {
             eprintln!("Failed to create client: {}", e);
-            exit(1);
+            return ExitCode::FAILURE;
         }
     };
 
@@ -29,7 +29,7 @@ fn main() {
 
         if let Some(err) = client.check_error() {
             eprintln!("Error: {}", err);
-            break;
+            return ExitCode::FAILURE;
         }
 
         thread::sleep(Duration::from_millis(10));

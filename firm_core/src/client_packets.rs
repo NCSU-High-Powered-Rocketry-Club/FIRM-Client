@@ -197,10 +197,10 @@ mod tests {
 
     #[test]
     fn test_firm_command_packet_to_bytes_set_device_config() {
-        #[cfg(feature = "python")]
+        #[cfg(any(feature = "python", feature = "wasm"))]
         let config_name = "FIRM".to_string();
 
-        #[cfg(not(feature = "python"))]
+        #[cfg(not(any(feature = "python", feature = "wasm")))]
         let config_name = {
             let mut s = heapless::String::new();
             let _ = s.push_str("FIRM");

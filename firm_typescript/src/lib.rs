@@ -166,7 +166,7 @@ impl MockLogParser {
 
     #[wasm_bindgen]
     pub fn build_header_packet(&self, header: &[u8]) -> Vec<u8> {
-        FIRMLogPacket::new(FIRMLogPacketType::HeaderPacket, &header)
+        FIRMLogPacket::new(FIRMLogPacketType::HeaderPacket, header)
             .expect("Failed to create header packet")
             .to_bytes()
             .to_vec()

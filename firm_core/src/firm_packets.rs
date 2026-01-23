@@ -8,12 +8,12 @@ use pyo3::prelude::*;
 #[cfg(feature = "wasm")]
 use wasm_bindgen::prelude::*;
 
-// For Python bindings, we need std::string::String for PyO3 compatibility
-#[cfg(feature = "python")]
+// For Python and WASM bindings, we need std::string::String for interop compatibility
+#[cfg(any(feature = "python", feature = "wasm"))]
 type FirmString<const N: usize> = String;
 
-// For non-Python (no_std or wasm), use heapless::String
-#[cfg(not(feature = "python"))]
+// For pure no_std, use heapless::String
+#[cfg(not(any(feature = "python", feature = "wasm")))]
 type FirmString<const N: usize> = heapless::String<N>;
 
 /// Represents the communication protocol used by the FIRM device.
@@ -355,13 +355,13 @@ impl FIRMResponse {
         }
     }
 
-    // Helper to create FirmString from &str, handling both Python (std::String) and no_std (heapless::String)
-    #[cfg(feature = "python")]
+    // Helper to create FirmString from &str, handling both Python/WASM (std::String) and no_std (heapless::String)
+    #[cfg(any(feature = "python", feature = "wasm"))]
     fn make_string<const N: usize>(s: &str) -> FirmString<N> {
         s.to_string()
     }
 
-    #[cfg(not(feature = "python"))]
+    #[cfg(not(any(feature = "python", feature = "wasm")))]
     fn make_string<const N: usize>(s: &str) -> FirmString<N> {
         let mut result = heapless::String::new();
         result.push_str(s).ok();
@@ -431,10 +431,10 @@ mod tests {
 
         let pkt = build_response_packet(FIRMCommand::GetDeviceInfo as u16, &payload).unwrap();
 
-        #[cfg(feature = "python")]
+        #[cfg(any(feature = "python", feature = "wasm"))]
         let expected_fw = "v1.2.3".to_string();
 
-        #[cfg(not(feature = "python"))]
+        #[cfg(not(any(feature = "python", feature = "wasm")))]
         let expected_fw = {
             let mut s = heapless::String::new();
             let _ = s.push_str("v1.2.3");
@@ -466,10 +466,10 @@ mod tests {
 
         let pkt = build_response_packet(FIRMCommand::GetDeviceConfig as u16, &payload).unwrap();
 
-        #[cfg(feature = "python")]
+        #[cfg(any(feature = "python", feature = "wasm"))]
         let expected_name = "MyDevice".to_string();
 
-        #[cfg(not(feature = "python"))]
+        #[cfg(not(any(feature = "python", feature = "wasm")))]
         let expected_name = {
             let mut s = heapless::String::new();
             let _ = s.push_str("MyDevice");

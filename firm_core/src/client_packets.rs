@@ -1,11 +1,11 @@
-use alloc::vec::Vec;
+use heapless::Vec;
 
 use crate::constants::command::{DEVICE_NAME_LENGTH, FIRMCommand, FREQUENCY_LENGTH};
 use crate::constants::log_parsing::FIRMLogPacketType;
 use crate::constants::packet::PacketHeader;
 use crate::{
     firm_packets::*,
-    framed_packet::{Framed, FramedPacket},
+    framed_packet::{Framed, FramedPacket, FrameError},
     utils::str_to_bytes,
 };
 
@@ -15,48 +15,47 @@ pub struct FIRMCommandPacket {
 }
 
 impl FIRMCommandPacket {
-    pub fn new(command_type: FIRMCommand, payload: Vec<u8>) -> Self {
+    pub fn new(command_type: FIRMCommand, payload: &[u8]) -> Result<Self, FrameError> {
         let header = PacketHeader::Command;
         let identifier = command_type as u16;
-        Self {
+        Ok(Self {
             command_type,
-            frame: FramedPacket::new(header, identifier, payload),
-        }
+            frame: FramedPacket::new(header, identifier, payload)?,
+        })
     }
 
     pub fn command_type(&self) -> FIRMCommand {
         self.command_type
     }
 
-    pub fn build_get_device_info_command() -> Self {
-        Self::new(FIRMCommand::GetDeviceInfo, Vec::new())
+    pub fn build_get_device_info_command() -> Result<Self, FrameError> {
+        Self::new(FIRMCommand::GetDeviceInfo, &[])
     }
 
-    pub fn build_get_device_config_command() -> Self {
-        Self::new(FIRMCommand::GetDeviceConfig, Vec::new())
+    pub fn build_get_device_config_command() -> Result<Self, FrameError> {
+        Self::new(FIRMCommand::GetDeviceConfig, &[])
     }
 
-    pub fn build_cancel_command() -> Self {
-        Self::new(FIRMCommand::Cancel, Vec::new())
+    pub fn build_cancel_command() -> Result<Self, FrameError> {
+        Self::new(FIRMCommand::Cancel, &[])
     }
 
-    pub fn build_reboot_command() -> Self {
-        Self::new(FIRMCommand::Reboot, Vec::new())
+    pub fn build_reboot_command() -> Result<Self, FrameError> {
+        Self::new(FIRMCommand::Reboot, &[])
     }
 
-    pub fn build_mock_command() -> Self {
-        Self::new(FIRMCommand::Mock, Vec::new())
+    pub fn build_mock_command() -> Result<Self, FrameError> {
+        Self::new(FIRMCommand::Mock, &[])
     }
 
-    pub fn build_set_device_config_command(config: DeviceConfig) -> Self {
-        let mut payload = Vec::with_capacity(DEVICE_NAME_LENGTH + FREQUENCY_LENGTH + 1);
+    pub fn build_set_device_config_command(config: DeviceConfig) -> Result<Self, FrameError> {
+        let mut payload: Vec<u8, { DEVICE_NAME_LENGTH + FREQUENCY_LENGTH + 1 }> = Vec::new();
         let name_bytes = str_to_bytes::<DEVICE_NAME_LENGTH>(&config.name);
-        payload.extend_from_slice(&name_bytes);
-        payload.extend_from_slice(&config.frequency.to_le_bytes());
+        payload.extend_from_slice(&name_bytes).ok();
+        payload.extend_from_slice(&config.frequency.to_le_bytes()).ok();
+        payload.push(config.protocol as u8).ok();
 
-        payload.push(config.protocol as u8);
-
-        Self::new(FIRMCommand::SetDeviceConfig, payload)
+        Self::new(FIRMCommand::SetDeviceConfig, &payload)
     }
 }
 
@@ -83,13 +82,13 @@ pub struct FIRMLogPacket {
 }
 
 impl FIRMLogPacket {
-    pub fn new(packet_type: FIRMLogPacketType, payload: Vec<u8>) -> Self {
+    pub fn new(packet_type: FIRMLogPacketType, payload: &[u8]) -> Result<Self, FrameError> {
         let header = PacketHeader::LogSensor;
         let identifier = packet_type as u16;
-        Self {
+        Ok(Self {
             packet_type,
-            frame: FramedPacket::new(header, identifier, payload),
-        }
+            frame: FramedPacket::new(header, identifier, payload)?,
+        })
     }
 
     pub fn packet_type(&self) -> FIRMLogPacketType {
@@ -143,8 +142,8 @@ mod tests {
         assert_eq!(crc_from_bytes(bytes), calculate_crc(bytes));
     }
 
-    fn assert_zero_payload_command(make: fn() -> FIRMCommandPacket, expected_identifier: u16) {
-        let command_packet = make().to_bytes();
+    fn assert_zero_payload_command(make: fn() -> Result<FIRMCommandPacket, crate::framed_packet::FrameError>, expected_identifier: u16) {
+        let command_packet = make().unwrap().to_bytes();
         assert_common_packet_invariants(&command_packet);
         assert_eq!(
             header_from_bytes(&command_packet),
@@ -160,7 +159,7 @@ mod tests {
 
     #[test]
     fn test_firm_command_packet_to_bytes_zero_payload_commands() {
-        let cases: &[(u16, fn() -> FIRMCommandPacket)] = &[
+        let cases: &[(u16, fn() -> Result<FIRMCommandPacket, crate::framed_packet::FrameError>)] = &[
             (
                 FIRMCommand::GetDeviceInfo as u16,
                 FIRMCommandPacket::build_get_device_info_command,
@@ -190,14 +189,17 @@ mod tests {
 
     #[test]
     fn test_firm_command_packet_to_bytes_set_device_config() {
+        let mut config_name = heapless::String::new();
+        let _ = config_name.push_str("FIRM");
+        
         let config = DeviceConfig {
-            name: "FIRM".to_string(),
+            name: config_name,
             frequency: 50,
             protocol: DeviceProtocol::UART,
         };
 
         let command_packet =
-            FIRMCommandPacket::build_set_device_config_command(config.clone()).to_bytes();
+            FIRMCommandPacket::build_set_device_config_command(config.clone()).unwrap().to_bytes();
         assert_common_packet_invariants(&command_packet);
 
         assert_eq!(
@@ -218,7 +220,7 @@ mod tests {
         let (got_name_bytes, rest) = payload.split_at(DEVICE_NAME_LENGTH);
         let (got_freq_bytes, got_protocol_bytes) = rest.split_at(FREQUENCY_LENGTH);
 
-        let expected_name_bytes = str_to_bytes::<DEVICE_NAME_LENGTH>(&config.name);
+        let expected_name_bytes = str_to_bytes::<DEVICE_NAME_LENGTH>(config.name.as_str());
         assert_eq!(got_name_bytes, &expected_name_bytes);
 
         let freq = u16::from_le_bytes(got_freq_bytes.try_into().unwrap());
@@ -228,8 +230,8 @@ mod tests {
 
     #[test]
     fn test_firm_mock_packet_new() {
-        let payload = vec![1u8, 2, 3];
-        let packet = FIRMLogPacket::new(FIRMLogPacketType::BarometerPacket, payload.clone());
+        let payload = [1u8, 2, 3];
+        let packet = FIRMLogPacket::new(FIRMLogPacketType::BarometerPacket, &payload).unwrap();
         assert_eq!(packet.header(), PacketHeader::LogSensor);
         assert_eq!(packet.packet_type(), FIRMLogPacketType::BarometerPacket);
         assert_eq!(packet.len(), payload.len() as u32);
@@ -238,8 +240,8 @@ mod tests {
 
     #[test]
     fn test_firm_mock_packet_to_bytes() {
-        let payload: Vec<u8> = vec![0x10, 0x20, 0x30, 0x40, 0x50];
-        let packet = FIRMLogPacket::new(FIRMLogPacketType::IMUPacket, payload);
+        let payload = [0x10u8, 0x20, 0x30, 0x40, 0x50];
+        let packet = FIRMLogPacket::new(FIRMLogPacketType::IMUPacket, &payload).unwrap();
         let bytes = packet.to_bytes();
         assert_eq!(header_from_bytes(&bytes), PacketHeader::LogSensor.as_u16());
         assert_eq!(identifier_from_bytes(&bytes), b'I' as u16);
@@ -257,8 +259,8 @@ mod tests {
 
     #[test]
     fn test_firm_mock_packet_roundtrip_from_bytes() {
-        let payload = vec![9u8, 8, 7];
-        let packet = FIRMLogPacket::new(FIRMLogPacketType::HeaderPacket, payload);
+        let payload = [9u8, 8, 7];
+        let packet = FIRMLogPacket::new(FIRMLogPacketType::HeaderPacket, &payload).unwrap();
         let bytes = packet.to_bytes();
         let parsed = FIRMLogPacket::from_bytes(&bytes).unwrap();
         assert_eq!(parsed.header(), PacketHeader::LogSensor);

@@ -70,8 +70,8 @@ pub(crate) fn str_to_bytes<const N: usize>(string: &str) -> [u8; N] {
 ///
 /// # Returns
 ///
-/// - `String` - The resulting string, stopping at the first zero byte.
-pub(crate) fn bytes_to_str(bytes: &[u8]) -> String {
+/// - `&str` - The resulting string slice, stopping at the first zero byte.
+pub(crate) fn bytes_to_str(bytes: &[u8]) -> &str {
     let mut end = bytes.len();
     for (i, &b) in bytes.iter().enumerate() {
         if b == 0 {
@@ -79,5 +79,5 @@ pub(crate) fn bytes_to_str(bytes: &[u8]) -> String {
             break;
         }
     }
-    String::from_utf8_lossy(&bytes[..end]).to_string()
+    core::str::from_utf8(&bytes[..end]).unwrap_or("")
 }

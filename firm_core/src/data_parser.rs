@@ -2,17 +2,19 @@ use crate::constants::packet::{PacketHeader, *};
 use crate::firm_packets::{FIRMDataPacket, FIRMResponsePacket};
 use crate::framed_packet::Framed;
 use crate::utils::crc16_ccitt;
-use alloc::collections::VecDeque;
-use alloc::vec::Vec;
+use heapless::{Deque, Vec};
+
+const MAX_SERIAL_BYTES: usize = 512;
+const MAX_PARSED_PACKETS: usize = 32;
 
 /// Streaming parser that accumulates serial bytes and queues wire-level frames.
 pub struct SerialParser {
     /// Rolling buffer of unprocessed serial bytes.
-    serial_bytes: Vec<u8>,
+    serial_bytes: Vec<u8, MAX_SERIAL_BYTES>,
     /// Queue of framed data packets ready to be consumed.
-    parsed_data_packets: VecDeque<FIRMDataPacket>,
+    parsed_data_packets: Deque<FIRMDataPacket, MAX_PARSED_PACKETS>,
     /// Queue of framed responses ready to be consumed.
-    parsed_response_packets: VecDeque<FIRMResponsePacket>,
+    parsed_response_packets: Deque<FIRMResponsePacket, MAX_PARSED_PACKETS>,
 }
 
 impl SerialParser {
@@ -28,8 +30,8 @@ impl SerialParser {
     pub fn new() -> Self {
         SerialParser {
             serial_bytes: Vec::new(),
-            parsed_data_packets: VecDeque::new(),
-            parsed_response_packets: VecDeque::new(),
+            parsed_data_packets: Deque::new(),
+            parsed_response_packets: Deque::new(),
         }
     }
 
@@ -49,8 +51,10 @@ impl SerialParser {
     ///
     /// - `()` - No direct return; parsed packets are stored internally for `get_packet`.
     pub fn parse_bytes(&mut self, bytes: &[u8]) {
-        // Append new bytes onto the rolling buffer.
-        self.serial_bytes.extend(bytes);
+        // Append new bytes onto the rolling buffer, silently dropping if full
+        for &byte in bytes {
+            let _ = self.serial_bytes.push(byte);
+        }
 
         let mut position = 0usize;
         // Scan through the buffer looking for start words and valid packets.
@@ -108,13 +112,13 @@ impl SerialParser {
             if is_data {
                 // If we successfully parse, queue the frame, otherwise keep looking
                 if let Ok(frame) = FIRMDataPacket::from_bytes(packet_bytes) {
-                    self.parsed_data_packets.push_back(frame);
+                    let _ = self.parsed_data_packets.push_back(frame);
                 } else {
                     position += 1;
                     continue;
                 }
             } else if let Ok(frame) = FIRMResponsePacket::from_bytes(packet_bytes) {
-                self.parsed_response_packets.push_back(frame);
+                let _ = self.parsed_response_packets.push_back(frame);
             } else {
                 position += 1;
                 continue;
@@ -124,7 +128,11 @@ impl SerialParser {
         }
 
         // Drop all bytes that were processed, we keep only the tail for next call.
-        self.serial_bytes = self.serial_bytes[position..].to_vec();
+        let remaining = self.serial_bytes.len() - position;
+        for i in 0..remaining {
+            self.serial_bytes[i] = self.serial_bytes[position + i];
+        }
+        self.serial_bytes.truncate(remaining);
     }
 
     /// Pops the next parsed packet from the internal queue, if available.
@@ -166,9 +174,12 @@ mod tests {
     use crate::constants::command::FIRMCommand;
     use crate::constants::packet::{PacketHeader, *};
     use crate::framed_packet::FramedPacket;
+    use std::vec::Vec;
 
     fn build_framed_packet(header: PacketHeader, identifier: u16, payload: &[u8]) -> Vec<u8> {
-        FramedPacket::new(header, identifier, payload.to_vec()).to_bytes()
+        let packet = FramedPacket::new(header, identifier, payload).unwrap();
+        let bytes = packet.to_bytes();
+        bytes.to_vec()
     }
     #[test]
     fn test_serial_parser_parses_data_packet() {

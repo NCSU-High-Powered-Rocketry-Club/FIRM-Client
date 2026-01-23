@@ -1,15 +1,17 @@
-use alloc::collections::VecDeque;
-use alloc::vec::Vec;
+use heapless::{Deque, Vec};
 
 use crate::client_packets::FIRMLogPacket;
 use crate::constants::log_parsing::FIRMLogPacketType;
 use crate::constants::log_parsing::*;
 
+const MAX_BYTES_BUFFER: usize = 256;
+const MAX_PARSED_PACKETS: usize = 32;
+
 pub struct LogParser {
     /// Rolling buffer of unprocessed bytes.
-    bytes: Vec<u8>,
+    bytes: Vec<u8, MAX_BYTES_BUFFER>,
     /// Queue of parsed log packets and their inter-packet delay.
-    parsed_packets: VecDeque<(FIRMLogPacket, f64)>,
+    parsed_packets: Deque<(FIRMLogPacket, f64), MAX_PARSED_PACKETS>,
 
     // Log header state.
     header_parsed: bool,
@@ -35,7 +37,7 @@ impl LogParser {
     pub fn new() -> Self {
         Self {
             bytes: Vec::new(),
-            parsed_packets: VecDeque::new(),
+            parsed_packets: Deque::new(),
             header_parsed: false,
             last_clock_count: None,
             num_repeat_whitespace: 0,
@@ -67,7 +69,10 @@ impl LogParser {
             return;
         }
 
-        self.bytes.extend_from_slice(chunk);
+        // Extend bytes buffer, silently dropping if full
+        for &byte in chunk {
+            let _ = self.bytes.push(byte);
+        }
 
         // Parse log packets
         let mut position = 0usize;
@@ -137,11 +142,13 @@ impl LogParser {
             let raw = &self.bytes[position..position + size];
             position += size;
 
-            let mut payload = Vec::with_capacity(LOG_PACKET_TIMESTAMP_SIZE + size);
-            payload.extend_from_slice(timestamp);
-            payload.extend_from_slice(raw);
-            let pkt = FIRMLogPacket::new(packet_type, payload);
-            self.parsed_packets.push_back((pkt, delay_seconds));
+            let mut payload = Vec::<u8, { LOG_PACKET_TIMESTAMP_SIZE + 20 }>::new();
+            payload.extend_from_slice(timestamp).ok();
+            payload.extend_from_slice(raw).ok();
+            
+            if let Ok(pkt) = FIRMLogPacket::new(packet_type, &payload) {
+                let _ = self.parsed_packets.push_back((pkt, delay_seconds));
+            }
         }
 
         if position >= self.bytes.len() {
@@ -149,7 +156,12 @@ impl LogParser {
             return;
         }
 
-        self.bytes = self.bytes[position..].to_vec();
+        // Keep only the unprocessed bytes
+        let remaining = self.bytes.len() - position;
+        for i in 0..remaining {
+            self.bytes[i] = self.bytes[position + i];
+        }
+        self.bytes.truncate(remaining);
     }
 
     /// Pops the next parsed log packet and returns it with its delay since the last one.
@@ -172,6 +184,7 @@ impl LogParser {
 mod tests {
     use super::*;
     use crate::framed_packet::Framed;
+    use std::vec::Vec;
 
     fn make_header() -> Vec<u8> {
         let mut header = Vec::new();

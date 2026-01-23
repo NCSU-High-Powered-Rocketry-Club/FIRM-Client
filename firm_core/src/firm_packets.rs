@@ -1,6 +1,7 @@
 use crate::constants::command::*;
 use crate::framed_packet::{FrameError, Framed, FramedPacket};
 use crate::utils::bytes_to_str;
+use heapless::String;
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "python")]
@@ -24,7 +25,7 @@ pub enum DeviceProtocol {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "python", pyclass(get_all, set_all))]
 pub struct DeviceInfo {
-    pub firmware_version: String, // Max 8 characters
+    pub firmware_version: String<FIRMWARE_VERSION_LENGTH>, // Max 8 characters
     #[cfg_attr(feature = "wasm", serde(serialize_with = "serialize_u64_as_string"))]
     // We need this because JS can't handle u64
     pub id: u64,
@@ -44,7 +45,7 @@ where
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "python", pyclass(get_all, set_all))]
 pub struct DeviceConfig {
-    pub name: String, // Max 32 characters
+    pub name: String<DEVICE_NAME_LENGTH>, // Max 32 characters
     pub frequency: u16,
     pub protocol: DeviceProtocol,
 }
@@ -104,7 +105,7 @@ pub enum FIRMResponse {
     SetDeviceConfig(bool),
     Mock(bool),
     Cancel(bool),
-    Error(String),
+    Error(String<64>),
 }
 
 /// Wire-level framed data packet.
@@ -289,7 +290,9 @@ impl FIRMResponse {
                 let firmware_version_bytes =
                     &data[DEVICE_ID_LENGTH..DEVICE_ID_LENGTH + FIRMWARE_VERSION_LENGTH];
                 let id = u64::from_le_bytes(id_bytes.try_into().unwrap());
-                let firmware_version = bytes_to_str(firmware_version_bytes);
+                let firmware_version_str = bytes_to_str(firmware_version_bytes);
+                let mut firmware_version = String::new();
+                firmware_version.push_str(firmware_version_str).ok();
 
                 let info = DeviceInfo {
                     id,
@@ -301,7 +304,9 @@ impl FIRMResponse {
                 // [NAME (32 bytes)][FREQUENCY (2 bytes)][PROTOCOL (1 byte)]
                 let name_bytes: [u8; DEVICE_NAME_LENGTH] =
                     data[0..DEVICE_NAME_LENGTH].try_into().unwrap();
-                let name = bytes_to_str(&name_bytes);
+                let name_str = bytes_to_str(&name_bytes);
+                let mut name = String::new();
+                name.push_str(name_str).ok();
                 let frequency = u16::from_le_bytes(
                     data[DEVICE_NAME_LENGTH..DEVICE_NAME_LENGTH + FREQUENCY_LENGTH]
                         .try_into()
@@ -338,7 +343,9 @@ impl FIRMResponse {
             }
             // Reboot currently has no decoded response type.
             FIRMCommand::Reboot => {
-                FIRMResponse::Error("No decoded response for Reboot".to_string())
+                let mut error_msg = String::new();
+                error_msg.push_str("No decoded response for Reboot").ok();
+                FIRMResponse::Error(error_msg)
             }
         }
     }
@@ -374,7 +381,7 @@ mod tests {
         payload: &[u8],
     ) -> Result<FIRMResponsePacket, FrameError> {
         let bytes =
-            FramedPacket::new(PacketHeader::Response, identifier, payload.to_vec()).to_bytes();
+            FramedPacket::new(PacketHeader::Response, identifier, payload)?.to_bytes();
         FIRMResponsePacket::from_bytes(&bytes)
     }
 
@@ -406,10 +413,14 @@ mod tests {
             .copy_from_slice(&fw_bytes);
 
         let pkt = build_response_packet(FIRMCommand::GetDeviceInfo as u16, &payload).unwrap();
+        
+        let mut expected_fw = heapless::String::new();
+        let _ = expected_fw.push_str("v1.2.3");
+        
         assert_eq!(
             pkt.response(),
             &FIRMResponse::GetDeviceInfo(DeviceInfo {
-                firmware_version: "v1.2.3".to_string(),
+                firmware_version: expected_fw,
                 id,
             })
         );
@@ -430,10 +441,14 @@ mod tests {
         payload[DEVICE_NAME_LENGTH + FREQUENCY_LENGTH] = 0x03;
 
         let pkt = build_response_packet(FIRMCommand::GetDeviceConfig as u16, &payload).unwrap();
+        
+        let mut expected_name = heapless::String::new();
+        let _ = expected_name.push_str("MyDevice");
+        
         assert_eq!(
             pkt.response(),
             &FIRMResponse::GetDeviceConfig(DeviceConfig {
-                name: "MyDevice".to_string(),
+                name: expected_name,
                 frequency,
                 protocol: DeviceProtocol::I2C,
             })

@@ -12,7 +12,7 @@ const CHUNK_SIZE: usize = 1000;
 
 fn main() -> ExitCode {
     let mut parser = LogParser::new();
-    
+
     let mut file = File::open(LOG_PATH).expect("Failed to open log file");
 
     let mut header: Vec<u8> = vec![0u8; HEADER_TOTAL_SIZE];

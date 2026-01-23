@@ -573,9 +573,27 @@ impl Drop for FIRMClient {
 
 #[cfg(test)]
 mod tests {
-    use firm_core::{constants::{command::FIRMCommand, packet::PacketHeader}, firm_packets::FIRMResponsePacket, framed_packet::FramedPacket};
+    use firm_core::{
+        constants::{
+            command::{
+                DEVICE_ID_LENGTH, DEVICE_NAME_LENGTH, FIRMCommand, FIRMWARE_VERSION_LENGTH,
+                FREQUENCY_LENGTH,
+            },
+            packet::PacketHeader,
+        },
+        firm_packets::FIRMResponsePacket,
+        framed_packet::FramedPacket,
+    };
 
     use super::*;
+
+    fn str_to_bytes<const N: usize>(string: &str) -> [u8; N] {
+        let mut out = [0u8; N];
+        let bytes = string.as_bytes();
+        let n = bytes.len().min(N);
+        out[..n].copy_from_slice(&bytes[..n]);
+        out
+    }
 
     #[test]
     fn test_new_failure() {
@@ -585,12 +603,25 @@ mod tests {
     }
 
     #[test]
+    fn test_start_stop() {
+        let (mut client, _device) = FIRMClient::new_mock(0.01);
+
+        assert!(!client.is_running());
+        client.start();
+        assert!(client.is_running());
+        client.stop();
+        assert!(!client.is_running());
+    }
+
+    #[test]
     fn test_get_data_packet_over_mock_serial() {
         let (mut client, device) = FIRMClient::new_mock(0.01);
         client.start();
 
+        let timestamp_seconds = 1.5f64;
+
         let mut payload = vec![0u8; 120];
-        payload[0..8].copy_from_slice(&1.5f64.to_le_bytes());
+        payload[0..8].copy_from_slice(&timestamp_seconds.to_le_bytes());
         payload[8..12].copy_from_slice(&25.0f32.to_le_bytes());
 
         let mocked_packet = FramedPacket::new(PacketHeader::Data, 0, payload);
@@ -601,7 +632,7 @@ mod tests {
             .get_data_packets(Some(Duration::from_millis(100)))
             .unwrap();
         assert!(!packets.is_empty());
-        assert!((packets[0].timestamp_seconds - 1.5).abs() < 1e-9);
+        assert!((packets[0].timestamp_seconds - timestamp_seconds).abs() < 1e-9);
     }
 
     #[test]
@@ -611,22 +642,143 @@ mod tests {
 
         let payload = [1u8];
 
-        let bytes = FramedPacket::new(PacketHeader::Response, FIRMCommand::SetDeviceConfig.to_u16(), payload.to_vec())
-            .to_bytes();
+        let bytes = FramedPacket::new(
+            PacketHeader::Response,
+            FIRMCommand::SetDeviceConfig.to_u16(),
+            payload.to_vec(),
+        )
+        .to_bytes();
         let response_packet = FIRMResponsePacket::from_bytes(&bytes).unwrap();
 
         device.inject_framed_packet(response_packet.frame().clone());
 
-        let packet = client.get_response_packets(Some(Duration::from_millis(100))).unwrap();
+        let packet = client
+            .get_response_packets(Some(Duration::from_millis(100)))
+            .unwrap();
 
         // Make sure we didn't get any other type of packets
-        assert!(matches!(client.get_data_packets(Some(Duration::from_millis(10))), Err(RecvTimeoutError::Timeout)));
+        assert!(matches!(
+            client.get_data_packets(Some(Duration::from_millis(10))),
+            Err(RecvTimeoutError::Timeout)
+        ));
 
         // Make sure we got the expected response
         assert_eq!(packet.len(), payload.len());
         assert_eq!(packet[0], FIRMResponse::SetDeviceConfig(true));
 
         // Make sure we didn't get any extra response packets
-        assert!(matches!(client.get_response_packets(Some(Duration::from_millis(10))), Err(RecvTimeoutError::Timeout)));
+        assert!(matches!(
+            client.get_response_packets(Some(Duration::from_millis(10))),
+            Err(RecvTimeoutError::Timeout)
+        ));
+    }
+
+    #[test]
+    fn test_set_device_config_command() {
+        let (mut client, device) = FIRMClient::new_mock(0.01);
+        client.start();
+
+        // Prepare the response packet to be injected
+        let response_payload = [1u8]; // Acknowledgement byte
+        let response_packet = FramedPacket::new(
+            PacketHeader::Response,
+            FIRMCommand::SetDeviceConfig.to_u16(),
+            response_payload.to_vec(),
+        );
+        device.inject_framed_packet(response_packet);
+
+        // Send the set device config command
+        let result = client.set_device_config(
+            "TestDevice".to_string(),
+            100,
+            DeviceProtocol::UART,
+            Duration::from_millis(100),
+        );
+
+        // Verify the result
+        assert_eq!(result.unwrap(), Some(true));
+    }
+
+    #[test]
+    fn test_get_device_info_command() {
+        let (mut client, device) = FIRMClient::new_mock(0.01);
+        client.start();
+
+        let id = 0x1122334455667788u64;
+        let mut payload = vec![0u8; DEVICE_ID_LENGTH + FIRMWARE_VERSION_LENGTH];
+        payload[0..DEVICE_ID_LENGTH].copy_from_slice(&id.to_le_bytes());
+        let fw_bytes = str_to_bytes::<FIRMWARE_VERSION_LENGTH>("v1.2.3");
+        payload[DEVICE_ID_LENGTH..DEVICE_ID_LENGTH + FIRMWARE_VERSION_LENGTH]
+            .copy_from_slice(&fw_bytes);
+
+        let response_packet = FramedPacket::new(
+            PacketHeader::Response,
+            FIRMCommand::GetDeviceInfo.to_u16(),
+            payload,
+        );
+        device.inject_framed_packet(response_packet);
+
+        let result = client.get_device_info(Duration::from_millis(100));
+
+        assert_eq!(
+            result.unwrap(),
+            Some(DeviceInfo {
+                firmware_version: "v1.2.3".to_string(),
+                id,
+            })
+        );
+    }
+
+    #[test]
+    fn test_get_device_config_command() {
+        let (mut client, device) = FIRMClient::new_mock(0.01);
+        client.start();
+
+        let name = "TestDevice";
+        let frequency: u16 = 100;
+        let protocol = DeviceProtocol::UART;
+
+        let mut payload = vec![0u8; DEVICE_NAME_LENGTH + FREQUENCY_LENGTH + 1];
+        let name_bytes = str_to_bytes::<DEVICE_NAME_LENGTH>(name);
+        payload[0..DEVICE_NAME_LENGTH].copy_from_slice(&name_bytes);
+        payload[DEVICE_NAME_LENGTH..DEVICE_NAME_LENGTH + FREQUENCY_LENGTH]
+            .copy_from_slice(&frequency.to_le_bytes());
+        payload[DEVICE_NAME_LENGTH + FREQUENCY_LENGTH] = 2;
+
+        let response_packet = FramedPacket::new(
+            PacketHeader::Response,
+            FIRMCommand::GetDeviceConfig.to_u16(),
+            payload,
+        );
+        device.inject_framed_packet(response_packet);
+
+        let result = client.get_device_config(Duration::from_millis(100));
+
+        assert_eq!(
+            result.unwrap(),
+            Some(DeviceConfig {
+                name: name.to_string(),
+                frequency,
+                protocol,
+            })
+        );
+    }
+
+    #[test]
+    fn test_cancel_command() {
+        let (mut client, device) = FIRMClient::new_mock(0.01);
+        client.start();
+
+        let response_payload = [1u8];
+        let response_packet = FramedPacket::new(
+            PacketHeader::Response,
+            FIRMCommand::Cancel.to_u16(),
+            response_payload.to_vec(),
+        );
+        device.inject_framed_packet(response_packet);
+
+        let result = client.cancel(Duration::from_millis(100));
+
+        assert_eq!(result.unwrap(), Some(true));
     }
 }

@@ -1,11 +1,19 @@
+use firm_core::constants::packet::PacketHeader;
 use firm_core::firm_packets::{DeviceConfig, DeviceInfo, DeviceProtocol, FIRMData};
+use firm_core::framed_packet::FramedPacket;
 use firm_rust::FIRMClient as RustFirmClient;
+use firm_rust::mock_serial::MockDeviceHandle as RustMockDeviceHandle;
 use pyo3::prelude::*;
 
 #[pyclass(unsendable)]
 struct FIRMClient {
     inner: RustFirmClient,
     timeout: f64,
+}
+
+#[pyclass(unsendable)]
+struct MockDeviceHandle {
+    inner: RustMockDeviceHandle,
 }
 
 #[pymethods]
@@ -30,6 +38,19 @@ impl FIRMClient {
 
     fn stop(&mut self) {
         self.inner.stop();
+    }
+
+    #[staticmethod]
+    #[pyo3(signature = (timeout=0.1))]
+    fn new_mock(timeout: f64) -> PyResult<(Self, MockDeviceHandle)> {
+        let (client, device) = RustFirmClient::new_mock(timeout);
+        Ok((
+            FIRMClient {
+                inner: client,
+                timeout,
+            },
+            MockDeviceHandle { inner: device },
+        ))
     }
 
     #[pyo3(signature = (log_path, realtime=true, speed=1.0, chunk_size=8192, start_timeout_seconds=5.0))]
@@ -172,9 +193,25 @@ impl FIRMClient {
     }
 }
 
+#[pymethods]
+impl MockDeviceHandle {
+    fn inject_response(&self, identifier: u16, payload: Vec<u8>) {
+        let packet = FramedPacket::new(PacketHeader::Response, identifier, payload);
+        self.inner.inject_framed_packet(packet);
+    }
+
+    #[pyo3(signature = (timeout_seconds))]
+    fn wait_for_command_identifier(&self, timeout_seconds: f64) -> PyResult<Option<u16>> {
+        self.inner
+            .wait_for_command_identifier(std::time::Duration::from_secs_f64(timeout_seconds))
+            .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))
+    }
+}
+
 #[pymodule(gil_used = false)]
 fn firm_client(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<FIRMClient>()?;
+    m.add_class::<MockDeviceHandle>()?;
     m.add_class::<FIRMData>()?;
     m.add_class::<DeviceProtocol>()?;
     m.add_class::<DeviceInfo>()?;

@@ -25,7 +25,21 @@ const SPEED: f64 = 1.0;
 const CHUNK_SIZE: usize = 80_000;
 const DRAIN_SECONDS: f64 = 1.0;
 const STATUS_INTERVAL: Duration = Duration::from_millis(250);
+const PRINT_RX_BYTES: bool = true;
 // ----------------------------------------
+
+fn print_hex(prefix: &str, bytes: &[u8]) {
+    if bytes.is_empty() {
+        return;
+    }
+
+    let hex = bytes
+        .iter()
+        .map(|b| format!("{:02X}", b))
+        .collect::<Vec<_>>()
+        .join(" ");
+    println!("{prefix}{hex}");
+}
 
 fn read_and_count_nonblocking(
     port: &mut dyn SerialPort,
@@ -42,6 +56,9 @@ fn read_and_count_nonblocking(
 
     match port.read(buffer) {
         Ok(n @ 1..) => {
+            if PRINT_RX_BYTES {
+                print_hex("\n\n", &buffer[..n]);
+            }
             parser.parse_bytes(&buffer[..n]);
             while parser.get_data_packet().is_some() {
                 *total_data_packets += 1;

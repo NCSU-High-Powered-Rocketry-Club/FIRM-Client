@@ -38,6 +38,12 @@ dev = [
     "ziglang"  # for maturin's zig support when cross-compiling
 ]
 
+[project.optional-dependencies]
+extras = [
+    "pandas>=2.0",
+    "plotly>=5.20",
+    "dash>=2.16",
+]
 
 [tool.uv]
 # Rebuild package when any rust files change

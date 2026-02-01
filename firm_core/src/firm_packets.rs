@@ -102,6 +102,8 @@ pub enum FIRMResponse {
     GetDeviceInfo(DeviceInfo),
     GetDeviceConfig(DeviceConfig),
     SetDeviceConfig(bool),
+    SetMagnetometerCalibration(bool),
+    SetIMUCalibration(bool),
     Mock(bool),
     Cancel(bool),
     Error(String),
@@ -335,6 +337,14 @@ impl FIRMResponse {
             FIRMCommand::Cancel => {
                 let acknowledgement = data.first() == Some(&1);
                 FIRMResponse::Cancel(acknowledgement)
+            }
+            FIRMCommand::SetMagnetometerCalibration => {
+                let success = data.first() == Some(&1);
+                FIRMResponse::SetMagnetometerCalibration(success)
+            }
+            FIRMCommand::SetIMUCalibration => {
+                let success = data.first() == Some(&1);
+                FIRMResponse::SetIMUCalibration(success)
             }
             // Reboot currently has no decoded response type.
             FIRMCommand::Reboot => {

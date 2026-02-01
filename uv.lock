@@ -369,7 +369,6 @@ wheels = [
 
 [[package]]
 name = "firm-client"
-version = "1.0.0"
 source = { editable = "." }
 dependencies = [
     { name = "matplotlib" },

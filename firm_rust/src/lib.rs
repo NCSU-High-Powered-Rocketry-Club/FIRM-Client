@@ -1,5 +1,6 @@
 use anyhow::Result;
 use firm_core::client_packets::{FIRMCommandPacket, FIRMLogPacket};
+use firm_core::constants::command::{NUMBER_OF_CALIBRATION_OFFSETS, NUMBER_OF_CALIBRATION_SCALE_MATRIX_ELEMENTS};
 use firm_core::constants::log_parsing::{FIRMLogPacketType, HEADER_PARSE_DELAY, HEADER_TOTAL_SIZE};
 use firm_core::data_parser::SerialParser;
 use firm_core::firm_packets::{DeviceConfig, DeviceInfo, DeviceProtocol, FIRMData, FIRMResponse};
@@ -149,6 +150,12 @@ impl FIRMClient {
                 // Drain pending command packets first and write them to the port.
                 while let Ok(cmd) = command_receiver.try_recv() {
                     let cmd_bytes = cmd.to_bytes();
+                    // let hex = cmd_bytes
+                    //     .iter()
+                    //     .map(|b| format!("{:02X}", b))
+                    //     .collect::<Vec<_>>()
+                    //     .join(" ");
+                    // println!("Command packet bytes: {hex}");
                     if let Err(e) = port.write_all(&cmd_bytes) {
                         let _ = error_sender.send(e.to_string());
                         running_clone.store(false, Ordering::Relaxed);
@@ -325,6 +332,38 @@ impl FIRMClient {
         self.send_command(FIRMCommandPacket::build_set_device_config_command(config))?;
         self.wait_for_matching_response(timeout, |res| match res {
             FIRMResponse::SetDeviceConfig(ok) => Some(*ok),
+            _ => None,
+        })
+    }
+
+    pub fn set_magnetometer_calibration(
+        &mut self,
+        offsets: [f32; NUMBER_OF_CALIBRATION_OFFSETS],
+        scale_matrix: [f32; NUMBER_OF_CALIBRATION_SCALE_MATRIX_ELEMENTS],
+        timeout: Duration,
+    ) -> Result<Option<bool>> {
+        self.send_command(FIRMCommandPacket::build_set_magnetometer_calibration_command(
+            offsets,
+            scale_matrix,
+        ))?;
+        self.wait_for_matching_response(timeout, |res| match res {
+            FIRMResponse::SetMagnetometerCalibration(ok) => Some(*ok),
+            _ => None,
+        })
+    }
+
+    pub fn set_imu_calibration(
+        &mut self,
+        offsets: [f32; NUMBER_OF_CALIBRATION_OFFSETS],
+        scale_matrix: [f32; NUMBER_OF_CALIBRATION_SCALE_MATRIX_ELEMENTS],
+        timeout: Duration,
+    ) -> Result<Option<bool>> {
+        self.send_command(FIRMCommandPacket::build_set_imu_calibration_command(
+            offsets,
+            scale_matrix,
+        ))?;
+        self.wait_for_matching_response(timeout, |res| match res {
+            FIRMResponse::SetIMUCalibration(ok) => Some(*ok),
             _ => None,
         })
     }

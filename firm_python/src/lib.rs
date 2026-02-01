@@ -1,3 +1,4 @@
+use firm_core::constants::command::{NUMBER_OF_CALIBRATION_OFFSETS, NUMBER_OF_CALIBRATION_SCALE_MATRIX_ELEMENTS};
 use firm_core::constants::packet::PacketHeader;
 use firm_core::firm_packets::{DeviceConfig, DeviceInfo, DeviceProtocol, FIRMData};
 use firm_core::framed_packet::FramedPacket;
@@ -36,7 +37,36 @@ impl FIRMClient {
         let baudrate = baud_rate.unwrap_or(2_000_000);
         let timeout_val = timeout.unwrap_or(0.1);
 
-        let client = map_io(RustFirmClient::new(port_name, baudrate, timeout_val))?;
+        // Opens the client and gives descriptive error messages on failure
+        let client = RustFirmClient::new(port_name, baudrate, timeout_val).map_err(|e| {
+            if let Some(io_err) = e.downcast_ref::<std::io::Error>() {
+                use std::io::ErrorKind;
+
+                match io_err.kind() {
+                    ErrorKind::NotFound => py_io_err(format!(
+                        "Serial port '{}' not found. \
+                        Check the port name (e.g. COM8, /dev/ttyACM0).",
+                        port_name
+                    )),
+                    ErrorKind::PermissionDenied => py_io_err(format!(
+                        "Permission denied opening serial port '{}'. \
+                        Try running as admin or fixing udev permissions.",
+                        port_name
+                    )),
+                    _ => py_io_err(format!(
+                        "Failed to open serial port '{}'",
+                        port_name
+                    )),
+                }
+            } else {
+                // Non-IO error (logic error, config error, etc.)
+                py_io_err(format!(
+                    "Failed to initialize FIRM client for '{}': {}",
+                    port_name, e
+                ))
+            }
+        })?;
+
         Ok(Self {
             inner: client,
             timeout: timeout_val,
@@ -184,6 +214,42 @@ impl FIRMClient {
             name,
             frequency,
             protocol,
+            Duration::from_secs_f64(timeout_seconds),
+        ))?;
+
+        Ok(res.unwrap_or(false))
+    }
+
+    #[pyo3(signature = (offsets, scale_matrix, timeout_seconds=5.0))]
+    fn set_magnetometer_calibration(
+        &mut self,
+        offsets: [f32; NUMBER_OF_CALIBRATION_OFFSETS],
+        scale_matrix: [f32; NUMBER_OF_CALIBRATION_SCALE_MATRIX_ELEMENTS],
+        timeout_seconds: f64,
+    ) -> PyResult<bool> {
+        self.ensure_ok()?;
+
+        let res = map_io(self.inner.set_magnetometer_calibration(
+            offsets,
+            scale_matrix,
+            Duration::from_secs_f64(timeout_seconds),
+        ))?;
+
+        Ok(res.unwrap_or(false))
+    }
+    
+    #[pyo3(signature = (offsets, scale_matrix, timeout_seconds=5.0))]
+    fn set_imu_calibration(
+        &mut self,
+        offsets: [f32; NUMBER_OF_CALIBRATION_OFFSETS],
+        scale_matrix: [f32; NUMBER_OF_CALIBRATION_SCALE_MATRIX_ELEMENTS],
+        timeout_seconds: f64,
+    ) -> PyResult<bool> {
+        self.ensure_ok()?;
+
+        let res = map_io(self.inner.set_imu_calibration(
+            offsets,
+            scale_matrix,
             Duration::from_secs_f64(timeout_seconds),
         ))?;
 

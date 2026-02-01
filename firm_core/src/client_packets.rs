@@ -1,6 +1,6 @@
 use alloc::vec::Vec;
 
-use crate::constants::command::{DEVICE_NAME_LENGTH, FIRMCommand, FREQUENCY_LENGTH};
+use crate::constants::command::{DEVICE_NAME_LENGTH, FIRMCommand, FREQUENCY_LENGTH, CALIBRATION_OFFSETS_LENGTH, CALIBRATION_SCALE_MATRIX_LENGTH};
 use crate::constants::log_parsing::FIRMLogPacketType;
 use crate::constants::packet::PacketHeader;
 use crate::{
@@ -58,6 +58,31 @@ impl FIRMCommandPacket {
 
         Self::new(FIRMCommand::SetDeviceConfig, payload)
     }
+
+    pub fn build_set_magnetometer_calibration_command(offsets: [f32; 3], scale_matrix: [f32; 9]) -> Self {
+        let mut payload =
+            Vec::with_capacity(CALIBRATION_OFFSETS_LENGTH + CALIBRATION_SCALE_MATRIX_LENGTH);
+        for offset in &offsets {
+            payload.extend_from_slice(&offset.to_le_bytes());
+        }
+        for scale in &scale_matrix {
+            payload.extend_from_slice(&scale.to_le_bytes());
+        }
+        Self::new(FIRMCommand::SetMagnetometerCalibration, payload)
+    }
+
+    pub fn build_set_imu_calibration_command(offsets: [f32; 3], scale_matrix: [f32; 9]) -> Self {
+        let mut payload =
+            Vec::with_capacity(CALIBRATION_OFFSETS_LENGTH + CALIBRATION_SCALE_MATRIX_LENGTH);
+        for offset in &offsets {
+            payload.extend_from_slice(&offset.to_le_bytes());
+        }
+        for scale in &scale_matrix {
+            payload.extend_from_slice(&scale.to_le_bytes());
+        }
+        Self::new(FIRMCommand::SetIMUCalibration, payload)
+    }
+
 }
 
 impl Framed for FIRMCommandPacket {

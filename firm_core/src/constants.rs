@@ -45,6 +45,8 @@ pub mod command {
         SetDeviceConfig = 0x0003,
         Reboot = 0x0004,
         Mock = 0x0005,
+        SetMagnetometerCalibration = 0x0006,
+        SetIMUCalibration = 0x0007,
         Cancel = 0x00FF,
     }
 
@@ -76,6 +78,10 @@ pub mod command {
     pub const DEVICE_ID_LENGTH: usize = 8;
     pub const FIRMWARE_VERSION_LENGTH: usize = 8;
     pub const FREQUENCY_LENGTH: usize = 2;
+    pub const NUMBER_OF_CALIBRATION_OFFSETS: usize = 3;
+    pub const NUMBER_OF_CALIBRATION_SCALE_MATRIX_ELEMENTS: usize = 9;
+    pub const CALIBRATION_OFFSETS_LENGTH: usize = NUMBER_OF_CALIBRATION_OFFSETS * 4;
+    pub const CALIBRATION_SCALE_MATRIX_LENGTH: usize = NUMBER_OF_CALIBRATION_SCALE_MATRIX_ELEMENTS * 4;
 }
 
 pub mod log_parsing {

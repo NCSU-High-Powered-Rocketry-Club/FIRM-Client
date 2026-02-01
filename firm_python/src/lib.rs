@@ -1,13 +1,25 @@
 use firm_core::constants::packet::PacketHeader;
 use firm_core::firm_packets::{DeviceConfig, DeviceInfo, DeviceProtocol, FIRMData};
 use firm_core::framed_packet::FramedPacket;
-use firm_rust::FIRMClient as RustFirmClient;
 use firm_rust::mock_serial::MockDeviceHandle as RustMockDeviceHandle;
+use firm_rust::FIRMClient as RustFirmClient;
 use pyo3::prelude::*;
+use std::time::Duration;
+
+#[inline]
+fn py_io_err(msg: impl ToString) -> PyErr {
+    pyo3::exceptions::PyIOError::new_err(msg.to_string())
+}
+
+#[inline]
+fn map_io<T>(res: Result<T, impl ToString>) -> PyResult<T> {
+    res.map_err(py_io_err)
+}
 
 #[pyclass(unsendable)]
 struct FIRMClient {
     inner: RustFirmClient,
+    /// Used only when `get_data_packets(block=true)` is called.
     timeout: f64,
 }
 
@@ -23,12 +35,33 @@ impl FIRMClient {
     fn new(port_name: &str, baud_rate: Option<u32>, timeout: Option<f64>) -> PyResult<Self> {
         let baudrate = baud_rate.unwrap_or(2_000_000);
         let timeout_val = timeout.unwrap_or(0.1);
-        let client = RustFirmClient::new(port_name, baudrate, timeout_val)
-            .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))?;
-        Ok(FIRMClient {
+
+        let client = map_io(RustFirmClient::new(port_name, baudrate, timeout_val))?;
+        Ok(Self {
             inner: client,
             timeout: timeout_val,
         })
+    }
+
+    #[staticmethod]
+    #[pyo3(signature = (timeout=0.1))]
+    fn new_mock(timeout: f64) -> PyResult<(Self, MockDeviceHandle)> {
+        let (client, device) = RustFirmClient::new_mock(timeout);
+        Ok((
+            Self {
+                inner: client,
+                timeout,
+            },
+            MockDeviceHandle { inner: device },
+        ))
+    }
+
+    #[inline]
+    fn ensure_ok(&self) -> PyResult<()> {
+        if let Some(err) = self.inner.check_error() {
+            return Err(py_io_err(err));
+        }
+        Ok(())
     }
 
     fn start(&mut self) -> PyResult<()> {
@@ -40,19 +73,7 @@ impl FIRMClient {
         self.inner.stop();
     }
 
-    #[staticmethod]
-    #[pyo3(signature = (timeout=0.1))]
-    fn new_mock(timeout: f64) -> PyResult<(Self, MockDeviceHandle)> {
-        let (client, device) = RustFirmClient::new_mock(timeout);
-        Ok((
-            FIRMClient {
-                inner: client,
-                timeout,
-            },
-            MockDeviceHandle { inner: device },
-        ))
-    }
-
+    /// Stream an entire mock log file synchronously and return the number of bytes sent.
     #[pyo3(signature = (log_path, realtime=true, speed=1.0, chunk_size=8192, start_timeout_seconds=5.0))]
     fn stream_mock_log_file(
         &mut self,
@@ -62,24 +83,20 @@ impl FIRMClient {
         chunk_size: usize,
         start_timeout_seconds: f64,
     ) -> PyResult<usize> {
-        if let Some(err) = self.inner.check_error() {
-            return Err(pyo3::exceptions::PyIOError::new_err(err));
-        }
+        self.ensure_ok()?;
 
-        let sent = self
-            .inner
-            .stream_mock_log_file(
-                log_path,
-                std::time::Duration::from_secs_f64(start_timeout_seconds),
-                realtime,
-                speed,
-                chunk_size,
-            )
-            .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))?;
+        let sent = map_io(self.inner.stream_mock_log_file(
+            log_path,
+            Duration::from_secs_f64(start_timeout_seconds),
+            realtime,
+            speed,
+            chunk_size,
+        ))?;
 
         Ok(sent)
     }
 
+    /// Start streaming a mock log file in the background.
     #[pyo3(signature = (log_path, realtime=true, speed=1.0, chunk_size=8192, start_timeout_seconds=5.0, cancel_on_finish=true))]
     fn start_mock_log_stream(
         &mut self,
@@ -90,108 +107,66 @@ impl FIRMClient {
         start_timeout_seconds: f64,
         cancel_on_finish: bool,
     ) -> PyResult<()> {
-        if let Some(err) = self.inner.check_error() {
-            return Err(pyo3::exceptions::PyIOError::new_err(err));
-        }
+        self.ensure_ok()?;
 
-        self.inner
-            .start_mock_log_stream(
-                log_path.to_string(),
-                std::time::Duration::from_secs_f64(start_timeout_seconds),
-                realtime,
-                speed,
-                chunk_size,
-                cancel_on_finish,
-            )
-            .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))?;
+        map_io(self.inner.start_mock_log_stream(
+            log_path.to_string(),
+            Duration::from_secs_f64(start_timeout_seconds),
+            realtime,
+            speed,
+            chunk_size,
+            cancel_on_finish,
+        ))?;
 
         Ok(())
-    }
-
-    fn is_mock_log_streaming(&self) -> bool {
-        self.inner.is_mock_log_streaming()
     }
 
     #[pyo3(signature = (cancel_device=true))]
     fn stop_mock_log_stream(&mut self, cancel_device: bool) -> PyResult<()> {
-        if let Some(err) = self.inner.check_error() {
-            return Err(pyo3::exceptions::PyIOError::new_err(err));
-        }
-
-        self.inner
-            .stop_mock_log_stream(cancel_device)
-            .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))?;
+        self.ensure_ok()?;
+        map_io(self.inner.stop_mock_log_stream(cancel_device))?;
         Ok(())
     }
 
-    /// Non-blocking: returns `None` if still streaming.
+    /// Non-blocking join: returns `Ok(None)` if still streaming; `Ok(Some(bytes_sent))` if finished.
     fn poll_mock_log_stream(&mut self) -> PyResult<Option<usize>> {
-        if let Some(err) = self.inner.check_error() {
-            return Err(pyo3::exceptions::PyIOError::new_err(err));
-        }
-
-        let res = self
-            .inner
-            .try_join_mock_log_stream()
-            .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))?;
+        self.ensure_ok()?;
+        let res = map_io(self.inner.try_join_mock_log_stream())?;
         Ok(res)
     }
 
     /// Blocking join.
     fn join_mock_log_stream(&mut self) -> PyResult<Option<usize>> {
-        if let Some(err) = self.inner.check_error() {
-            return Err(pyo3::exceptions::PyIOError::new_err(err));
-        }
-
-        let res = self
-            .inner
-            .join_mock_log_stream()
-            .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))?;
+        self.ensure_ok()?;
+        let res = map_io(self.inner.join_mock_log_stream())?;
         Ok(res)
     }
 
     #[pyo3(signature = (block=false))]
     fn get_data_packets(&mut self, block: bool) -> PyResult<Vec<FIRMData>> {
-        if let Some(err) = self.inner.check_error() {
-            return Err(pyo3::exceptions::PyIOError::new_err(err));
-        }
+        self.ensure_ok()?;
 
         let timeout = if block {
-            Some(std::time::Duration::from_secs_f64(self.timeout))
+            Some(Duration::from_secs_f64(self.timeout))
         } else {
             None
         };
-        // Get all packets, and return early if there's an error
-        let packets = self
-            .inner
-            .get_data_packets(timeout)
-            .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))?;
+
+        let packets = map_io(self.inner.get_data_packets(timeout))?;
         Ok(packets)
     }
 
     #[pyo3(signature = (timeout_seconds=5.0))]
     fn get_device_info(&mut self, timeout_seconds: f64) -> PyResult<Option<DeviceInfo>> {
-        if let Some(err) = self.inner.check_error() {
-            return Err(pyo3::exceptions::PyIOError::new_err(err));
-        }
-
-        let info = self
-            .inner
-            .get_device_info(std::time::Duration::from_secs_f64(timeout_seconds))
-            .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))?;
+        self.ensure_ok()?;
+        let info = map_io(self.inner.get_device_info(Duration::from_secs_f64(timeout_seconds)))?;
         Ok(info)
     }
 
     #[pyo3(signature = (timeout_seconds=5.0))]
     fn get_device_config(&mut self, timeout_seconds: f64) -> PyResult<Option<DeviceConfig>> {
-        if let Some(err) = self.inner.check_error() {
-            return Err(pyo3::exceptions::PyIOError::new_err(err));
-        }
-
-        let cfg = self
-            .inner
-            .get_device_config(std::time::Duration::from_secs_f64(timeout_seconds))
-            .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))?;
+        self.ensure_ok()?;
+        let cfg = map_io(self.inner.get_device_config(Duration::from_secs_f64(timeout_seconds)))?;
         Ok(cfg)
     }
 
@@ -203,44 +178,29 @@ impl FIRMClient {
         protocol: DeviceProtocol,
         timeout_seconds: f64,
     ) -> PyResult<bool> {
-        if let Some(err) = self.inner.check_error() {
-            return Err(pyo3::exceptions::PyIOError::new_err(err));
-        }
+        self.ensure_ok()?;
 
-        let res = self
-            .inner
-            .set_device_config(
-                name,
-                frequency,
-                protocol,
-                std::time::Duration::from_secs_f64(timeout_seconds),
-            )
-            .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))?;
+        let res = map_io(self.inner.set_device_config(
+            name,
+            frequency,
+            protocol,
+            Duration::from_secs_f64(timeout_seconds),
+        ))?;
 
         Ok(res.unwrap_or(false))
     }
 
     #[pyo3(signature = (timeout_seconds=5.0))]
     fn cancel(&mut self, timeout_seconds: f64) -> PyResult<bool> {
-        if let Some(err) = self.inner.check_error() {
-            return Err(pyo3::exceptions::PyIOError::new_err(err));
-        }
+        self.ensure_ok()?;
 
-        let res = self
-            .inner
-            .cancel(std::time::Duration::from_secs_f64(timeout_seconds))
-            .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))?;
+        let res = map_io(self.inner.cancel(Duration::from_secs_f64(timeout_seconds)))?;
         Ok(res.unwrap_or(false))
     }
 
     fn reboot(&mut self) -> PyResult<()> {
-        if let Some(err) = self.inner.check_error() {
-            return Err(pyo3::exceptions::PyIOError::new_err(err));
-        }
-
-        self.inner
-            .reboot()
-            .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))?;
+        self.ensure_ok()?;
+        map_io(self.inner.reboot())?;
         Ok(())
     }
 
@@ -272,9 +232,9 @@ impl MockDeviceHandle {
 
     #[pyo3(signature = (timeout_seconds))]
     fn wait_for_command_identifier(&self, timeout_seconds: f64) -> PyResult<Option<u16>> {
-        self.inner
-            .wait_for_command_identifier(std::time::Duration::from_secs_f64(timeout_seconds))
-            .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))
+        map_io(self.inner.wait_for_command_identifier(Duration::from_secs_f64(
+            timeout_seconds,
+        )))
     }
 }
 

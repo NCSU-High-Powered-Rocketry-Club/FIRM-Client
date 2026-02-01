@@ -378,6 +378,7 @@ dependencies = [
 [package.optional-dependencies]
 extras = [
     { name = "dash" },
+    { name = "flask" },
     { name = "pandas", version = "2.3.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "pandas", version = "3.0.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "plotly" },
@@ -396,6 +397,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "dash", marker = "extra == 'extras'", specifier = ">=2.16" },
+    { name = "flask", marker = "extra == 'extras'" },
     { name = "matplotlib", specifier = ">=3.10.8" },
     { name = "pandas", marker = "extra == 'extras'", specifier = ">=2.0" },
     { name = "plotly", marker = "extra == 'extras'", specifier = ">=5.20" },

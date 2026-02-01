@@ -152,7 +152,7 @@ checksum = "773648b94d0e5d620f64f280777445740e61fe701025087ec8b57f45c791888b"
 
 [[package]]
 name = "firm_core"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "pyo3",
  "serde",
@@ -161,7 +161,7 @@ dependencies = [
 
 [[package]]
 name = "firm_python"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "firm_core",
  "firm_rust",
@@ -170,7 +170,7 @@ dependencies = [
 
 [[package]]
 name = "firm_rust"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -180,7 +180,7 @@ dependencies = [
 
 [[package]]
 name = "firm_typescript"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "firm_core",
  "js-sys",

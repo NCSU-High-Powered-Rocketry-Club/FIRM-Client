@@ -44,6 +44,8 @@ fn main() -> ExitCode {
     let mut count_imu = 0usize;
     let mut count_mag = 0usize;
 
+    let mut total_delay = 0.0f64;
+
     loop {
         let n = file.read(&mut buf).expect("Failed to read from file");
         if n == 0 {
@@ -52,8 +54,10 @@ fn main() -> ExitCode {
 
         parser.parse_bytes(&buf[..n]);
 
+
         // Just verifies the round-trip serialization/parsing of packets
         while let Some((pkt, delay_s)) = parser.get_packet_and_time_delay() {
+            total_delay += delay_s;
             let bytes = pkt.to_bytes();
             let parsed = FIRMLogPacket::from_bytes(&bytes)
                 .expect("failed to parse bytes we just serialized (header/len/crc mismatch)");
@@ -79,7 +83,7 @@ fn main() -> ExitCode {
     }
 
     println!(
-        "OK: total={count_total} B={count_bmp} I={count_imu} M={count_mag} (round-trip header/len/crc verified)"
+        "OK: total={count_total} B={count_bmp} I={count_imu} M={count_mag} delay_s={total_delay:.6} (round-trip header/len/crc verified)"
     );
 
     ExitCode::SUCCESS

@@ -2,7 +2,7 @@ import argparse
 import csv
 import time
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from firm_client import FIRMClient
 
@@ -11,7 +11,7 @@ SERIAL_TIMEOUT_SECONDS = 0.05
 START_TIMEOUT_SECONDS = 5.0
 REALTIME = True
 SPEED = 1.0
-CHUNK_SIZE = 80000
+CHUNK_SIZE = 80_000
 DRAIN_SECONDS = 1.0
 
 
@@ -48,17 +48,12 @@ FIELDS: List[str] = [
 
 
 def _row_from_packet(pkt: Any) -> Dict[str, Any]:
-    row: Dict[str, Any] = {}
-    for f in FIELDS:
-        row[f] = getattr(pkt, f)
-    return row
+    return {f: getattr(pkt, f) for f in FIELDS}
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description=(
-            "Stream a mock FIRM log file asynchronously and save FIRM output packets to CSV"
-        )
+        description="Stream a mock FIRM log file asynchronously and save FIRM output packets to CSV"
     )
     parser.add_argument("port", help='Serial port name (e.g., "COM8" or "/dev/ttyACM0")')
     parser.add_argument("log_path", help="Path to the FIRM log file to stream")
@@ -112,19 +107,14 @@ def main() -> int:
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     total_rows = 0
-    sent_packets = None
-
-    mock_finished_wall = None
+    sent_packets: Optional[int] = None
+    mock_finished_wall: Optional[float] = None
 
     start_wall = time.time()
-    last_rx_wall = start_wall
 
     with FIRMClient(args.port, args.baud_rate, args.serial_timeout_seconds) as client:
-        # Clear any initial packets.
-        try:
-            client.get_data_packets(block=True)
-        except TypeError:
-            client.get_data_packets(True)
+        # Clear any initial packets (blocking read to drain).
+        client.get_data_packets(block=True)
 
         print("Starting async mock stream...")
         client.start_mock_log_stream(
@@ -141,30 +131,23 @@ def main() -> int:
             writer.writeheader()
 
             while True:
-                # Drain any finished state from the streamer.
+                # Poll streamer completion once until it finishes.
                 if sent_packets is None:
                     sent_packets = client.poll_mock_log_stream()
 
+                    # `poll_*` is our single source of truth for "still streaming":
+                    # - None => still running
+                    # - int  => finished
+                    if sent_packets is not None and mock_finished_wall is None:
+                        mock_finished_wall = time.time()
+
                 # Keep reading device output packets.
-                try:
-                    packets = client.get_data_packets(block=False)
-                except TypeError:
-                    packets = client.get_data_packets(False)
+                packets = client.get_data_packets(block=False)
+                for pkt in packets:
+                    writer.writerow(_row_from_packet(pkt))
+                    total_rows += 1
 
-                if packets:
-                    for pkt in packets:
-                        writer.writerow(_row_from_packet(pkt))
-                        total_rows += 1
-                    last_rx_wall = time.time()
-
-                streaming = client.is_mock_log_streaming()
-
-                # Mark the first time we observe the stream as finished.
-                if (not streaming) and mock_finished_wall is None:
-                    mock_finished_wall = time.time()
-
-                # Once the stream is finished, keep logging for a fixed drain window and then
-                # exit even if the device continues to output packets.
+                # Once the stream is finished, keep logging for a fixed drain window.
                 if mock_finished_wall is not None:
                     if time.time() - mock_finished_wall >= float(args.drain_seconds):
                         break
@@ -172,7 +155,7 @@ def main() -> int:
                 # Avoid busy loop.
                 time.sleep(0.001)
 
-        # Best-effort join, in case the poll didn't pick it up.
+        # Best-effort join, in case we exited before the poll observed completion.
         if sent_packets is None:
             sent_packets = client.join_mock_log_stream()
 
@@ -181,7 +164,6 @@ def main() -> int:
     if sent_packets is not None:
         print(f"Mock packets sent: {sent_packets}")
     print(f"Total time: {elapsed:.2f} seconds")
-
     return 0
 
 

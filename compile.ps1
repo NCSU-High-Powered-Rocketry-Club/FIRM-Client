@@ -68,3 +68,5 @@ Build-Wheel -AbiTag '3.13'  -Major 3 -Minor 13 -Variant 'default'      -ExtraArg
 Build-Wheel -AbiTag '3.12'  -Major 3 -Minor 12 -Variant 'default'      -ExtraArgs @('--target','aarch64-unknown-linux-gnu','--zig') -MaturinInterpreterArg '3.12'
 Build-Wheel -AbiTag '3.11'  -Major 3 -Minor 11 -Variant 'default'      -ExtraArgs @('--target','aarch64-unknown-linux-gnu','--zig') -MaturinInterpreterArg '3.11'
 Build-Wheel -AbiTag '3.10'  -Major 3 -Minor 10 -Variant 'default'      -ExtraArgs @('--target','aarch64-unknown-linux-gnu','--zig') -MaturinInterpreterArg '3.10'
+
+# To run just one of them, run: uv run -p 3.14 -- maturin build --release -i python --compatibility pypi

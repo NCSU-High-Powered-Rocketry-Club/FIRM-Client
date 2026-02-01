@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "firm-client"
-version = "1.0.0"
+dynamic = ["version"]
 readme = "README.md"  # Todo: Make a python readme.md file
 description = "Python bindings for FIRM Client using Rust"
 license = "MIT"
@@ -43,6 +43,7 @@ extras = [
     "pandas>=2.0",
     "plotly>=5.20",
     "dash>=2.16",
+    "flask"
 ]
 
 [tool.uv]

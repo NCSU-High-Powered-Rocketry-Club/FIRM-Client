@@ -3,15 +3,15 @@ from firm_client import FIRMClient
 
 # Example calibration values
 # Offsets: [x, y, z]
-MAG_OFFSETS = [0.01, -0.02, 0.005]
-IMU_OFFSETS = [0.0, 0.0, 0.0]
+MAG_OFFSETS = (0.01, -0.02, 0.005)
+IMU_OFFSETS = (0.0, 0.0, 0.0)
 
 # Scale matrices: 3x3 row-major
-IDENTITY_SCALE = [
+IDENTITY_SCALE = (
     1.0, 0.0, 0.0,
     0.0, 1.0, 0.0,
     0.0, 0.0, 1.0,
-]
+)
 
 
 def main() -> None:

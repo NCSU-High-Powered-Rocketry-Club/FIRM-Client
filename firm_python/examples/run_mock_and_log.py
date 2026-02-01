@@ -7,12 +7,14 @@ from typing import Any, Dict, List, Optional
 from firm_client import FIRMClient
 
 
-SERIAL_TIMEOUT_SECONDS = 0.05
-START_TIMEOUT_SECONDS = 5.0
-REALTIME = True
-SPEED = 1.0
-CHUNK_SIZE = 80_000
-DRAIN_SECONDS = 1.0
+# uv run  .\firm_python\examples\run_mock_and_log.py --out output.csv COM12 "C:\Users\jackg\Downloads\LOG1.TXT"
+
+TIMEOUT_SECONDS_DEFAULT = 0.5
+START_TIMEOUT_SECONDS_DEFAULT = 5.0
+REALTIME_DEFAULT = True
+SPEED_DEFAULT = 1.0
+CHUNK_SIZE_DEFAULT = 80_000
+DRAIN_SECONDS_DEFAULT = 1.0
 
 
 FIELDS: List[str] = [
@@ -66,40 +68,40 @@ def main() -> int:
         help="Baud rate (default: 2000000)",
     )
     parser.add_argument(
-        "--serial-timeout-seconds",
+        "--timeout-seconds",
         type=float,
-        default=SERIAL_TIMEOUT_SECONDS,
-        help=f"Read timeout for serial polling (default: {SERIAL_TIMEOUT_SECONDS})",
+        default=TIMEOUT_SECONDS_DEFAULT,
+        help=f"Timeout used by get_data_packets(block=True) (default: {TIMEOUT_SECONDS_DEFAULT})",
     )
     parser.add_argument(
         "--start-timeout-seconds",
         type=float,
-        default=START_TIMEOUT_SECONDS,
-        help=f"Timeout waiting for mock ack (default: {START_TIMEOUT_SECONDS})",
+        default=START_TIMEOUT_SECONDS_DEFAULT,
+        help=f"Timeout waiting for mock ack (default: {START_TIMEOUT_SECONDS_DEFAULT})",
     )
     parser.add_argument(
         "--realtime",
         action=argparse.BooleanOptionalAction,
-        default=REALTIME,
-        help=f"Pace the stream by timestamps (default: {REALTIME})",
+        default=REALTIME_DEFAULT,
+        help=f"Pace the stream by timestamps (default: {REALTIME_DEFAULT})",
     )
     parser.add_argument(
         "--speed",
         type=float,
-        default=SPEED,
-        help=f"Playback speed multiplier when realtime (default: {SPEED})",
+        default=SPEED_DEFAULT,
+        help=f"Playback speed multiplier when realtime (default: {SPEED_DEFAULT})",
     )
     parser.add_argument(
         "--chunk-size",
         type=int,
-        default=CHUNK_SIZE,
-        help=f"File read chunk size (default: {CHUNK_SIZE})",
+        default=CHUNK_SIZE_DEFAULT,
+        help=f"File read chunk size (default: {CHUNK_SIZE_DEFAULT})",
     )
     parser.add_argument(
         "--drain-seconds",
         type=float,
-        default=DRAIN_SECONDS,
-        help=f"How long to keep logging after stream ends (default: {DRAIN_SECONDS})",
+        default=DRAIN_SECONDS_DEFAULT,
+        help=f"How long to keep logging after stream ends (default: {DRAIN_SECONDS_DEFAULT})",
     )
     args = parser.parse_args()
 
@@ -112,9 +114,12 @@ def main() -> int:
 
     start_wall = time.time()
 
-    with FIRMClient(args.port, args.baud_rate, args.serial_timeout_seconds) as client:
-        # Clear any initial packets (blocking read to drain).
-        client.get_data_packets(block=True)
+    with FIRMClient(args.port, args.baud_rate, args.timeout_seconds) as client:
+        # Best-effort drain (doesn't matter if empty)
+        try:
+            client.get_data_packets(block=True)
+        except Exception:
+            pass
 
         print("Starting async mock stream...")
         client.start_mock_log_stream(
@@ -126,38 +131,41 @@ def main() -> int:
             cancel_on_finish=True,
         )
 
-        with out_path.open("w", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=FIELDS)
-            writer.writeheader()
+        try:
+            with out_path.open("w", newline="") as f:
+                writer = csv.DictWriter(f, fieldnames=FIELDS)
+                writer.writeheader()
 
-            while True:
-                # Poll streamer completion once until it finishes.
-                if sent_packets is None:
-                    sent_packets = client.poll_mock_log_stream()
+                while True:
+                    # Read device output packets
+                    packets = client.get_data_packets(block=False)
+                    for pkt in packets:
+                        writer.writerow(_row_from_packet(pkt))
+                        total_rows += 1
 
-                    # `poll_*` is our single source of truth for "still streaming":
-                    # - None => still running
-                    # - int  => finished
-                    if sent_packets is not None and mock_finished_wall is None:
-                        mock_finished_wall = time.time()
+                    # Detect stream end
+                    if not client.is_mock_log_streaming():
+                        if mock_finished_wall is None:
+                            mock_finished_wall = time.time()
 
-                # Keep reading device output packets.
-                packets = client.get_data_packets(block=False)
-                for pkt in packets:
-                    writer.writerow(_row_from_packet(pkt))
-                    total_rows += 1
+                    # Drain window after stream ends
+                    if mock_finished_wall is not None:
+                        if time.time() - mock_finished_wall >= float(args.drain_seconds):
+                            break
 
-                # Once the stream is finished, keep logging for a fixed drain window.
-                if mock_finished_wall is not None:
-                    if time.time() - mock_finished_wall >= float(args.drain_seconds):
-                        break
+                    time.sleep(0.001)
 
-                # Avoid busy loop.
-                time.sleep(0.001)
+        except KeyboardInterrupt:
+            print("\nInterrupted — stopping mock stream...")
 
-        # Best-effort join, in case we exited before the poll observed completion.
-        if sent_packets is None:
-            sent_packets = client.join_mock_log_stream()
+        finally:
+            # Ensure the mock stream is stopped and (optionally) joined.
+            # join=True blocks until the mock thread exits and returns packet count.
+            try:
+                sent_packets = client.stop_mock_log_stream(cancel_device=True, join=True)
+            except Exception:
+                # If something goes wrong (e.g. already stopped), just proceed.
+                sent_packets = sent_packets
 
     elapsed = time.time() - start_wall
     print(f"Wrote {total_rows} FIRM output packets to: {out_path}")

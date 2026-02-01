@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from enum import IntEnum
 from types import TracebackType
-from typing import Any, Optional, Type
+from typing import Type
 
+__version__: str
 
 class DeviceProtocol(IntEnum):
     """Enum of the supported device communication protocols."""
@@ -26,7 +27,7 @@ class DeviceConfig:
     protocol: DeviceProtocol
 
 
-class FIRMData:
+class FIRMDataPacket:
     """Represents a data packet received from the FIRM device."""
 
     timestamp_seconds: float
@@ -128,7 +129,7 @@ class FIRMClient:
     def stop(self) -> None: ...
     """Stop the background reader thread and close the serial port."""
 
-    def get_data_packets(self, block: bool = False) -> list[FIRMData]: ...
+    def get_data_packets(self, block: bool = False) -> list[FIRMDataPacket]: ...
     """Retrieve currently-available data packets.
 
     Args:
@@ -150,21 +151,27 @@ class FIRMClient:
     ) -> bool: ...
     """Set device config and wait up to timeout_seconds for acknowledgement."""
 
+    def set_magnetometer_calibration(
+        self,
+        offsets: tuple[float, float, float],
+        scale_matrix: tuple[float, float, float, float, float, float, float, float, float],
+        timeout_seconds: float = 5.0,
+    ) -> bool: ...
+    """Set magnetometer calibration and wait up to timeout_seconds for acknowledgement."""
+
+    def set_imu_calibration(
+        self,
+        offsets: tuple[float, float, float],
+        scale_matrix: tuple[float, float, float, float, float, float, float, float, float],
+        timeout_seconds: float = 5.0,
+    ) -> bool: ...
+    """Set IMU calibration and wait up to timeout_seconds for acknowledgement."""
+
     def cancel(self, timeout_seconds: float = 5.0) -> bool: ...
     """Send cancel and wait up to timeout_seconds for acknowledgement."""
 
     def reboot(self) -> None: ...
     """Send reboot command."""
-
-    def stream_mock_log_file(
-        self,
-        log_path: str,
-        realtime: bool = True,
-        speed: float = 1.0,
-        chunk_size: int = 8192,
-        start_timeout_seconds: float = 5.0,
-    ) -> int: ...
-    """Stream an entire mock log file synchronously and return bytes sent."""
 
     def start_mock_log_stream(
         self,
@@ -176,15 +183,12 @@ class FIRMClient:
         cancel_on_finish: bool = True,
     ) -> None: ...
     """Start streaming a mock log file asynchronously in the background."""
+    
+    def is_mock_log_streaming(self) -> bool: ...
+    """True if a mock log stream is currently running."""
 
-    def stop_mock_log_stream(self, cancel_device: bool = True) -> None: ...
+    def stop_mock_log_stream(self, cancel_device: bool = True, join: bool = True) -> int | None: ...
     """Stop the async mock log stream. Optionally cancel the device."""
-
-    def poll_mock_log_stream(self) -> int | None: ...
-    """Non-blocking: returns None if still streaming; otherwise bytes sent."""
-
-    def join_mock_log_stream(self) -> int | None: ...
-    """Blocking join for the async mock log stream; returns bytes sent or None."""
 
     def is_running(self) -> bool: ...
     """True if the client reader thread is running."""

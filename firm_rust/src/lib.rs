@@ -223,9 +223,9 @@ impl FIRMClient {
 
     /// Stops the background thread and closes the serial port.
     pub fn stop(&mut self) {
-        // Stop any async mock stream first so it doesn't keep writing while we shut down.
-        let _ = self.stop_mock_log_stream(false);
-        let _ = self.try_join_mock_log_stream();
+        if let Err(e) = self.stop_mock_log_stream(false, true) {
+            let _ = self.error_sender.send(e.to_string());
+        }
 
         self.running.store(false, Ordering::Relaxed);
         // todo: explain this properly when I understand it better (it's mostly for restarting)
@@ -368,44 +368,7 @@ impl FIRMClient {
         })
     }
 
-    /// Streams framed mock sensor packets from a `.TXT` log file.
-    ///
-    /// This will:
-    /// 1) Send the mock command and wait for ack
-    /// 2) Read the log header (`firm_core::mock::LOG_HEADER_SIZE` bytes)
-    /// 3) Parse the remaining file bytes as log records
-    /// 4) Send framed mock sensor packets (`FIRMLogPacket::to_bytes()`) to the device
-    ///
-    /// If `realtime` is true, the stream is paced based on the log timestamps. `speed` is a
-    /// multiplier (1.0 = real-time, 2.0 = 2x faster, 0.5 = half-speed).
-    pub fn stream_mock_log_file(
-        &mut self,
-        log_path: &str,
-        start_timeout: Duration,
-        realtime: bool,
-        speed: f64,
-        chunk_size: usize,
-    ) -> Result<usize> {
-        self.start_mock_mode(start_timeout)?;
-
-        let stop_flag = AtomicBool::new(false);
-        let packets_sent = stream_mock_log_file_worker(
-            log_path,
-            realtime,
-            speed,
-            chunk_size,
-            &stop_flag,
-            &self.mock_sender,
-        )?;
-
-        // Keep prior behavior: when this blocking call finishes, send a cancel command and wait
-        // for acknowledgement.
-        self.cancel(Duration::from_secs(5))?;
-
-        Ok(packets_sent)
-    }
-
-    /// Starts streaming a `.TXT` mock log file on a background thread.
+    /// Starts streaming a `.frm` mock log file on a background thread.
     ///
     /// While the mock stream is running you can continue to call `get_data_packets()` or other
     /// APIs to read/log FIRM's output.
@@ -421,11 +384,17 @@ impl FIRMClient {
         chunk_size: usize,
         cancel_on_finish: bool,
     ) -> Result<()> {
-        // If a previous stream finished but wasn't joined, join it now to clear state.
-        let _ = self.try_join_mock_log_stream();
-
         if self.is_mock_log_streaming() {
             return Err(anyhow::anyhow!("Mock stream already running"));
+        }
+
+        if !self.is_running() {
+            self.start();
+        }
+
+        // If a previous stream finished but wasn't joined, join it now.
+        if self.mock_stream_handle.as_ref().is_some_and(|h| h.is_finished()) {
+            let _ = self.stop_mock_log_stream(false, true);
         }
 
         self.start_mock_mode(start_timeout)?;
@@ -468,37 +437,19 @@ impl FIRMClient {
             .is_some_and(|h| !h.is_finished())
     }
 
-    /// Requests that the background mock stream stop.
-    ///
-    /// If `cancel_device` is true, a cancel command is sent (fire-and-forget).
-    pub fn stop_mock_log_stream(&mut self, cancel_device: bool) -> Result<()> {
+    pub fn stop_mock_log_stream(&mut self, cancel_device: bool, block: bool) -> Result<Option<usize>> {
         self.mock_stream_stop.store(true, Ordering::Relaxed);
 
         if cancel_device {
-            // Fire-and-forget.
-            let _ = self
-                .command_sender
-                .send(FIRMCommandPacket::build_cancel_command());
+            let _ = self.command_sender.send(FIRMCommandPacket::build_cancel_command());
         }
 
-        Ok(())
-    }
-
-    /// If the background mock stream has finished, joins it and returns the number of packets
-    /// it sent.
-    pub fn try_join_mock_log_stream(&mut self) -> Result<Option<usize>> {
-        let Some(handle) = self.mock_stream_handle.as_ref() else {
-            return Ok(None);
-        };
-        if !handle.is_finished() {
-            return Ok(None);
+        if !block {
+            // non-blocking: only join if already finished
+            let Some(h) = self.mock_stream_handle.as_ref() else { return Ok(None); };
+            if !h.is_finished() { return Ok(None); }
         }
 
-        self.join_mock_log_stream()
-    }
-
-    /// Joins the background mock stream, blocking until it finishes.
-    pub fn join_mock_log_stream(&mut self) -> Result<Option<usize>> {
         let Some(handle) = self.mock_stream_handle.take() else {
             return Ok(None);
         };
@@ -506,9 +457,10 @@ impl FIRMClient {
         let res = handle
             .join()
             .map_err(|_| anyhow::anyhow!("Mock stream thread panicked"))??;
+
         Ok(Some(res))
     }
-
+    
     /// Sends a cancel command and waits for acknowledgement.
     pub fn cancel(&mut self, timeout: Duration) -> Result<Option<bool>> {
         self.send_command(FIRMCommandPacket::build_cancel_command())?;
@@ -537,25 +489,19 @@ impl FIRMClient {
         self.running.load(Ordering::Relaxed)
     }
 
-    /// Sends a mock command, waits for acknowledgement, then starts sending mock data packets.
-    fn mock(&mut self, timeout: Duration) -> Result<Option<bool>> {
-        self.send_command(FIRMCommandPacket::build_mock_command())?;
-        self.wait_for_matching_response(timeout, |res| match res {
-            FIRMResponse::Mock(ok) => Some(*ok),
-            _ => None,
-        })
-    }
-
-    /// Starts mock mode and requires an acknowledgement.
+    /// Enter mock mode and require an acknowledgement.
     ///
     /// Returns `Ok(())` only if the device explicitly acknowledges mock mode.
     fn start_mock_mode(&mut self, timeout: Duration) -> Result<()> {
-        match self.mock(timeout)? {
+        self.send_command(FIRMCommandPacket::build_mock_command())?;
+
+        match self.wait_for_matching_response(timeout, |res| match res {
+            FIRMResponse::Mock(ok) => Some(*ok),
+            _ => None,
+        })? {
             Some(true) => Ok(()),
             Some(false) => Err(anyhow::anyhow!("Device rejected mock mode")),
-            None => Err(anyhow::anyhow!(
-                "Timed out waiting for mock acknowledgement"
-            )),
+            None => Err(anyhow::anyhow!("Timed out waiting for mock acknowledgement")),
         }
     }
 

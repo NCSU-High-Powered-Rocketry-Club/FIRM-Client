@@ -54,8 +54,8 @@ impl FIRMClient {
                         port_name
                     )),
                     _ => py_io_err(format!(
-                        "Failed to open serial port '{}'",
-                        port_name
+                        "Failed to open serial port '{}': {}",
+                        port_name, io_err
                     )),
                 }
             } else {
@@ -103,29 +103,6 @@ impl FIRMClient {
         self.inner.stop();
     }
 
-    /// Stream an entire mock log file synchronously and return the number of bytes sent.
-    #[pyo3(signature = (log_path, realtime=true, speed=1.0, chunk_size=8192, start_timeout_seconds=5.0))]
-    fn stream_mock_log_file(
-        &mut self,
-        log_path: &str,
-        realtime: bool,
-        speed: f64,
-        chunk_size: usize,
-        start_timeout_seconds: f64,
-    ) -> PyResult<usize> {
-        self.ensure_ok()?;
-
-        let sent = map_io(self.inner.stream_mock_log_file(
-            log_path,
-            Duration::from_secs_f64(start_timeout_seconds),
-            realtime,
-            speed,
-            chunk_size,
-        ))?;
-
-        Ok(sent)
-    }
-
     /// Start streaming a mock log file in the background.
     #[pyo3(signature = (log_path, realtime=true, speed=1.0, chunk_size=8192, start_timeout_seconds=5.0, cancel_on_finish=true))]
     fn start_mock_log_stream(
@@ -151,24 +128,13 @@ impl FIRMClient {
         Ok(())
     }
 
-    #[pyo3(signature = (cancel_device=true))]
-    fn stop_mock_log_stream(&mut self, cancel_device: bool) -> PyResult<()> {
-        self.ensure_ok()?;
-        map_io(self.inner.stop_mock_log_stream(cancel_device))?;
-        Ok(())
+    fn is_mock_log_streaming(&self) -> bool {
+        self.inner.is_mock_log_streaming()
     }
 
-    /// Non-blocking join: returns `Ok(None)` if still streaming; `Ok(Some(bytes_sent))` if finished.
-    fn poll_mock_log_stream(&mut self) -> PyResult<Option<usize>> {
-        self.ensure_ok()?;
-        let res = map_io(self.inner.try_join_mock_log_stream())?;
-        Ok(res)
-    }
-
-    /// Blocking join.
-    fn join_mock_log_stream(&mut self) -> PyResult<Option<usize>> {
-        self.ensure_ok()?;
-        let res = map_io(self.inner.join_mock_log_stream())?;
+    #[pyo3(signature = (cancel_device=true, block=true))]
+    fn stop_mock_log_stream(&mut self, cancel_device: bool, block: bool) -> PyResult<Option<usize>> {
+        let res = map_io(self.inner.stop_mock_log_stream(cancel_device, block))?;
         Ok(res)
     }
 
@@ -285,7 +251,11 @@ impl FIRMClient {
         _exc_value: Option<Bound<'_, PyAny>>,
         _traceback: Option<Bound<'_, PyAny>>,
     ) {
-        slf.borrow_mut().stop();
+        let mut this = slf.borrow_mut();
+
+        let _ = this.inner.stop_mock_log_stream(true, true);
+
+        this.inner.stop();
     }
 }
 

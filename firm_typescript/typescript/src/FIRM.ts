@@ -244,33 +244,135 @@ export class FIRMClient {
     await this.sendBytes(parser.build_header_packet(header));
 
     let sent = 0;
+
+    // We want ONE burst of 75 total, not 75 per chunk.
+    // So we track whether we've already done the preload.
+    let didPreload = false;
+
     for (let offset = 0; offset < body.length; offset += chunkSize) {
       parser.parse_bytes(body.slice(offset, offset + chunkSize));
-      sent += await this.drainMockPackets(parser, realtime, speed);
+
+      // First drain does the preload burst, later drains do only batching
+      if (!didPreload) {
+        sent += await this.drainMockPacketsBatched(parser, realtime, speed, 75, 10);
+        didPreload = true;
+      } else {
+        // No preload after the first call; still batch in 10s
+        sent += await this.drainMockPacketsBatched(parser, realtime, speed, 0, 10);
+      }
     }
 
-    sent += await this.drainMockPackets(parser, realtime, speed);
-    return sent;
+    // Final drain in case parser buffered leftovers
+    if (!didPreload) {
+      sent += await this.drainMockPacketsBatched(parser, realtime, speed, 75, 10);
+    } else {
+      sent += await this.drainMockPacketsBatched(parser, realtime, speed, 0, 10);
+    }
+
+    return sent;  
   }
 
-  private async drainMockPackets(
+  /** Sends multiple frames as a single byte array. */
+  private async sendBatch(frames: Uint8Array[]): Promise<void> {
+    let total = 0;
+    for (const f of frames) total += f.length;
+
+    const out = new Uint8Array(total);
+    let off = 0;
+    for (const f of frames) {
+      out.set(f, off);
+      off += f.length;
+    }
+
+    await this.sendBytes(out);
+  }
+
+  private async drainMockPacketsBatched(
     parser: MockLogParser,
     realtime: boolean,
     speed: number,
+    preloadCount = 75,
+    batchSize = 10,
   ): Promise<number> {
-    let count = 0;
-    while (true) {
+    // Stage parsed packets here so we can burst + batch
+    const staged: { bytes: Uint8Array; delaySeconds: number }[] = [];
+
+    const popOne = () => {
+      if (staged.length > 0) return staged.shift()!;
       const pkt = parser.get_packet_with_delay() as
         | { bytes: Uint8Array; delaySeconds: number }
         | null;
-      if (!pkt) break;
-      if (realtime && pkt.delaySeconds > 0) {
-        await this.sleep((pkt.delaySeconds * 1000) / speed);
+      return pkt ?? null;
+    };
+
+    const fillUntil = (n: number) => {
+      while (staged.length < n) {
+        const pkt = parser.get_packet_with_delay() as
+          | { bytes: Uint8Array; delaySeconds: number }
+          | null;
+        if (!pkt) break;
+        staged.push(pkt);
       }
-      await this.sendBytes(pkt.bytes);
-      count += 1;
+    };
+
+    let sent = 0;
+
+    // -------------------------
+    // 1) PRELOAD burst (no sleep)
+    // -------------------------
+    fillUntil(preloadCount);
+
+    const batch: Uint8Array[] = [];
+    while (batch.length < preloadCount) {
+      const pkt = popOne();
+      if (!pkt) break;
+      batch.push(pkt.bytes);
     }
-    return count;
+
+    await this.sendBatch(batch);
+    sent += batch.length;
+
+    // Reset pacing after burst: we pace relative to "now"
+    const streamStart = performance.now();
+    let totalDelaySeconds = 0;
+
+    // -----------------------------------------
+    // 2) MAIN: batches of N (one sleep per batch)
+    // -----------------------------------------
+    while (true) {
+      // Make sure we have at least one packet available
+      fillUntil(batchSize);
+      if (staged.length === 0) {
+        const pkt = popOne();
+        if (!pkt) break;
+        staged.push(pkt);
+      }
+
+      // Build a batch up to batchSize
+      const batch = staged.splice(0, batchSize);
+      if (batch.length === 0) break;
+
+      let batchDelaySeconds = 0;
+      for (const pkt of batch) batchDelaySeconds += pkt.delaySeconds;
+
+      await this.sendBatch(batch.map((p) => p.bytes));
+      sent += batch.length;
+
+      // Sleep once per batch to approximate original pacing
+      if (realtime && batchDelaySeconds > 0) {
+        totalDelaySeconds += batchDelaySeconds;
+
+        const elapsedSeconds = (performance.now() - streamStart) / 1000;
+        const targetSeconds = totalDelaySeconds / speed;
+
+        // Only sleep if we're not already behind
+        if (elapsedSeconds <= targetSeconds) {
+          await this.sleep((batchDelaySeconds * 1000) / speed);
+        }
+      }
+    }
+
+    return sent;
   }
 
   /**

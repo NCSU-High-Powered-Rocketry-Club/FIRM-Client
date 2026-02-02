@@ -20,9 +20,7 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Rust",
 ]
-dependencies = [
-    "matplotlib>=3.10.8",
-]
+dependencies = []
 
 [project.urls]
 "Homepage" = "https://ncsurocketry.org"
@@ -43,7 +41,8 @@ extras = [
     "pandas>=2.0",
     "plotly>=5.20",
     "dash>=2.16",
-    "flask"
+    "flask",
+    "matplotlib>=3.10.8",
 ]
 
 [tool.uv]
@@ -55,5 +54,3 @@ cache-keys = [{file = "pyproject.toml"}, {file = "Cargo.toml"}, {file = "**/*.rs
 [tool.maturin]
 features = ["pyo3/extension-module"]
 manifest-path = "firm_python/Cargo.toml"
-# include the stub from the firm_python folder so all wheels contain it
-include = ["firm_python/firm_client.pyi", "firm_python/py.typed"]

@@ -612,6 +612,9 @@ fn stream_mock_log_file_worker(
         return Err(anyhow::anyhow!("speed must be > 0"));
     }
 
+    const PRELOAD_COUNT: usize = 75;
+    const BATCH_SIZE: usize = 10;
+
     let mut file = File::open(log_path)?;
     let mut header = vec![0u8; HEADER_TOTAL_SIZE];
     file.read_exact(&mut header)?;
@@ -622,77 +625,138 @@ fn stream_mock_log_file_worker(
         .send(header_packet)
         .map_err(|_| io::Error::other("Mock channel closed"))?;
 
-    // After we send the header we pause for a short time to let the device process it.
-    sleep_interruptible(HEADER_PARSE_DELAY, stop);
-
     let mut parser = LogParser::new();
     parser.read_header(&header);
 
+    // After we send the header we pause for a short time to let the device process it.
+    sleep_interruptible(HEADER_PARSE_DELAY, stop);
+
     let mut buf = vec![0u8; chunk_size];
     let mut packets_sent = 0usize;
+
+    // Staging queue of parsed packets + their requested delay.
+    let mut staged: std::collections::VecDeque<(FIRMLogPacket, f64)> =
+        std::collections::VecDeque::new();
+
+    // Read+parse enough bytes to stage more packets.
+    // Returns Ok(true) if it read more bytes, Ok(false) if file is exhausted.
+    let mut refill = |file: &mut File,
+                      buf: &mut [u8],
+                      parser: &mut LogParser,
+                      staged: &mut std::collections::VecDeque<(FIRMLogPacket, f64)>|
+     -> Result<bool> {
+        let n = file.read(buf)?;
+        if n == 0 {
+            return Ok(false);
+        }
+
+        parser.parse_bytes(&buf[..n]);
+        while let Some((packet, delay_seconds)) = parser.get_packet_and_time_delay() {
+            staged.push_back((packet, delay_seconds));
+        }
+
+        Ok(true)
+    };
+
+    // -------------------------
+    // 1) PRELOAD: send 75 ASAP
+    // -------------------------
+    let mut sent_preload = 0usize;
+    while sent_preload < PRELOAD_COUNT && !stop.load(Ordering::Relaxed) {
+        // Ensure we have at least one staged packet.
+        while staged.is_empty() {
+            let read_more = refill(&mut file, &mut buf, &mut parser, &mut staged)?;
+            if !read_more {
+                // File ended; drain anything remaining in parser.
+                while let Some((packet, delay_seconds)) = parser.get_packet_and_time_delay() {
+                    staged.push_back((packet, delay_seconds));
+                }
+                break;
+            }
+        }
+
+        let Some((packet, _delay_seconds)) = staged.pop_front() else {
+            break; // no more packets available
+        };
+
+        // Send immediately (no pacing / no sleeping).
+        mock_sender
+            .send(packet)
+            .map_err(|_| io::Error::other("Mock channel closed"))?;
+        packets_sent += 1;
+        sent_preload += 1;
+    }
+
+    // After the burst, reset pacing so realtime timing starts “from here”.
     let stream_start = Instant::now();
     let mut total_delay_seconds = 0.0f64;
 
+    // -----------------------------------------
+    // 2) MAIN: send in batches of 10 packets
+    // -----------------------------------------
     loop {
         if stop.load(Ordering::Relaxed) {
             break;
         }
 
-        let n = file.read(&mut buf)?;
-        if n == 0 {
+        // Make sure we can form a batch (or hit EOF).
+        while staged.len() < BATCH_SIZE {
+            let read_more = refill(&mut file, &mut buf, &mut parser, &mut staged)?;
+            if !read_more {
+                // File ended; drain any remaining packets parser can produce.
+                while let Some((packet, delay_seconds)) = parser.get_packet_and_time_delay() {
+                    staged.push_back((packet, delay_seconds));
+                }
+                break;
+            }
+        }
+
+        if staged.is_empty() {
             break;
         }
 
-        parser.parse_bytes(&buf[..n]);
+        // Pop up to BATCH_SIZE packets.
+        let mut batch_delay = 0.0f64;
+        let mut batch = Vec::with_capacity(BATCH_SIZE);
+        for _ in 0..BATCH_SIZE {
+            if let Some((packet, delay_seconds)) = staged.pop_front() {
+                batch_delay += delay_seconds;
+                batch.push(packet);
+            } else {
+                break;
+            }
+        }
 
-        while let Some((packet, delay_seconds)) = parser.get_packet_and_time_delay() {
+        // Send the whole batch (still individual send() calls, but no per-packet sleep).
+        for packet in batch {
             if stop.load(Ordering::Relaxed) {
                 break;
             }
-
-            total_delay_seconds += delay_seconds;
-
             mock_sender
                 .send(packet)
                 .map_err(|_| io::Error::other("Mock channel closed"))?;
             packets_sent += 1;
-
-            if realtime && delay_seconds > 0.0 {
-                let stream_elapsed = stream_start.elapsed().as_secs_f64();
-                // Only sleep if we're not already behind.
-                if stream_elapsed <= total_delay_seconds / speed {
-                    sleep_interruptible(Duration::from_secs_f64(delay_seconds / speed), stop);
-                }
-            }
         }
 
-        if parser.eof_reached() {
-            break;
-        }
-    }
+        // Sleep once per batch to approximate original pacing.
+        if realtime && batch_delay > 0.0 {
+            total_delay_seconds += batch_delay;
 
-    // Drain any remaining packets buffered by the parser.
-    while !stop.load(Ordering::Relaxed) {
-        let Some((packet, delay_seconds)) = parser.get_packet_and_time_delay() else {
-            break;
-        };
-
-        total_delay_seconds += delay_seconds;
-        mock_sender
-            .send(packet)
-            .map_err(|_| io::Error::other("Mock channel closed"))?;
-        packets_sent += 1;
-
-        if realtime && delay_seconds > 0.0 {
             let stream_elapsed = stream_start.elapsed().as_secs_f64();
             if stream_elapsed <= total_delay_seconds / speed {
-                sleep_interruptible(Duration::from_secs_f64(delay_seconds / speed), stop);
+                sleep_interruptible(Duration::from_secs_f64(batch_delay / speed), stop);
             }
+        }
+
+        // If parser knows it hit EOF and nothing is staged, we’re done.
+        if parser.eof_reached() && staged.is_empty() {
+            break;
         }
     }
 
     Ok(packets_sent)
 }
+
 
 /// Ensures that the client is properly stopped when dropped, i.e. .stop() is called.
 impl Drop for FIRMClient {

@@ -14,6 +14,7 @@ pyo3 = { version = "0.27.2", features = ["extension-module"], optional = true }
 pythonize = { version = "0.27", optional = true }
 wasm-bindgen = { version = "0.2.106", optional = true }
 field_names = "0.2"
+nalgebra = "0.34.1"
 
 [features]
 default = []

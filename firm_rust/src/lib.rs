@@ -17,6 +17,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, channel};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
+use firm_core::calibration::{MagnetometerCalibration, MagnetometerCalibrator};
+use std::sync::RwLock;
 
 pub mod mock_serial;
 
@@ -57,6 +59,9 @@ pub struct FIRMClient {
 
     mock_stream_stop: Arc<AtomicBool>,
     mock_stream_handle: Option<JoinHandle<anyhow::Result<usize>>>,
+
+    calibration_snoop: Arc<RwLock<Option<Sender<FIRMData>>>>,
+    calibration_handle: Option<JoinHandle<Option<MagnetometerCalibration>>>,
 }
 
 impl FIRMClient {
@@ -109,6 +114,9 @@ impl FIRMClient {
 
             mock_stream_stop: Arc::new(AtomicBool::new(false)),
             mock_stream_handle: None,
+
+            calibration_snoop: Arc::new(RwLock::new(None)),
+            calibration_handle: None,
         }
     }
 
@@ -142,6 +150,8 @@ impl FIRMClient {
         let sender = self.sender.clone();
         let response_sender = self.response_sender.clone();
         let error_sender = self.error_sender.clone();
+
+        let calibration_snoop = self.calibration_snoop.clone();
 
         let handle: JoinHandle<Box<dyn SerialPort>> = thread::spawn(move || {
             let mut parser = SerialParser::new();
@@ -190,11 +200,20 @@ impl FIRMClient {
                         // Feed the read bytes into the parser
                         parser.parse_bytes(&buffer[..bytes_read]);
 
-                        // Reads all available data packets and send them to the main thread
+                        // Reads all available data packets and send them to the main thread and calibration if wanted
                         while let Some(firm_data_packet) = parser.get_data_packet() {
                             let packet = firm_data_packet.data().clone();
-                            if sender.send(packet).is_err() {
+                            
+                            if sender.send(packet.clone()).is_err() {
                                 return port; // Receiver dropped
+                            }
+
+                            // We use a read lock which is very fast if no one is writing.
+                            if let Ok(guard) = calibration_snoop.read() {
+                                if let Some(cal_tx) = &*guard {
+                                    // Ignore errors (if cal thread died, we don't care)
+                                    let _ = cal_tx.send(packet); 
+                                }
                             }
                         }
 
@@ -229,8 +248,12 @@ impl FIRMClient {
             let _ = self.error_sender.send(e.to_string());
         }
 
+        if self.calibration_handle.is_some() {
+            let _ = self.finish_magnetometer_calibration();
+        }
+
         self.running.store(false, Ordering::Relaxed);
-        // todo: explain this properly when I understand it better (it's mostly for restarting)
+                // todo: explain this properly when I understand it better (it's mostly for restarting)
         if let Some(handle) = self.join_handle.take()
             && let Ok(port) = handle.join()
         {
@@ -522,6 +545,47 @@ impl FIRMClient {
         }
     }
 
+    /// Runs a full magnetometer calibration sequence for a specific duration and applies the result.
+    ///
+    /// This is a blocking helper function that:
+    /// 1. Starts the background calibration listener.
+    /// 2. Sleeps for `collection_duration` (allows you to rotate the device).
+    /// 3. Stops the listener and calculates the offsets/matrix.
+    /// 4. Automatically sends the new calibration to the device.
+    ///
+    /// # Returns
+    /// - `Ok(Some(true))` if the calibration was calculated and accepted by the device.
+    /// - `Ok(None)` if the calibration failed (not enough data) or device did not ack.
+    /// - `Err(...)` if there was a communication error.
+    pub fn run_and_apply_magnetometer_calibration(
+        &mut self,
+        collection_duration: Duration,
+        apply_timeout: Duration,
+    ) -> Result<Option<bool>> {
+        // 1. Start listening
+        self.start_magnetometer_calibration()?;
+
+        // 2. Wait for data collection (Block thread while user rotates device)
+        // We use std::thread::sleep because this function is intended to be blocking.
+        std::thread::sleep(collection_duration);
+
+        // 3. Finish and Calculate
+        let calibration_result = self.finish_magnetometer_calibration()?;
+
+        match calibration_result {
+            Some((offsets, matrix)) => {
+                // 4. Apply to device
+                // We have valid data, so send the set command.
+                println!("Calibration result: Offsets: {:?}, Matrix: {:?}", offsets, matrix);
+                self.set_magnetometer_calibration(offsets, matrix, apply_timeout)
+            }
+            None => {
+                // Calibration failed (likely not enough distinct data points)
+                Ok(None)
+            }
+        }
+    }
+
     /// Sends a high-level command to the device.
     fn send_command(&self, command: FIRMCommandPacket) -> Result<()> {
         self.command_sender
@@ -604,6 +668,67 @@ impl FIRMClient {
                 return Ok(Some(result));
             }
         }
+    }
+
+    /// Starts the magnetometer calibration process in a background thread.
+    /// 
+    /// This will automatically begin collecting data from the incoming stream.
+    /// Call `finish_magnetometer_calibration` to stop collecting and calculate the result.
+    pub fn start_magnetometer_calibration(&mut self) -> Result<()> {
+        if self.calibration_handle.is_some() {
+            return Err(anyhow::anyhow!("Calibration already in progress"));
+        }
+
+        // Create a channel for the serial thread to send data to the calibration thread
+        let (tx, rx) = channel();
+
+        // Register the sender in the shared snoop slot.
+        // The serial thread will pick this up on its next loop iteration.
+        {
+            let mut guard = self.calibration_snoop.write().map_err(|_| anyhow::anyhow!("Lock poisoned"))?;
+            *guard = Some(tx);
+        }
+
+        // Spawn the calibration thread
+        let handle = thread::spawn(move || {
+            let mut calibrator = MagnetometerCalibrator::new();
+            calibrator.start();
+
+            // Keep receiving data until the sender is dropped (which happens in finish_calibration)
+            while let Ok(data) = rx.recv() {
+                calibrator.add_sample(&data);
+            }
+
+            calibrator.stop();
+            calibrator.calculate()
+        });
+
+        self.calibration_handle = Some(handle);
+        Ok(())
+    }
+
+    /// Stops the calibration process and calculates the hard iron offsets and soft iron matrix.
+    /// 
+    /// Returns `Ok(None)` if the calibration failed (e.g. not enough data points).
+    pub fn finish_magnetometer_calibration(&mut self) -> Result<Option<([f32; 3], [f32; 9])>> {
+        // 1. Remove the sender from the snoop slot.
+        // This causes the `rx.recv()` in the calibration thread to return an error, breaking its loop.
+        {
+            let mut guard = self.calibration_snoop.write().map_err(|_| anyhow::anyhow!("Lock poisoned"))?;
+            *guard = None;
+        }
+
+        // 2. Join the thread to get the result
+        if let Some(handle) = self.calibration_handle.take() {
+            let result = handle.join().map_err(|_| anyhow::anyhow!("Calibration thread panicked"))?;
+            
+            // 3. Convert result to the array format we need for FIRMCommand
+            if let Some(cal) = result {
+                return Ok(Some(cal.to_arrays()));
+            }
+        }
+        
+        Ok(None)
     }
 }
 

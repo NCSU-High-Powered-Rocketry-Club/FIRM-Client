@@ -234,6 +234,33 @@ impl FIRMClient {
         Ok(res.unwrap_or(false))
     }
 
+    /// Runs a blocking magnetometer calibration sequence.
+    ///
+    /// This function will:
+    /// 1. Start the calibration listener.
+    /// 2. Sleep for `collection_duration_seconds` (blocking the script).
+    /// 3. Stop the listener and calculate the result.
+    /// 4. Apply the result to the device if successful.
+    #[pyo3(signature = (collection_duration_seconds, apply_timeout_seconds=5.0))]
+    fn run_and_apply_magnetometer_calibration(
+        &mut self,
+        collection_duration_seconds: f64,
+        apply_timeout_seconds: f64,
+    ) -> PyResult<Option<bool>> {
+        self.ensure_ok()?;
+
+        let collection_duration = Duration::from_secs_f64(collection_duration_seconds);
+        let apply_timeout = Duration::from_secs_f64(apply_timeout_seconds);
+
+        // Call the inner Rust method we created earlier.
+        let res = map_io(self.inner.run_and_apply_magnetometer_calibration(
+            collection_duration,
+            apply_timeout,
+        ))?;
+
+        Ok(res)
+    }
+
     #[pyo3(signature = (timeout_seconds=5.0))]
     fn cancel(&mut self, timeout_seconds: f64) -> PyResult<bool> {
         self.ensure_ok()?;

@@ -4,7 +4,7 @@ import sys
 import time
 from collections import deque
 from dataclasses import dataclass
-from typing import Deque, Dict, Iterable, List, Optional, Tuple
+from typing import Deque, Dict, List, Optional, Tuple
 
 from firm_client import FIRMClient
 
@@ -202,7 +202,8 @@ def main(argv: List[str]) -> int:
                         # Trim to rolling window.
                         while (
                             kalman_update_times
-                            and kalman_time - kalman_update_times[0] > KALMAN_WINDOW_SECONDS
+                            and kalman_time - kalman_update_times[0]
+                            > KALMAN_WINDOW_SECONDS
                         ):
                             kalman_update_times.popleft()
 

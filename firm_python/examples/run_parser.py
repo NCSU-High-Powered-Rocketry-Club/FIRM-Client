@@ -7,7 +7,7 @@ def main() -> None:
 
     initial_dt = 0
 
-    with FIRMClient(port, baud_rate, timeout=.2) as client:
+    with FIRMClient(port, baud_rate, timeout=0.2) as client:
         client.get_data_packets(block=True)  # Clear initial packets
         while client.is_running():
             packets = client.get_data_packets(block=True)

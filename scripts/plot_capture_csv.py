@@ -1,8 +1,6 @@
 import sys
-import math
-from flask import app
 import pandas as pd
-from dash import Dash, dcc, html, Input, Output, State
+from dash import Dash, dcc, html, Input, Output
 import plotly.graph_objects as go
 
 DEFAULT_X = "timestamp_seconds"
@@ -24,7 +22,9 @@ def downsample_df(df: pd.DataFrame, max_points: int | None) -> pd.DataFrame:
     return sampled
 
 
-def make_figure(df: pd.DataFrame, x_col: str, y_cols: list[str], mode: str) -> go.Figure:
+def make_figure(
+    df: pd.DataFrame, x_col: str, y_cols: list[str], mode: str
+) -> go.Figure:
     fig = go.Figure()
 
     if not y_cols:
@@ -65,7 +65,11 @@ def make_figure(df: pd.DataFrame, x_col: str, y_cols: list[str], mode: str) -> g
     )
 
     for i, c in enumerate(y_cols, start=1):
-        fig.add_trace(go.Scattergl(x=x, y=df[c], mode="lines", name=c, showlegend=False), row=i, col=1)
+        fig.add_trace(
+            go.Scattergl(x=x, y=df[c], mode="lines", name=c, showlegend=False),
+            row=i,
+            col=1,
+        )
         fig.update_yaxes(title_text=c, row=i, col=1)
 
     fig.update_layout(
@@ -96,13 +100,21 @@ def main():
     numeric_cols = [c for c in df.columns if is_numeric_series(df[c])]
 
     # Choose default X column
-    x_default = DEFAULT_X if DEFAULT_X in numeric_cols else (numeric_cols[0] if numeric_cols else df.columns[0])
+    x_default = (
+        DEFAULT_X
+        if DEFAULT_X in numeric_cols
+        else (numeric_cols[0] if numeric_cols else df.columns[0])
+    )
 
     # Y candidates = numeric columns excluding X
     y_candidates = [c for c in numeric_cols if c != x_default]
 
     # Some sensible defaults (you can change these)
-    default_selected = [c for c in y_candidates if any(k in c for k in ["temperature", "pressure", "raw_acceleration"])]
+    default_selected = [
+        c
+        for c in y_candidates
+        if any(k in c for k in ["temperature", "pressure", "raw_acceleration"])
+    ]
     if not default_selected:
         default_selected = y_candidates[:3]
 
@@ -110,11 +122,19 @@ def main():
     app.title = "CSV Plotter"
 
     app.layout = html.Div(
-        style={"fontFamily": "system-ui, -apple-system, Segoe UI, Roboto, Arial", "padding": "16px"},
+        style={
+            "fontFamily": "system-ui, -apple-system, Segoe UI, Roboto, Arial",
+            "padding": "16px",
+        },
         children=[
             html.H2("Interactive CSV Plotter"),
             html.Div(
-                style={"display": "flex", "gap": "16px", "flexWrap": "wrap", "alignItems": "flex-start"},
+                style={
+                    "display": "flex",
+                    "gap": "16px",
+                    "flexWrap": "wrap",
+                    "alignItems": "flex-start",
+                },
                 children=[
                     html.Div(
                         style={"minWidth": "280px", "maxWidth": "420px", "flex": "1"},
@@ -122,35 +142,40 @@ def main():
                             html.Div("X axis column"),
                             dcc.Dropdown(
                                 id="x-col",
-                                options=[{"label": c, "value": c} for c in numeric_cols] or
-                                        [{"label": c, "value": c} for c in df.columns],
+                                options=[{"label": c, "value": c} for c in numeric_cols]
+                                or [{"label": c, "value": c} for c in df.columns],
                                 value=x_default,
                                 clearable=False,
                             ),
                             html.Div(style={"height": "12px"}),
-
                             html.Div("Y columns (checkbox list)"),
                             dcc.Checklist(
                                 id="y-cols",
-                                options=[{"label": c, "value": c} for c in y_candidates],
+                                options=[
+                                    {"label": c, "value": c} for c in y_candidates
+                                ],
                                 value=default_selected,
                                 labelStyle={"display": "block", "margin": "2px 0"},
                                 inputStyle={"marginRight": "8px"},
                             ),
-
                             html.Hr(),
                             html.Div("Display mode"),
                             dcc.RadioItems(
                                 id="mode",
                                 options=[
-                                    {"label": "Single chart (all lines together)", "value": "single"},
-                                    {"label": "Stacked subplots (one per signal)", "value": "stacked"},
+                                    {
+                                        "label": "Single chart (all lines together)",
+                                        "value": "single",
+                                    },
+                                    {
+                                        "label": "Stacked subplots (one per signal)",
+                                        "value": "stacked",
+                                    },
                                 ],
                                 value="single",
                                 labelStyle={"display": "block", "margin": "4px 0"},
                                 inputStyle={"marginRight": "8px"},
                             ),
-
                             html.Hr(),
                             html.Div("Max points (downsample for speed)"),
                             dcc.Slider(
@@ -159,14 +184,26 @@ def main():
                                 max=200000,
                                 step=500,
                                 value=50000,
-                                marks={500: "500", 5000: "5k", 50000: "50k", 200000: "200k"},
-                                tooltip={"placement": "bottom", "always_visible": False},
+                                marks={
+                                    500: "500",
+                                    5000: "5k",
+                                    50000: "50k",
+                                    200000: "200k",
+                                },
+                                tooltip={
+                                    "placement": "bottom",
+                                    "always_visible": False,
+                                },
                             ),
-
                             html.Div(style={"height": "12px"}),
                             dcc.Checklist(
                                 id="show-markers",
-                                options=[{"label": "Show markers (slower for big data)", "value": "markers"}],
+                                options=[
+                                    {
+                                        "label": "Show markers (slower for big data)",
+                                        "value": "markers",
+                                    }
+                                ],
                                 value=[],
                                 labelStyle={"display": "block"},
                                 inputStyle={"marginRight": "8px"},
@@ -180,8 +217,13 @@ def main():
                                 id="graph",
                                 config={
                                     "displaylogo": False,
-                                    "scrollZoom": True,   # mousewheel zoom
-                                    "modeBarButtonsToAdd": ["drawline", "drawopenpath", "drawrect", "eraseshape"],
+                                    "scrollZoom": True,  # mousewheel zoom
+                                    "modeBarButtonsToAdd": [
+                                        "drawline",
+                                        "drawopenpath",
+                                        "drawrect",
+                                        "eraseshape",
+                                    ],
                                 },
                                 style={"height": "760px"},
                             ),
@@ -211,12 +253,16 @@ def main():
             return go.Figure(), f"X column '{x_col}' not found."
 
         # Only plot numeric y columns that exist
-        y_cols = [c for c in (y_cols or []) if c in df.columns and is_numeric_series(df[c])]
+        y_cols = [
+            c for c in (y_cols or []) if c in df.columns and is_numeric_series(df[c])
+        ]
 
         # Downsample for speed
         dff = downsample_df(df, int(max_points) if max_points else None)
 
-        fig = make_figure(dff, x_col, y_cols, "single" if mode == "single" else "stacked")
+        fig = make_figure(
+            dff, x_col, y_cols, "single" if mode == "single" else "stacked"
+        )
 
         # Optionally add markers
         if "markers" in (show_markers or []):
@@ -225,14 +271,19 @@ def main():
                 tr.marker = dict(size=4)
 
         # Improve hover
-        fig.update_traces(hovertemplate=f"{x_col}=%{{x}}<br>%{{y}}<extra>%{{fullData.name}}</extra>")
+        fig.update_traces(
+            hovertemplate=f"{x_col}=%{{x}}<br>%{{y}}<extra>%{{fullData.name}}</extra>"
+        )
 
         # Nice interactions
         fig.update_layout(
             hovermode="x unified" if mode == "single" else "closest",
         )
 
-        return fig, f"Loaded rows: {len(df):,}. Displayed rows (downsampled): {len(dff):,}."
+        return (
+            fig,
+            f"Loaded rows: {len(df):,}. Displayed rows (downsampled): {len(dff):,}.",
+        )
 
     print("\nStarting server...")
     print("Open the URL shown below in your browser.\n")

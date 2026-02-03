@@ -2,33 +2,36 @@ from __future__ import annotations
 
 from enum import IntEnum
 from types import TracebackType
-from typing import Type
+from typing import ClassVar, Type
 
 __version__: str
 
 class DeviceProtocol(IntEnum):
     """Enum of the supported device communication protocols."""
-    USB: int
-    UART: int
-    I2C: int
-    SPI: int
 
+    USB = 0
+    UART = 1
+    I2C = 2
+    SPI = 3
 
 class DeviceInfo:
     """Represents information about the FIRM device."""
+
     firmware_version: str
     id: int
 
-
 class DeviceConfig:
     """Represents the configuration of the FIRM device."""
+
     name: str
     frequency: int
     protocol: DeviceProtocol
 
-
 class FIRMDataPacket:
     """Represents a data packet received from the FIRM device."""
+
+    __struct_fields__: ClassVar[list[str]]
+    """List of all field names in this packet."""
 
     timestamp_seconds: float
     """Timestamp of the data packet in seconds."""
@@ -97,6 +100,56 @@ class FIRMDataPacket:
     est_quaternion_z: float
     """Estimated orientation quaternion vector component (Z)."""
 
+    def __init__(
+        self,
+        timestamp_seconds: float,
+        temperature_celsius: float,
+        pressure_pascals: float,
+        raw_acceleration_x_gs: float,
+        raw_acceleration_y_gs: float,
+        raw_acceleration_z_gs: float,
+        raw_angular_rate_x_deg_per_s: float,
+        raw_angular_rate_y_deg_per_s: float,
+        raw_angular_rate_z_deg_per_s: float,
+        magnetic_field_x_microteslas: float,
+        magnetic_field_y_microteslas: float,
+        magnetic_field_z_microteslas: float,
+        est_position_x_meters: float,
+        est_position_y_meters: float,
+        est_position_z_meters: float,
+        est_velocity_x_meters_per_s: float,
+        est_velocity_y_meters_per_s: float,
+        est_velocity_z_meters_per_s: float,
+        est_acceleration_x_gs: float,
+        est_acceleration_y_gs: float,
+        est_acceleration_z_gs: float,
+        est_angular_rate_x_rad_per_s: float,
+        est_angular_rate_y_rad_per_s: float,
+        est_angular_rate_z_rad_per_s: float,
+        est_quaternion_w: float,
+        est_quaternion_x: float,
+        est_quaternion_y: float,
+        est_quaternion_z: float,
+    ) -> None:
+        """
+        Initialize a new immutable FIRMDataPacket. All fields are required.
+        """
+        ...
+
+    @staticmethod
+    def default_zero() -> "FIRMDataPacket":
+        """
+        Creates a packet with zeroed values (and identity quaternion).
+        """
+        ...
+
+    def as_dict(self) -> dict[str, float]:
+        """
+        Converts the packet to a standard Python dictionary.
+        Returns a copy of the data.
+        """
+        ...
+
 
 class MockDeviceHandle:
     """Handle for controlling an in-process mock device."""
@@ -107,7 +160,6 @@ class MockDeviceHandle:
     def wait_for_command_identifier(self, timeout_seconds: float) -> int | None: ...
     """Wait up to timeout_seconds for a command to be observed; returns its identifier or None."""
 
-
 class FIRMClient:
     """Client for communicating with the FIRM device.
 
@@ -117,8 +169,9 @@ class FIRMClient:
         timeout: Read timeout used when get_data_packets(block=True). Default is 0.1 seconds.
     """
 
-    def __init__(self, port_name: str, baud_rate: int = 2_000_000, timeout: float = 0.1) -> None: ...
-
+    def __init__(
+        self, port_name: str, baud_rate: int = 2_000_000, timeout: float = 0.1
+    ) -> None: ...
     @staticmethod
     def new_mock(timeout: float = 0.1) -> tuple[FIRMClient, MockDeviceHandle]: ...
     """Create a client + mock device pair for testing."""
@@ -139,7 +192,9 @@ class FIRMClient:
     def get_device_info(self, timeout_seconds: float = 5.0) -> DeviceInfo | None: ...
     """Request device info and wait up to timeout_seconds."""
 
-    def get_device_config(self, timeout_seconds: float = 5.0) -> DeviceConfig | None: ...
+    def get_device_config(
+        self, timeout_seconds: float = 5.0
+    ) -> DeviceConfig | None: ...
     """Request device configuration and wait up to timeout_seconds."""
 
     def set_device_config(
@@ -154,7 +209,9 @@ class FIRMClient:
     def set_magnetometer_calibration(
         self,
         offsets: tuple[float, float, float],
-        scale_matrix: tuple[float, float, float, float, float, float, float, float, float],
+        scale_matrix: tuple[
+            float, float, float, float, float, float, float, float, float
+        ],
         timeout_seconds: float = 5.0,
     ) -> bool: ...
     """Set magnetometer calibration and wait up to timeout_seconds for acknowledgement."""
@@ -162,7 +219,9 @@ class FIRMClient:
     def set_imu_calibration(
         self,
         offsets: tuple[float, float, float],
-        scale_matrix: tuple[float, float, float, float, float, float, float, float, float],
+        scale_matrix: tuple[
+            float, float, float, float, float, float, float, float, float
+        ],
         timeout_seconds: float = 5.0,
     ) -> bool: ...
     """Set IMU calibration and wait up to timeout_seconds for acknowledgement."""
@@ -183,11 +242,13 @@ class FIRMClient:
         cancel_on_finish: bool = True,
     ) -> None: ...
     """Start streaming a mock log file asynchronously in the background."""
-    
+
     def is_mock_log_streaming(self) -> bool: ...
     """True if a mock log stream is currently running."""
 
-    def stop_mock_log_stream(self, cancel_device: bool = True, join: bool = True) -> int | None: ...
+    def stop_mock_log_stream(
+        self, cancel_device: bool = True, join: bool = True
+    ) -> int | None: ...
     """Stop the async mock log stream. Optionally cancel the device."""
 
     def is_running(self) -> bool: ...

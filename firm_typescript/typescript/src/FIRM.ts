@@ -417,6 +417,30 @@ export class FIRMClient {
     );
   }
 
+  async setIMUCalibration(offsets: number[], scale_matrix: number[]): Promise<boolean> {
+    const offsetsF32 = new Float32Array(offsets);
+    const scaleF32 = new Float32Array(scale_matrix);
+
+    return (
+      (await this.sendAndWait(
+        () => FIRMCommandBuilder.build_set_imu_calibration(offsetsF32, scaleF32),
+        (res) => ('SetIMUCalibration' in res ? res.SetIMUCalibration : undefined),
+      )) ?? false
+    );
+  }
+
+  async setMagnetometerCalibration(offsets: number[], scale_matrix: number[]): Promise<boolean> {
+    const offsetsF32 = new Float32Array(offsets);
+    const scaleF32 = new Float32Array(scale_matrix);
+
+    return (
+      (await this.sendAndWait(
+        () => FIRMCommandBuilder.build_set_magnetometer_calibration(offsetsF32, scaleF32),
+        (res) => ('SetMagnetometerCalibration' in res ? res.SetMagnetometerCalibration : undefined),
+      )) ?? false
+    );
+  }
+
   /**
    * Sends a cancel command to the device (e.g., to abort a calibration).
    * @returns True if acknowledged, false if timeout or not acknowledged.

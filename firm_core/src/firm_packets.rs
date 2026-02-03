@@ -2,11 +2,12 @@ use crate::constants::command::*;
 use crate::framed_packet::{FrameError, Framed, FramedPacket};
 use crate::utils::bytes_to_str;
 use field_names::FieldNames;
-use pythonize::pythonize;
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
+#[cfg(feature = "python")]
+use pythonize::pythonize;
 #[cfg(feature = "wasm")]
 use wasm_bindgen::prelude::*;
 
@@ -99,6 +100,7 @@ pub struct FIRMData {
     pub est_quaternion_z: f32,
 }
 
+#[cfg(feature = "python")]
 #[pymethods]
 impl FIRMData {
     #[classattr]

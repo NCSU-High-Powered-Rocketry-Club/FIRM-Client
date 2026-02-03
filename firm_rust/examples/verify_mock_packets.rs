@@ -54,7 +54,6 @@ fn main() -> ExitCode {
 
         parser.parse_bytes(&buf[..n]);
 
-
         // Just verifies the round-trip serialization/parsing of packets
         while let Some((pkt, delay_s)) = parser.get_packet_and_time_delay() {
             total_delay += delay_s;

@@ -88,6 +88,9 @@ export type FIRMResponse =
   | { GetDeviceInfo: DeviceInfo }
   | { GetDeviceConfig: DeviceConfig }
   | { SetDeviceConfig: boolean }
+  | { SetMagnetometerCalibration: boolean }
+  | { SetIMUCalibration: boolean }
   | { Mock: boolean }
   | { Cancel: boolean }
   | { Error: string };
+

@@ -1,4 +1,7 @@
 use firm_core::client_packets::{FIRMCommandPacket, FIRMLogPacket};
+use firm_core::constants::command::{
+    NUMBER_OF_CALIBRATION_OFFSETS, NUMBER_OF_CALIBRATION_SCALE_MATRIX_ELEMENTS,
+};
 use firm_core::constants::log_parsing::{FIRMLogPacketType, HEADER_TOTAL_SIZE};
 use firm_core::data_parser::SerialParser;
 use firm_core::firm_packets::{DeviceConfig, DeviceProtocol};
@@ -32,6 +35,60 @@ impl FIRMCommandBuilder {
         };
 
         FIRMCommandPacket::build_set_device_config_command(config).to_bytes()
+    }
+
+    pub fn build_set_imu_calibration(offsets: Vec<f32>, scale_matrix: Vec<f32>) -> Vec<u8> {
+        if offsets.len() != NUMBER_OF_CALIBRATION_OFFSETS {
+            wasm_bindgen::throw_str("offsets must have length 3");
+        }
+        if scale_matrix.len() != NUMBER_OF_CALIBRATION_SCALE_MATRIX_ELEMENTS {
+            wasm_bindgen::throw_str("scale_matrix must have length 9");
+        }
+
+        let offsets_arr: [f32; NUMBER_OF_CALIBRATION_OFFSETS] =
+            [offsets[0], offsets[1], offsets[2]];
+        let scale_arr: [f32; NUMBER_OF_CALIBRATION_SCALE_MATRIX_ELEMENTS] = [
+            scale_matrix[0],
+            scale_matrix[1],
+            scale_matrix[2],
+            scale_matrix[3],
+            scale_matrix[4],
+            scale_matrix[5],
+            scale_matrix[6],
+            scale_matrix[7],
+            scale_matrix[8],
+        ];
+
+        FIRMCommandPacket::build_set_imu_calibration_command(offsets_arr, scale_arr).to_bytes()
+    }
+
+    pub fn build_set_magnetometer_calibration(
+        offsets: Vec<f32>,
+        scale_matrix: Vec<f32>,
+    ) -> Vec<u8> {
+        if offsets.len() != NUMBER_OF_CALIBRATION_OFFSETS {
+            wasm_bindgen::throw_str("offsets must have length 3");
+        }
+        if scale_matrix.len() != NUMBER_OF_CALIBRATION_SCALE_MATRIX_ELEMENTS {
+            wasm_bindgen::throw_str("scale_matrix must have length 9");
+        }
+
+        let offsets_arr: [f32; NUMBER_OF_CALIBRATION_OFFSETS] =
+            [offsets[0], offsets[1], offsets[2]];
+        let scale_arr: [f32; NUMBER_OF_CALIBRATION_SCALE_MATRIX_ELEMENTS] = [
+            scale_matrix[0],
+            scale_matrix[1],
+            scale_matrix[2],
+            scale_matrix[3],
+            scale_matrix[4],
+            scale_matrix[5],
+            scale_matrix[6],
+            scale_matrix[7],
+            scale_matrix[8],
+        ];
+
+        FIRMCommandPacket::build_set_magnetometer_calibration_command(offsets_arr, scale_arr)
+            .to_bytes()
     }
 
     pub fn build_cancel() -> Vec<u8> {

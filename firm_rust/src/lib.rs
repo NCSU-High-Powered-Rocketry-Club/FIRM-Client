@@ -1,6 +1,8 @@
 use anyhow::Result;
 use firm_core::client_packets::{FIRMCommandPacket, FIRMLogPacket};
-use firm_core::constants::command::{NUMBER_OF_CALIBRATION_OFFSETS, NUMBER_OF_CALIBRATION_SCALE_MATRIX_ELEMENTS};
+use firm_core::constants::command::{
+    NUMBER_OF_CALIBRATION_OFFSETS, NUMBER_OF_CALIBRATION_SCALE_MATRIX_ELEMENTS,
+};
 use firm_core::constants::log_parsing::{FIRMLogPacketType, HEADER_PARSE_DELAY, HEADER_TOTAL_SIZE};
 use firm_core::data_parser::SerialParser;
 use firm_core::firm_packets::{DeviceConfig, DeviceInfo, DeviceProtocol, FIRMData, FIRMResponse};
@@ -342,10 +344,9 @@ impl FIRMClient {
         scale_matrix: [f32; NUMBER_OF_CALIBRATION_SCALE_MATRIX_ELEMENTS],
         timeout: Duration,
     ) -> Result<Option<bool>> {
-        self.send_command(FIRMCommandPacket::build_set_magnetometer_calibration_command(
-            offsets,
-            scale_matrix,
-        ))?;
+        self.send_command(
+            FIRMCommandPacket::build_set_magnetometer_calibration_command(offsets, scale_matrix),
+        )?;
         self.wait_for_matching_response(timeout, |res| match res {
             FIRMResponse::SetMagnetometerCalibration(ok) => Some(*ok),
             _ => None,
@@ -393,7 +394,11 @@ impl FIRMClient {
         }
 
         // If a previous stream finished but wasn't joined, join it now.
-        if self.mock_stream_handle.as_ref().is_some_and(|h| h.is_finished()) {
+        if self
+            .mock_stream_handle
+            .as_ref()
+            .is_some_and(|h| h.is_finished())
+        {
             let _ = self.stop_mock_log_stream(false, true);
         }
 
@@ -437,17 +442,27 @@ impl FIRMClient {
             .is_some_and(|h| !h.is_finished())
     }
 
-    pub fn stop_mock_log_stream(&mut self, cancel_device: bool, block: bool) -> Result<Option<usize>> {
+    pub fn stop_mock_log_stream(
+        &mut self,
+        cancel_device: bool,
+        block: bool,
+    ) -> Result<Option<usize>> {
         self.mock_stream_stop.store(true, Ordering::Relaxed);
 
         if cancel_device {
-            let _ = self.command_sender.send(FIRMCommandPacket::build_cancel_command());
+            let _ = self
+                .command_sender
+                .send(FIRMCommandPacket::build_cancel_command());
         }
 
         if !block {
             // non-blocking: only join if already finished
-            let Some(h) = self.mock_stream_handle.as_ref() else { return Ok(None); };
-            if !h.is_finished() { return Ok(None); }
+            let Some(h) = self.mock_stream_handle.as_ref() else {
+                return Ok(None);
+            };
+            if !h.is_finished() {
+                return Ok(None);
+            }
         }
 
         let Some(handle) = self.mock_stream_handle.take() else {
@@ -460,7 +475,7 @@ impl FIRMClient {
 
         Ok(Some(res))
     }
-    
+
     /// Sends a cancel command and waits for acknowledgement.
     pub fn cancel(&mut self, timeout: Duration) -> Result<Option<bool>> {
         self.send_command(FIRMCommandPacket::build_cancel_command())?;
@@ -501,7 +516,9 @@ impl FIRMClient {
         })? {
             Some(true) => Ok(()),
             Some(false) => Err(anyhow::anyhow!("Device rejected mock mode")),
-            None => Err(anyhow::anyhow!("Timed out waiting for mock acknowledgement")),
+            None => Err(anyhow::anyhow!(
+                "Timed out waiting for mock acknowledgement"
+            )),
         }
     }
 
@@ -756,7 +773,6 @@ fn stream_mock_log_file_worker(
 
     Ok(packets_sent)
 }
-
 
 /// Ensures that the client is properly stopped when dropped, i.e. .stop() is called.
 impl Drop for FIRMClient {

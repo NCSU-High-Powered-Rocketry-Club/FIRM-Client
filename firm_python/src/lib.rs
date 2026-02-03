@@ -1,9 +1,11 @@
-use firm_core::constants::command::{NUMBER_OF_CALIBRATION_OFFSETS, NUMBER_OF_CALIBRATION_SCALE_MATRIX_ELEMENTS};
+use firm_core::constants::command::{
+    NUMBER_OF_CALIBRATION_OFFSETS, NUMBER_OF_CALIBRATION_SCALE_MATRIX_ELEMENTS,
+};
 use firm_core::constants::packet::PacketHeader;
 use firm_core::firm_packets::{DeviceConfig, DeviceInfo, DeviceProtocol, FIRMData};
 use firm_core::framed_packet::FramedPacket;
-use firm_rust::mock_serial::MockDeviceHandle as RustMockDeviceHandle;
 use firm_rust::FIRMClient as RustFirmClient;
+use firm_rust::mock_serial::MockDeviceHandle as RustMockDeviceHandle;
 use pyo3::prelude::*;
 use std::time::Duration;
 
@@ -133,7 +135,11 @@ impl FIRMClient {
     }
 
     #[pyo3(signature = (cancel_device=true, block=true))]
-    fn stop_mock_log_stream(&mut self, cancel_device: bool, block: bool) -> PyResult<Option<usize>> {
+    fn stop_mock_log_stream(
+        &mut self,
+        cancel_device: bool,
+        block: bool,
+    ) -> PyResult<Option<usize>> {
         let res = map_io(self.inner.stop_mock_log_stream(cancel_device, block))?;
         Ok(res)
     }
@@ -155,14 +161,20 @@ impl FIRMClient {
     #[pyo3(signature = (timeout_seconds=5.0))]
     fn get_device_info(&mut self, timeout_seconds: f64) -> PyResult<Option<DeviceInfo>> {
         self.ensure_ok()?;
-        let info = map_io(self.inner.get_device_info(Duration::from_secs_f64(timeout_seconds)))?;
+        let info = map_io(
+            self.inner
+                .get_device_info(Duration::from_secs_f64(timeout_seconds)),
+        )?;
         Ok(info)
     }
 
     #[pyo3(signature = (timeout_seconds=5.0))]
     fn get_device_config(&mut self, timeout_seconds: f64) -> PyResult<Option<DeviceConfig>> {
         self.ensure_ok()?;
-        let cfg = map_io(self.inner.get_device_config(Duration::from_secs_f64(timeout_seconds)))?;
+        let cfg = map_io(
+            self.inner
+                .get_device_config(Duration::from_secs_f64(timeout_seconds)),
+        )?;
         Ok(cfg)
     }
 
@@ -203,7 +215,7 @@ impl FIRMClient {
 
         Ok(res.unwrap_or(false))
     }
-    
+
     #[pyo3(signature = (offsets, scale_matrix, timeout_seconds=5.0))]
     fn set_imu_calibration(
         &mut self,
@@ -268,9 +280,10 @@ impl MockDeviceHandle {
 
     #[pyo3(signature = (timeout_seconds))]
     fn wait_for_command_identifier(&self, timeout_seconds: f64) -> PyResult<Option<u16>> {
-        map_io(self.inner.wait_for_command_identifier(Duration::from_secs_f64(
-            timeout_seconds,
-        )))
+        map_io(
+            self.inner
+                .wait_for_command_identifier(Duration::from_secs_f64(timeout_seconds)),
+        )
     }
 }
 

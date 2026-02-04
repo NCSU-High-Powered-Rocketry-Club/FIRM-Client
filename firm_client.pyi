@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from enum import IntEnum
 from types import TracebackType
-from typing import ClassVar, Type
+from typing import ClassVar, Optional, Type
 
 __version__: str
 
@@ -250,6 +250,13 @@ class FIRMClient:
         self, cancel_device: bool = True, join: bool = True
     ) -> int | None: ...
     """Stop the async mock log stream. Optionally cancel the device."""
+
+    def run_and_apply_magnetometer_calibration(
+        self,
+        collection_duration_seconds: float,
+        apply_timeout_seconds: float = 5.0,
+    ) -> Optional[bool]: ...
+    """Run magnetometer calibration procedure and sets the constants on the device."""
 
     def is_running(self) -> bool: ...
     """True if the client reader thread is running."""

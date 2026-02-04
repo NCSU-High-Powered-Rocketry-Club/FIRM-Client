@@ -1,6 +1,6 @@
-use crate::firm_packets::FIRMData; // Adjust path as necessary
-use alloc::vec::Vec;
-use nalgebra::{Matrix3, Matrix6, RowVector, Vector3, Vector6};
+use crate::firm_packets::FIRMData;
+use nalgebra::{Matrix3, Vector3};
+use std::vec::Vec;
 
 /// Stores the result of a magnetometer calibration.
 #[derive(Debug, Clone, Copy)]
@@ -18,7 +18,7 @@ impl MagnetometerCalibration {
     /// Returns the corrected magnetic field vector.
     pub fn apply(&self, x: f32, y: f32, z: f32) -> Vector3<f32> {
         let raw = Vector3::new(x, y, z);
-        // Formula: (Raw - Bias) * Matrix
+        // Formula: M * (raw - bias)
         // Note: We use Matrix * Vec multiplication in Rust/nalgebra
         self.soft_iron_matrix * (raw - self.hard_iron_bias)
     }
@@ -32,14 +32,14 @@ impl MagnetometerCalibration {
         }
     }
 
-    /// Exports the calibration parameters as flat arrays suitable for 
+    /// Exports the calibration parameters as flat arrays suitable for
     /// serialization or firmware configuration.
     ///
     /// # Returns
     ///
     /// A tuple containing:
     /// - `[f32; 3]`: The hard iron offsets [x, y, z].
-    /// - `[f32; 9]`: The soft iron matrix in column-major order [m11, m21, m31, m12...].
+    /// - `[f32; 9]`: The soft iron matrix in row-major order [m11, m12, m13, m21...].
     pub fn to_arrays(&self) -> ([f32; 3], [f32; 9]) {
         let offsets = [
             self.hard_iron_bias.x,
@@ -49,11 +49,16 @@ impl MagnetometerCalibration {
 
         // Puts the matrix in row-major order
         let matrix: [f32; 9] = [
-            self.soft_iron_matrix[(0, 0)], self.soft_iron_matrix[(0, 1)], self.soft_iron_matrix[(0, 2)],
-            self.soft_iron_matrix[(1, 0)], self.soft_iron_matrix[(1, 1)], self.soft_iron_matrix[(1, 2)],
-            self.soft_iron_matrix[(2, 0)], self.soft_iron_matrix[(2, 1)], self.soft_iron_matrix[(2, 2)],
+            self.soft_iron_matrix[(0, 0)],
+            self.soft_iron_matrix[(0, 1)],
+            self.soft_iron_matrix[(0, 2)],
+            self.soft_iron_matrix[(1, 0)],
+            self.soft_iron_matrix[(1, 1)],
+            self.soft_iron_matrix[(1, 2)],
+            self.soft_iron_matrix[(2, 0)],
+            self.soft_iron_matrix[(2, 1)],
+            self.soft_iron_matrix[(2, 2)],
         ];
-    
 
         (offsets, matrix)
     }
@@ -118,11 +123,11 @@ impl MagnetometerCalibrator {
         // 1. Construct the Design Matrix D (N x 9)
         // We are fitting the equation: ax^2 + by^2 + cz^2 + 2dxy + 2exz + 2fyz + 2gx + 2hy + 2iz = 1
         // Note: We set the RHS to 1 to simplify solution, assuming origin is inside the point cloud.
-        
+
         // For the full linear least squares, we are solving M * v = b
         // In practice with nalgebra for collecting buffers, we can construct the matrices directly.
-        
-        // Let's use the explicit Design Matrix construction for clarity, 
+
+        // Let's use the explicit Design Matrix construction for clarity,
         // though strictly accumulating moments is more memory efficient.
         let mut d_matrix = nalgebra::DMatrix::<f32>::zeros(n, 9);
         let ones = nalgebra::DVector::<f32>::from_element(n, 1.0);
@@ -145,9 +150,8 @@ impl MagnetometerCalibrator {
         }
 
         // 2. Solve D * v = 1 for parameter vector v
-        // We use SVD or QR decomposition (lst_sq)
         let solution = d_matrix.svd(true, true).solve(&ones, 1e-6).ok()?;
-        
+
         // 3. Unpack parameters into Algebraic Matrix Q and Vector U
         // Q = [a d e; d b f; e f c]
         let a = solution[0];
@@ -158,53 +162,56 @@ impl MagnetometerCalibrator {
         let f = solution[5];
         let g = solution[6];
         let h = solution[7];
-        let i = solution[8];
+        let sol_i = solution[8];
 
-        let q_matrix = Matrix3::new(
-            a, d, e,
-            d, b, f,
-            e, f, c
-        );
+        let q_matrix = Matrix3::new(a, d, e, d, b, f, e, f, c);
 
-        let u_vec = Vector3::new(g, h, i);
+        let u_vec = Vector3::new(g, h, sol_i);
 
         // 4. Calculate Center (Hard Iron Bias)
-        // center = -0.5 * Q^-1 * U
+        // center = - Q^-1 * U
         let q_inv = q_matrix.try_inverse()?;
-        let center = -0.5 * q_inv * u_vec;
+        let center = -q_inv * u_vec;
 
         // 5. Calculate Soft Iron Matrix
         // We transform the fitted ellipsoid into a sphere.
         // T_matrix = sqrt(Q)
-        // In MATLAB magcal, A_soft = sqrt(Q_eigen)
-        
+
         // Eigen decomposition of the shape matrix Q
         // Since Q is symmetric, we can use SymmetricEigen
         let eigen = q_matrix.symmetric_eigen();
-        
-        // Reconstruct the scaling matrix. 
+
+        // Reconstruct the scaling matrix.
         // We want to map the ellipsoid to a sphere of radius 'B'.
         // The equation at the center is (x-c)' Q (x-c) = 1 + c' Q c
         // Let radius_sq = 1 + c' Q c.
         // Effective shape matrix M = Q / radius_sq.
-        
+
+        // center' * Q * center yields a 1x1 matrix; extract scalar
         let term = center.transpose() * q_matrix * center;
-        let radius_sq = 1.0 + term.x; // term is scalar inside vector
+        let term_scalar = term[(0, 0)];
+        let radius_sq = 1.0 + term_scalar;
+        if !(radius_sq > 0.0) {
+            return None;
+        }
         let estimated_field_strength = radius_sq.sqrt();
-        
+
         // To get the Soft Iron matrix that normalizes data to a sphere:
         // S = V * D^0.5 * V^T
         // We iterate over eigenvalues to sqrt them.
         let mut d_sqrt = Matrix3::zeros();
-        for i in 0..3 {
-            if eigen.eigenvalues[i] < 0.0 {
+        for idx in 0..3 {
+            if eigen.eigenvalues[idx] < 0.0 {
                 // If eigenvalues are negative, the fit failed (hyperboloid, not ellipsoid).
-                return None; 
+                return None;
             }
-            d_sqrt[(i, i)] = eigen.eigenvalues[i].sqrt();
+            d_sqrt[(idx, idx)] = eigen.eigenvalues[idx].sqrt();
         }
 
-        let soft_iron = eigen.eigenvectors * d_sqrt * eigen.eigenvectors.transpose();
+        // sqrt(Q) = V * sqrt(D) * V^T
+        // Scale by the estimated field strength so corrected vectors are normalized.
+        let soft_iron = (eigen.eigenvectors * d_sqrt * eigen.eigenvectors.transpose())
+            * (1.0 / estimated_field_strength);
 
         Some(MagnetometerCalibration {
             hard_iron_bias: center,

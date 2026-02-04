@@ -782,7 +782,7 @@ fn stream_mock_log_file_worker(
 
     // Read+parse enough bytes to stage more packets.
     // Returns Ok(true) if it read more bytes, Ok(false) if file is exhausted.
-    let mut refill = |file: &mut File,
+    let refill = |file: &mut File,
                       buf: &mut [u8],
                       parser: &mut LogParser,
                       staged: &mut std::collections::VecDeque<(FIRMLogPacket, f64)>|

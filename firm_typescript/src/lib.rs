@@ -8,7 +8,11 @@ use firm_core::firm_packets::{DeviceConfig, DeviceProtocol};
 use firm_core::framed_packet::Framed;
 use firm_core::log_parsing::LogParser;
 use js_sys::{Object, Reflect, Uint8Array};
+use serde::Serialize;
 use wasm_bindgen::prelude::*;
+
+use firm_core::calibration::MagnetometerCalibrator;
+use firm_core::firm_packets::FIRMData;
 
 #[wasm_bindgen]
 pub struct FIRMCommandBuilder;
@@ -206,5 +210,88 @@ impl MockLogParser {
     #[wasm_bindgen]
     pub fn build_header_packet(&self, header: &[u8]) -> Vec<u8> {
         FIRMLogPacket::new(FIRMLogPacketType::HeaderPacket, header.to_vec()).to_bytes()
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MagnetometerCalibrationResult {
+    offsets: [f32; 3],
+    scale_matrix: [f32; 9],
+    field_strength: f32,
+    sample_count: usize,
+}
+
+/// WASM wrapper for magnetometer calibration.
+///
+/// Usage from JS/TS:
+/// - `const cal = new MagnetometerCalibrator();`
+/// - `cal.start();`
+/// - `cal.add_sample(pkt);` (pkt is a parsed FIRMPacket / FIRMData object)
+/// - `const res = cal.calculate();` (null if failed)
+#[wasm_bindgen(js_name = MagnetometerCalibrator)]
+pub struct MagnetometerCalibratorWasm {
+    inner: MagnetometerCalibrator,
+}
+
+impl Default for MagnetometerCalibratorWasm {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[wasm_bindgen(js_class = MagnetometerCalibrator)]
+impl MagnetometerCalibratorWasm {
+    #[wasm_bindgen(constructor)]
+    pub fn new() -> MagnetometerCalibratorWasm {
+        MagnetometerCalibratorWasm {
+            inner: MagnetometerCalibrator::new(),
+        }
+    }
+
+    #[wasm_bindgen]
+    pub fn start(&mut self) {
+        self.inner.start();
+    }
+
+    #[wasm_bindgen]
+    pub fn stop(&mut self) {
+        self.inner.stop();
+    }
+
+    #[wasm_bindgen]
+    pub fn sample_count(&self) -> usize {
+        self.inner.sample_count()
+    }
+
+    /// Adds a sample from a parsed telemetry packet.
+    ///
+    /// Expects an object compatible with the `FIRMData` serde shape.
+    #[wasm_bindgen]
+    pub fn add_sample(&mut self, packet: JsValue) {
+        let data: FIRMData = serde_wasm_bindgen::from_value(packet).unwrap_or_else(|e| {
+            wasm_bindgen::throw_str(&format!("Failed to parse FIRMPacket for calibration: {e}"))
+        });
+        self.inner.add_sample(&data);
+    }
+
+    /// Calculates calibration parameters.
+    ///
+    /// Returns `null` if insufficient samples or solver failed.
+    #[wasm_bindgen]
+    pub fn calculate(&self) -> JsValue {
+        match self.inner.calculate() {
+            Some(cal) => {
+                let (offsets, scale_matrix) = cal.to_arrays();
+                let out = MagnetometerCalibrationResult {
+                    offsets,
+                    scale_matrix,
+                    field_strength: cal.field_strength,
+                    sample_count: self.inner.sample_count(),
+                };
+                serde_wasm_bindgen::to_value(&out).unwrap()
+            }
+            None => JsValue::NULL,
+        }
     }
 }

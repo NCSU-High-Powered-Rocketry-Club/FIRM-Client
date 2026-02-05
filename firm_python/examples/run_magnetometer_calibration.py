@@ -1,7 +1,7 @@
 import firm_client
 import time
 
-client = firm_client.FIRMClient("COM12")
+client = firm_client.FIRMClient("COM8")
 client.start()
 
 print("Please rotate the device in all directions...")

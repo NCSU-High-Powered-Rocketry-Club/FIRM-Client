@@ -1,6 +1,7 @@
 import init, {
   FIRMDataParser,
   FIRMCommandBuilder,
+  MagnetometerCalibrator,
   MockLogParser,
   mock_header_size,
 } from '../../pkg/firm_client.js';
@@ -41,6 +42,9 @@ export class FIRMClient {
 
   /** Subscribers for raw outgoing serial bytes. */
   private outgoingBytesListeners: ((bytes: Uint8Array) => void)[] = [];
+
+  /** Subscribers for parsed data packets (snoop; does not consume queue). */
+  private packetListeners: ((pkt: FIRMPacket) => void)[] = [];
 
   /** Reader for the Web Serial stream. */
   private reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
@@ -442,6 +446,53 @@ export class FIRMClient {
   }
 
   /**
+   * Runs a full magnetometer calibration sequence and applies it to the device.
+   *
+   * Mirrors the Rust helper `run_and_apply_magnetometer_calibration`:
+   * 1) Collects samples for `collectionDurationMs` while you rotate the device.
+   * 2) Fits offsets + soft-iron matrix.
+   * 3) Sends `SetMagnetometerCalibration` and returns the device acknowledgement.
+   *
+   * @returns `true/false` if the device responded, or `null` if calibration failed or timed out.
+   */
+  async runAndApplyMagnetometerCalibration(
+    collectionDurationMs: number,
+    applyTimeoutMs = RESPONSE_TIMEOUT_MS,
+  ): Promise<boolean | null> {
+    if (!this.running) throw new Error('Not connected');
+    if (!(collectionDurationMs > 0)) throw new Error('collectionDurationMs must be > 0');
+
+    const calibrator = new MagnetometerCalibrator();
+    calibrator.start();
+
+    const unsubscribe = this.onPacket((pkt) => {
+      try {
+        calibrator.add_sample(pkt as unknown as object);
+      } catch {
+        // Ignore per-sample errors (should be rare; keeps stream alive)
+      }
+    });
+
+    await this.sleep(collectionDurationMs);
+
+    unsubscribe();
+    calibrator.stop();
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = calibrator.calculate() as any | null;
+    if (!result) return null;
+
+    const offsetsF32 = new Float32Array(result.offsets as number[]);
+    const scaleF32 = new Float32Array(result.scaleMatrix as number[]);
+
+    return await this.sendAndWait(
+      () => FIRMCommandBuilder.build_set_magnetometer_calibration(offsetsF32, scaleF32),
+      (res) => ('SetMagnetometerCalibration' in res ? res.SetMagnetometerCalibration : undefined),
+      applyTimeoutMs,
+    );
+  }
+
+  /**
    * Sends a cancel command to the device (e.g., to abort a calibration).
    * @returns True if acknowledged, false if timeout or not acknowledged.
    */
@@ -467,7 +518,27 @@ export class FIRMClient {
    * @param dataPacket Parsed FIRM data packet.
    */
   private enqueuePacket(dataPacket: FIRMPacket): void {
+    this.packetListeners.forEach((fn) => {
+      try {
+        fn(dataPacket);
+      } catch (e) {
+        console.warn('[FIRM] packet listener error:', e);
+      }
+    });
     (this.packetWaiters.shift() || this.packetQueue.push.bind(this.packetQueue))(dataPacket);
+  }
+
+  /**
+   * Subscribe to parsed data packets.
+   *
+   * This is a non-consuming "snoop" hook (packets still go into the normal queue).
+   */
+  private onPacket(listener: (pkt: FIRMPacket) => void): () => void {
+    this.packetListeners.push(listener);
+    return () => {
+      const idx = this.packetListeners.indexOf(listener);
+      if (idx !== -1) this.packetListeners.splice(idx, 1);
+    };
   }
 
   /**

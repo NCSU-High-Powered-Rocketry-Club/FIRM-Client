@@ -421,13 +421,26 @@ export class FIRMClient {
     );
   }
 
-  async setIMUCalibration(offsets: number[], scale_matrix: number[]): Promise<boolean> {
-    const offsetsF32 = new Float32Array(offsets);
-    const scaleF32 = new Float32Array(scale_matrix);
+  async setIMUCalibration(
+    accel_offsets: number[],
+    accel_scale_matrix: number[],
+    gyro_offsets: number[],
+    gyro_scale_matrix: number[],
+  ): Promise<boolean> {
+    const accelOffsetsF32 = new Float32Array(accel_offsets);
+    const accelScaleF32 = new Float32Array(accel_scale_matrix);
+    const gyroOffsetsF32 = new Float32Array(gyro_offsets);
+    const gyroScaleF32 = new Float32Array(gyro_scale_matrix);
 
     return (
       (await this.sendAndWait(
-        () => FIRMCommandBuilder.build_set_imu_calibration(offsetsF32, scaleF32),
+        () =>
+          FIRMCommandBuilder.build_set_imu_calibration(
+            accelOffsetsF32,
+            accelScaleF32,
+            gyroOffsetsF32,
+            gyroScaleF32,
+          ),
         (res) => ('SetIMUCalibration' in res ? res.SetIMUCalibration : undefined),
       )) ?? false
     );

@@ -2,7 +2,8 @@ use alloc::vec::Vec;
 
 use crate::constants::command::{
     CALIBRATION_OFFSETS_LENGTH, CALIBRATION_SCALE_MATRIX_LENGTH, DEVICE_NAME_LENGTH, FIRMCommand,
-    FREQUENCY_LENGTH, NUMBER_OF_CALIBRATION_OFFSETS, NUMBER_OF_CALIBRATION_SCALE_MATRIX_ELEMENTS,
+    FREQUENCY_LENGTH, IMU_CALIBRATION_PAYLOAD_LENGTH, NUMBER_OF_CALIBRATION_OFFSETS,
+    NUMBER_OF_CALIBRATION_SCALE_MATRIX_ELEMENTS,
 };
 use crate::constants::log_parsing::FIRMLogPacketType;
 use crate::constants::packet::PacketHeader;
@@ -78,15 +79,26 @@ impl FIRMCommandPacket {
     }
 
     pub fn build_set_imu_calibration_command(
-        offsets: [f32; NUMBER_OF_CALIBRATION_OFFSETS],
-        scale_matrix: [f32; NUMBER_OF_CALIBRATION_SCALE_MATRIX_ELEMENTS],
+        accel_offsets: [f32; NUMBER_OF_CALIBRATION_OFFSETS],
+        accel_scale_matrix: [f32; NUMBER_OF_CALIBRATION_SCALE_MATRIX_ELEMENTS],
+        gyro_offsets: [f32; NUMBER_OF_CALIBRATION_OFFSETS],
+        gyro_scale_matrix: [f32; NUMBER_OF_CALIBRATION_SCALE_MATRIX_ELEMENTS],
     ) -> Self {
-        let mut payload =
-            Vec::with_capacity(CALIBRATION_OFFSETS_LENGTH + CALIBRATION_SCALE_MATRIX_LENGTH);
-        for offset in &offsets {
+        let mut payload = Vec::with_capacity(IMU_CALIBRATION_PAYLOAD_LENGTH);
+
+        // Accelerometer calibration
+        for offset in &accel_offsets {
             payload.extend_from_slice(&offset.to_le_bytes());
         }
-        for scale in &scale_matrix {
+        for scale in &accel_scale_matrix {
+            payload.extend_from_slice(&scale.to_le_bytes());
+        }
+
+        // Gyroscope calibration
+        for offset in &gyro_offsets {
+            payload.extend_from_slice(&offset.to_le_bytes());
+        }
+        for scale in &gyro_scale_matrix {
             payload.extend_from_slice(&scale.to_le_bytes());
         }
         Self::new(FIRMCommand::SetIMUCalibration, payload)
@@ -149,12 +161,19 @@ mod tests {
     use super::{FIRMCommandPacket, FIRMLogPacket};
     use crate::constants::command::{
         CRC_LENGTH, DEVICE_NAME_LENGTH, FIRMCommand, FREQUENCY_LENGTH,
+        IMU_CALIBRATION_PAYLOAD_LENGTH,
     };
     use crate::constants::log_parsing::FIRMLogPacketType;
     use crate::constants::packet::PacketHeader;
     use crate::firm_packets::{DeviceConfig, DeviceProtocol};
     use crate::framed_packet::Framed;
     use crate::utils::{crc16_ccitt, str_to_bytes};
+
+    fn f32_from_payload(payload: &[u8], idx: usize) -> f32 {
+        let start = idx * 4;
+        let end = start + 4;
+        f32::from_le_bytes(payload[start..end].try_into().unwrap())
+    }
 
     fn crc_from_bytes(bytes: &[u8]) -> u16 {
         u16::from_le_bytes(bytes[bytes.len() - CRC_LENGTH..].try_into().unwrap())
@@ -257,6 +276,51 @@ mod tests {
         let freq = u16::from_le_bytes(got_freq_bytes.try_into().unwrap());
         assert_eq!(freq, config.frequency);
         assert_eq!(got_protocol_bytes, &[0x02]);
+    }
+
+    #[test]
+    fn test_firm_command_packet_to_bytes_set_imu_calibration_payload_layout() {
+        let accel_offsets = [1.0_f32, 2.0_f32, 3.0_f32];
+        let accel_matrix = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
+        let gyro_offsets = [-1.0_f32, -2.0_f32, -3.0_f32];
+        let gyro_matrix = [2.0, 0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 0.0, 2.0];
+
+        let command_packet = FIRMCommandPacket::build_set_imu_calibration_command(
+            accel_offsets,
+            accel_matrix,
+            gyro_offsets,
+            gyro_matrix,
+        )
+        .to_bytes();
+
+        assert_common_packet_invariants(&command_packet);
+        assert_eq!(
+            header_from_bytes(&command_packet),
+            PacketHeader::Command as u16
+        );
+        assert_eq!(
+            identifier_from_bytes(&command_packet),
+            FIRMCommand::SetIMUCalibration as u16
+        );
+
+        let payload_len = u32::from_le_bytes(command_packet[4..8].try_into().unwrap()) as usize;
+        assert_eq!(payload_len, IMU_CALIBRATION_PAYLOAD_LENGTH);
+
+        let payload = &command_packet[8..8 + payload_len];
+
+        // Layout: [accel offsets 3][accel matrix 9][gyro offsets 3][gyro matrix 9]
+        for i in 0..3 {
+            assert_eq!(f32_from_payload(payload, i), accel_offsets[i]);
+        }
+        for i in 0..9 {
+            assert_eq!(f32_from_payload(payload, 3 + i), accel_matrix[i]);
+        }
+        for i in 0..3 {
+            assert_eq!(f32_from_payload(payload, 3 + 9 + i), gyro_offsets[i]);
+        }
+        for i in 0..9 {
+            assert_eq!(f32_from_payload(payload, 3 + 9 + 3 + i), gyro_matrix[i]);
+        }
     }
 
     #[test]

@@ -168,6 +168,30 @@
         />
         <button id="setMagCalBtn">Set Mag Calibration</button>
       </div>
+
+      <div class="control-row" style="flex-direction: column; align-items: stretch;">
+        <input
+          type="text"
+          id="accelOffsetsInput"
+          placeholder="Accel offsets (3): e.g. 0, 0, 0"
+        />
+        <input
+          type="text"
+          id="accelMatrixInput"
+          placeholder="Accel 3x3 matrix (9 row-major): e.g. 1,0,0, 0,1,0, 0,0,1"
+        />
+        <input
+          type="text"
+          id="gyroOffsetsInput"
+          placeholder="Gyro offsets (3): e.g. 0, 0, 0"
+        />
+        <input
+          type="text"
+          id="gyroMatrixInput"
+          placeholder="Gyro 3x3 matrix (9 row-major): e.g. 1,0,0, 0,1,0, 0,0,1"
+        />
+        <button id="setImuCalBtn">Set IMU Calibration</button>
+      </div>
       <div class="control-row">
         <input type="file" id="mockLogFile" />
         <button id="mockStreamBtn">Stream Mock Log</button>
@@ -216,6 +240,11 @@
       const magOffsetsInput = document.getElementById('magOffsetsInput');
       const magMatrixInput = document.getElementById('magMatrixInput');
       const setMagCalBtn = document.getElementById('setMagCalBtn');
+      const accelOffsetsInput = document.getElementById('accelOffsetsInput');
+      const accelMatrixInput = document.getElementById('accelMatrixInput');
+      const gyroOffsetsInput = document.getElementById('gyroOffsetsInput');
+      const gyroMatrixInput = document.getElementById('gyroMatrixInput');
+      const setImuCalBtn = document.getElementById('setImuCalBtn');
       const configOutput = document.getElementById('configOutput');
       const rawBytesEl = document.getElementById('rawBytes');
       const outgoingBytesEl = document.getElementById('outgoingBytes');
@@ -345,6 +374,52 @@
         } catch (err) {
           console.error(err);
           setStatus('[UI] Failed to set magnetometer calibration.');
+          configOutput.textContent = 'Error: ' + (err?.message ?? err);
+        }
+      });
+
+      setImuCalBtn.addEventListener('click', async () => {
+        if (!firmInstance) return;
+        try {
+          const accelOffsets = parseNumberList(accelOffsetsInput.value);
+          const accelMatrix = parseNumberList(accelMatrixInput.value);
+          const gyroOffsets = parseNumberList(gyroOffsetsInput.value);
+          const gyroMatrix = parseNumberList(gyroMatrixInput.value);
+
+          if (accelOffsets.length !== 3) {
+            alert('Accel offsets must have exactly 3 numbers');
+            return;
+          }
+          if (accelMatrix.length !== 9) {
+            alert('Accel matrix must have exactly 9 numbers (row-major)');
+            return;
+          }
+          if (gyroOffsets.length !== 3) {
+            alert('Gyro offsets must have exactly 3 numbers');
+            return;
+          }
+          if (gyroMatrix.length !== 9) {
+            alert('Gyro matrix must have exactly 9 numbers (row-major)');
+            return;
+          }
+
+          setStatus('[UI] Setting IMU calibration...');
+          const ok = await firmInstance.setIMUCalibration(
+            accelOffsets,
+            accelMatrix,
+            gyroOffsets,
+            gyroMatrix,
+          );
+          if (ok) {
+            setStatus('[UI] IMU calibration set.');
+            configOutput.textContent = 'IMU calibration set successfully.';
+          } else {
+            setStatus('[UI] Failed to set IMU calibration (timeout).');
+            configOutput.textContent = 'Error: Timeout waiting for response.';
+          }
+        } catch (err) {
+          console.error(err);
+          setStatus('[UI] Failed to set IMU calibration.');
           configOutput.textContent = 'Error: ' + (err?.message ?? err);
         }
       });

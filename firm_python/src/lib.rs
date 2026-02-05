@@ -216,18 +216,22 @@ impl FIRMClient {
         Ok(res.unwrap_or(false))
     }
 
-    #[pyo3(signature = (offsets, scale_matrix, timeout_seconds=5.0))]
+    #[pyo3(signature = (accel_offsets, accel_scale_matrix, gyro_offsets, gyro_scale_matrix, timeout_seconds=5.0))]
     fn set_imu_calibration(
         &mut self,
-        offsets: [f32; NUMBER_OF_CALIBRATION_OFFSETS],
-        scale_matrix: [f32; NUMBER_OF_CALIBRATION_SCALE_MATRIX_ELEMENTS],
+        accel_offsets: [f32; NUMBER_OF_CALIBRATION_OFFSETS],
+        accel_scale_matrix: [f32; NUMBER_OF_CALIBRATION_SCALE_MATRIX_ELEMENTS],
+        gyro_offsets: [f32; NUMBER_OF_CALIBRATION_OFFSETS],
+        gyro_scale_matrix: [f32; NUMBER_OF_CALIBRATION_SCALE_MATRIX_ELEMENTS],
         timeout_seconds: f64,
     ) -> PyResult<bool> {
         self.ensure_ok()?;
 
         let res = map_io(self.inner.set_imu_calibration(
-            offsets,
-            scale_matrix,
+            accel_offsets,
+            accel_scale_matrix,
+            gyro_offsets,
+            gyro_scale_matrix,
             Duration::from_secs_f64(timeout_seconds),
         ))?;
 

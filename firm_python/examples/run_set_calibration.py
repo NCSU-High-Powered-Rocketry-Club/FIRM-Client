@@ -1,10 +1,14 @@
 import argparse
 from firm_client import FIRMClient
 
+
+# uv run .\firm_python\examples\run_set_calibration.py COM12
+
 # Example calibration values
 # Offsets: [x, y, z]
 MAG_OFFSETS = (0.01, -0.02, 0.005)
-IMU_OFFSETS = (0.0, 0.0, 0.0)
+ACCEL_OFFSETS = (0.0, 0.0, 0.0)
+GYRO_OFFSETS = (0.0, 0.0, 0.0)
 
 # Scale matrices: 3x3 row-major
 IDENTITY_SCALE = (
@@ -41,7 +45,9 @@ def main() -> None:
 
         print("Setting IMU calibration...")
         ok = client.set_imu_calibration(
-            IMU_OFFSETS,
+            ACCEL_OFFSETS,
+            IDENTITY_SCALE,
+            GYRO_OFFSETS,
             IDENTITY_SCALE,
         )
         print(f"IMU calibration {'OK' if ok else 'FAILED'}")

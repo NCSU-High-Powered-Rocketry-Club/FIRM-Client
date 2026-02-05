@@ -83,6 +83,14 @@ pub mod command {
     pub const CALIBRATION_OFFSETS_LENGTH: usize = NUMBER_OF_CALIBRATION_OFFSETS * 4;
     pub const CALIBRATION_SCALE_MATRIX_LENGTH: usize =
         NUMBER_OF_CALIBRATION_SCALE_MATRIX_ELEMENTS * 4;
+
+    /// IMU calibration includes both accelerometer and gyroscope calibration.
+    ///
+    /// Payload layout: [accel offsets (3 f32)][accel matrix (9 f32)][gyro offsets (3 f32)][gyro matrix (9 f32)]
+    pub const NUMBER_OF_IMU_CALIBRATION_SETS: usize = 2;
+    pub const IMU_CALIBRATION_PAYLOAD_LENGTH: usize = (CALIBRATION_OFFSETS_LENGTH
+        + CALIBRATION_SCALE_MATRIX_LENGTH)
+        * NUMBER_OF_IMU_CALIBRATION_SETS;
 }
 
 pub mod log_parsing {

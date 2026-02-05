@@ -378,13 +378,17 @@ impl FIRMClient {
 
     pub fn set_imu_calibration(
         &mut self,
-        offsets: [f32; NUMBER_OF_CALIBRATION_OFFSETS],
-        scale_matrix: [f32; NUMBER_OF_CALIBRATION_SCALE_MATRIX_ELEMENTS],
+        accel_offsets: [f32; NUMBER_OF_CALIBRATION_OFFSETS],
+        accel_scale_matrix: [f32; NUMBER_OF_CALIBRATION_SCALE_MATRIX_ELEMENTS],
+        gyro_offsets: [f32; NUMBER_OF_CALIBRATION_OFFSETS],
+        gyro_scale_matrix: [f32; NUMBER_OF_CALIBRATION_SCALE_MATRIX_ELEMENTS],
         timeout: Duration,
     ) -> Result<Option<bool>> {
         self.send_command(FIRMCommandPacket::build_set_imu_calibration_command(
-            offsets,
-            scale_matrix,
+            accel_offsets,
+            accel_scale_matrix,
+            gyro_offsets,
+            gyro_scale_matrix,
         ))?;
         self.wait_for_matching_response(timeout, |res| match res {
             FIRMResponse::SetIMUCalibration(ok) => Some(*ok),

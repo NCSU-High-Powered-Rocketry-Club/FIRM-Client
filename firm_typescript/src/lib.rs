@@ -41,29 +41,60 @@ impl FIRMCommandBuilder {
         FIRMCommandPacket::build_set_device_config_command(config).to_bytes()
     }
 
-    pub fn build_set_imu_calibration(offsets: Vec<f32>, scale_matrix: Vec<f32>) -> Vec<u8> {
-        if offsets.len() != NUMBER_OF_CALIBRATION_OFFSETS {
-            wasm_bindgen::throw_str("offsets must have length 3");
+    pub fn build_set_imu_calibration(
+        accel_offsets: Vec<f32>,
+        accel_scale_matrix: Vec<f32>,
+        gyro_offsets: Vec<f32>,
+        gyro_scale_matrix: Vec<f32>,
+    ) -> Vec<u8> {
+        if accel_offsets.len() != NUMBER_OF_CALIBRATION_OFFSETS {
+            wasm_bindgen::throw_str("accel_offsets must have length 3");
         }
-        if scale_matrix.len() != NUMBER_OF_CALIBRATION_SCALE_MATRIX_ELEMENTS {
-            wasm_bindgen::throw_str("scale_matrix must have length 9");
+        if accel_scale_matrix.len() != NUMBER_OF_CALIBRATION_SCALE_MATRIX_ELEMENTS {
+            wasm_bindgen::throw_str("accel_scale_matrix must have length 9");
+        }
+        if gyro_offsets.len() != NUMBER_OF_CALIBRATION_OFFSETS {
+            wasm_bindgen::throw_str("gyro_offsets must have length 3");
+        }
+        if gyro_scale_matrix.len() != NUMBER_OF_CALIBRATION_SCALE_MATRIX_ELEMENTS {
+            wasm_bindgen::throw_str("gyro_scale_matrix must have length 9");
         }
 
-        let offsets_arr: [f32; NUMBER_OF_CALIBRATION_OFFSETS] =
-            [offsets[0], offsets[1], offsets[2]];
-        let scale_arr: [f32; NUMBER_OF_CALIBRATION_SCALE_MATRIX_ELEMENTS] = [
-            scale_matrix[0],
-            scale_matrix[1],
-            scale_matrix[2],
-            scale_matrix[3],
-            scale_matrix[4],
-            scale_matrix[5],
-            scale_matrix[6],
-            scale_matrix[7],
-            scale_matrix[8],
+        let accel_offsets_arr: [f32; NUMBER_OF_CALIBRATION_OFFSETS] =
+            [accel_offsets[0], accel_offsets[1], accel_offsets[2]];
+        let accel_scale_arr: [f32; NUMBER_OF_CALIBRATION_SCALE_MATRIX_ELEMENTS] = [
+            accel_scale_matrix[0],
+            accel_scale_matrix[1],
+            accel_scale_matrix[2],
+            accel_scale_matrix[3],
+            accel_scale_matrix[4],
+            accel_scale_matrix[5],
+            accel_scale_matrix[6],
+            accel_scale_matrix[7],
+            accel_scale_matrix[8],
         ];
 
-        FIRMCommandPacket::build_set_imu_calibration_command(offsets_arr, scale_arr).to_bytes()
+        let gyro_offsets_arr: [f32; NUMBER_OF_CALIBRATION_OFFSETS] =
+            [gyro_offsets[0], gyro_offsets[1], gyro_offsets[2]];
+        let gyro_scale_arr: [f32; NUMBER_OF_CALIBRATION_SCALE_MATRIX_ELEMENTS] = [
+            gyro_scale_matrix[0],
+            gyro_scale_matrix[1],
+            gyro_scale_matrix[2],
+            gyro_scale_matrix[3],
+            gyro_scale_matrix[4],
+            gyro_scale_matrix[5],
+            gyro_scale_matrix[6],
+            gyro_scale_matrix[7],
+            gyro_scale_matrix[8],
+        ];
+
+        FIRMCommandPacket::build_set_imu_calibration_command(
+            accel_offsets_arr,
+            accel_scale_arr,
+            gyro_offsets_arr,
+            gyro_scale_arr,
+        )
+        .to_bytes()
     }
 
     pub fn build_set_magnetometer_calibration(

@@ -218,8 +218,12 @@ class FIRMClient:
 
     def set_imu_calibration(
         self,
-        offsets: tuple[float, float, float],
-        scale_matrix: tuple[
+        accel_offsets: tuple[float, float, float],
+        accel_scale_matrix: tuple[
+            float, float, float, float, float, float, float, float, float
+        ],
+        gyro_offsets: tuple[float, float, float],
+        gyro_scale_matrix: tuple[
             float, float, float, float, float, float, float, float, float
         ],
         timeout_seconds: float = 5.0,

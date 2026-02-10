@@ -74,10 +74,15 @@ impl FIRMClient {
     /// - `timeout` (`f64`) - Read timeout in seconds for the serial port.
     pub fn new(port_name: &str, baud_rate: u32, timeout: f64) -> Result<Self> {
         // Sets up the serial port
-        let port: Box<dyn SerialPort> = serialport::new(port_name, baud_rate)
+        let mut  port: Box<dyn SerialPort> = serialport::new(port_name, baud_rate)
             .timeout(Duration::from_millis((timeout * 1000.0) as u64))
             .open()
             .map_err(io::Error::other)?;
+
+        // Sets DTR to true, this is important for Linux/Windows to both act the same
+        port.write_data_terminal_ready(true)?;
+        // Give the device a moment to settle after opening the port
+        std::thread::sleep(Duration::from_millis(50));
 
         Ok(Self::new_from_port(port))
     }

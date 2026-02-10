@@ -376,6 +376,8 @@ extras = [
     { name = "dash" },
     { name = "flask" },
     { name = "matplotlib" },
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "numpy", version = "2.4.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "pandas", version = "2.3.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "pandas", version = "3.0.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "plotly" },
@@ -396,6 +398,7 @@ requires-dist = [
     { name = "dash", marker = "extra == 'extras'", specifier = ">=2.16" },
     { name = "flask", marker = "extra == 'extras'" },
     { name = "matplotlib", marker = "extra == 'extras'", specifier = ">=3.10.8" },
+    { name = "numpy", marker = "extra == 'extras'" },
     { name = "pandas", marker = "extra == 'extras'", specifier = ">=2.0" },
     { name = "plotly", marker = "extra == 'extras'", specifier = ">=5.20" },
 ]

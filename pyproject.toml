@@ -43,6 +43,7 @@ extras = [
     "dash>=2.16",
     "flask",
     "matplotlib>=3.10.8",
+    "numpy",
 ]
 
 [tool.uv]

@@ -148,6 +148,7 @@
       <div class="control-row">
         <button id="getConfigBtn">Get Device Config</button>
         <button id="getInfoBtn">Get Device Info</button>
+        <button id="getCalBtn">Get Calibration</button>
       </div>
       <div class="control-row">
         <button id="runMagCalBtn">Run Mag Calibration</button>
@@ -232,6 +233,7 @@
       const setConfigBtn = document.getElementById('setConfigBtn');
       const getConfigBtn = document.getElementById('getConfigBtn');
       const getInfoBtn = document.getElementById('getInfoBtn');
+      const getCalBtn = document.getElementById('getCalBtn');
       const runMagCalBtn = document.getElementById('runMagCalBtn');
       const cancelBtn = document.getElementById('cancelBtn');
       const rebootBtn = document.getElementById('rebootBtn');
@@ -319,6 +321,19 @@
           configOutput.textContent = JSON.stringify(info, null, 2);
         } else {
           setStatus('[UI] Failed to get info (timeout).');
+          configOutput.textContent = 'Error: Timeout waiting for response.';
+        }
+      });
+
+      getCalBtn.addEventListener('click', async () => {
+        if (!firmInstance) return;
+        setStatus('[UI] Getting calibration...');
+        const cal = await firmInstance.getCalibration();
+        if (cal) {
+          setStatus('[UI] Calibration received.');
+          configOutput.textContent = JSON.stringify(cal, null, 2);
+        } else {
+          setStatus('[UI] Failed to get calibration (timeout).');
           configOutput.textContent = 'Error: Timeout waiting for response.';
         }
       });

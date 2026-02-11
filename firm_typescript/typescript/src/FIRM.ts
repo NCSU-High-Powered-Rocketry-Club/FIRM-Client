@@ -5,7 +5,14 @@ import init, {
   MockLogParser,
   mock_header_size,
 } from '../../pkg/firm_client.js';
-import { FIRMPacket, FIRMResponse, DeviceInfo, DeviceConfig, DeviceProtocol } from './types.js';
+import {
+  FIRMPacket,
+  FIRMResponse,
+  DeviceInfo,
+  DeviceConfig,
+  DeviceProtocol,
+  CalibrationValues,
+} from './types.js';
 
 const RESPONSE_TIMEOUT_MS = 5000;
 
@@ -398,6 +405,17 @@ export class FIRMClient {
     return this.sendAndWait(
       () => FIRMCommandBuilder.build_get_device_config(),
       (res) => ('GetDeviceConfig' in res ? res.GetDeviceConfig : undefined),
+    );
+  }
+
+  /**
+   * Gets device calibration values from the FIRM device.
+   * @returns The calibration values, or null if the request timed out.
+   */
+  async getCalibration(): Promise<CalibrationValues | null> {
+    return this.sendAndWait(
+      () => FIRMCommandBuilder.build_get_calibration(),
+      (res) => ('GetCalibration' in res ? res.GetCalibration : undefined),
     );
   }
 

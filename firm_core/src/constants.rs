@@ -66,6 +66,10 @@ pub mod command {
                 }
                 id if id == FIRMCommand::Reboot.to_u16() => Ok(FIRMCommand::Reboot),
                 id if id == FIRMCommand::Mock.to_u16() => Ok(FIRMCommand::Mock),
+                id if id == FIRMCommand::SetMagnetometerCalibration.to_u16() => {
+                    Ok(FIRMCommand::SetMagnetometerCalibration)
+                }
+                id if id == FIRMCommand::SetIMUCalibration.to_u16() => Ok(FIRMCommand::SetIMUCalibration),
                 id if id == FIRMCommand::Cancel.to_u16() => Ok(FIRMCommand::Cancel),
                 _ => Err(FrameError::UnknownIdentifier(identifier)),
             }

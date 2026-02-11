@@ -1,8 +1,14 @@
 use anyhow::Result;
+use firm_core::calibration::{MagnetometerCalibration, MagnetometerCalibrator};
 use firm_core::client_packets::{FIRMCommandPacket, FIRMLogPacket};
+use firm_core::constants::command::{
+    NUMBER_OF_CALIBRATION_OFFSETS, NUMBER_OF_CALIBRATION_SCALE_MATRIX_ELEMENTS,
+};
 use firm_core::constants::log_parsing::{FIRMLogPacketType, HEADER_PARSE_DELAY, HEADER_TOTAL_SIZE};
 use firm_core::data_parser::SerialParser;
-use firm_core::firm_packets::{DeviceConfig, DeviceInfo, DeviceProtocol, FIRMData, FIRMResponse};
+use firm_core::firm_packets::{
+    CalibrationValues, DeviceConfig, DeviceInfo, DeviceProtocol, FIRMData, FIRMResponse,
+};
 use firm_core::framed_packet::Framed;
 use firm_core::log_parsing::LogParser;
 use serialport::SerialPort;
@@ -10,6 +16,7 @@ use std::collections::VecDeque;
 use std::fs::File;
 use std::io::{self, Read, Write};
 use std::sync::Arc;
+use std::sync::RwLock;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, channel};
 use std::thread::{self, JoinHandle};
@@ -51,6 +58,12 @@ pub struct FIRMClient {
     port: Option<Box<dyn SerialPort>>,
 
     response_buffer: VecDeque<FIRMResponse>,
+
+    mock_stream_stop: Arc<AtomicBool>,
+    mock_stream_handle: Option<JoinHandle<anyhow::Result<usize>>>,
+
+    calibration_snoop: Arc<RwLock<Option<Sender<FIRMData>>>>,
+    calibration_handle: Option<JoinHandle<Option<MagnetometerCalibration>>>,
 }
 
 impl FIRMClient {
@@ -63,10 +76,15 @@ impl FIRMClient {
     /// - `timeout` (`f64`) - Read timeout in seconds for the serial port.
     pub fn new(port_name: &str, baud_rate: u32, timeout: f64) -> Result<Self> {
         // Sets up the serial port
-        let port: Box<dyn SerialPort> = serialport::new(port_name, baud_rate)
+        let mut port: Box<dyn SerialPort> = serialport::new(port_name, baud_rate)
             .timeout(Duration::from_millis((timeout * 1000.0) as u64))
             .open()
             .map_err(io::Error::other)?;
+
+        // Sets DTR to true, this is important for Linux/Windows to both act the same
+        port.write_data_terminal_ready(true)?;
+        // Give the device a moment to settle after opening the port
+        std::thread::sleep(Duration::from_millis(50));
 
         Ok(Self::new_from_port(port))
     }
@@ -100,6 +118,12 @@ impl FIRMClient {
             mock_receiver: Some(mock_receiver),
             port: Some(port),
             response_buffer: VecDeque::new(),
+
+            mock_stream_stop: Arc::new(AtomicBool::new(false)),
+            mock_stream_handle: None,
+
+            calibration_snoop: Arc::new(RwLock::new(None)),
+            calibration_handle: None,
         }
     }
 
@@ -134,6 +158,8 @@ impl FIRMClient {
         let response_sender = self.response_sender.clone();
         let error_sender = self.error_sender.clone();
 
+        let calibration_snoop = self.calibration_snoop.clone();
+
         let handle: JoinHandle<Box<dyn SerialPort>> = thread::spawn(move || {
             let mut parser = SerialParser::new();
             // Buffer for reading from serial port
@@ -143,6 +169,12 @@ impl FIRMClient {
                 // Drain pending command packets first and write them to the port.
                 while let Ok(cmd) = command_receiver.try_recv() {
                     let cmd_bytes = cmd.to_bytes();
+                    // let hex = cmd_bytes
+                    //     .iter()
+                    //     .map(|b| format!("{:02X}", b))
+                    //     .collect::<Vec<_>>()
+                    //     .join(" ");
+                    // println!("Command packet bytes: {hex}");
                     if let Err(e) = port.write_all(&cmd_bytes) {
                         let _ = error_sender.send(e.to_string());
                         running_clone.store(false, Ordering::Relaxed);
@@ -154,12 +186,12 @@ impl FIRMClient {
                 // Then drain pending mock packets and write them to the port.
                 while let Ok(packet) = mock_receiver.try_recv() {
                     let packet_bytes = packet.to_bytes();
-                    let hex = packet_bytes
-                        .iter()
-                        .map(|b| format!("{:02X}", b))
-                        .collect::<Vec<_>>()
-                        .join(" ");
-                    println!("Mock packet bytes: {hex}");
+                    // let hex = packet_bytes
+                    //     .iter()
+                    //     .map(|b| format!("{:02X}", b))
+                    //     .collect::<Vec<_>>()
+                    //     .join(" ");
+                    // println!("Mock packet bytes: {hex}");
 
                     if let Err(e) = port.write_all(&packet_bytes) {
                         let _ = error_sender.send(e.to_string());
@@ -175,11 +207,20 @@ impl FIRMClient {
                         // Feed the read bytes into the parser
                         parser.parse_bytes(&buffer[..bytes_read]);
 
-                        // Reads all available data packets and send them to the main thread
+                        // Reads all available data packets and send them to the main thread and calibration if wanted
                         while let Some(firm_data_packet) = parser.get_data_packet() {
                             let packet = firm_data_packet.data().clone();
-                            if sender.send(packet).is_err() {
+
+                            if sender.send(packet.clone()).is_err() {
                                 return port; // Receiver dropped
+                            }
+
+                            // We use a read lock which is very fast if no one is writing.
+                            if let Ok(guard) = calibration_snoop.read()
+                                && let Some(cal_tx) = &*guard
+                            {
+                                // Ignore errors (if cal thread died, we don't care)
+                                let _ = cal_tx.send(packet);
                             }
                         }
 
@@ -210,6 +251,14 @@ impl FIRMClient {
 
     /// Stops the background thread and closes the serial port.
     pub fn stop(&mut self) {
+        if let Err(e) = self.stop_mock_log_stream(false, true) {
+            let _ = self.error_sender.send(e.to_string());
+        }
+
+        if self.calibration_handle.is_some() {
+            let _ = self.finish_magnetometer_calibration();
+        }
+
         self.running.store(false, Ordering::Relaxed);
         // todo: explain this properly when I understand it better (it's mostly for restarting)
         if let Some(handle) = self.join_handle.take()
@@ -319,106 +368,154 @@ impl FIRMClient {
         })
     }
 
-    /// Streams framed mock sensor packets from a `.TXT` log file.
-    ///
-    /// This will:
-    /// 1) Send the mock command and wait for ack
-    /// 2) Read the log header (`firm_core::mock::LOG_HEADER_SIZE` bytes)
-    /// 3) Parse the remaining file bytes as log records
-    /// 4) Send framed mock sensor packets (`FIRMLogPacket::to_bytes()`) to the device
-    ///
-    /// If `realtime` is true, the stream is paced based on the log timestamps. `speed` is a
-    /// multiplier (1.0 = real-time, 2.0 = 2x faster, 0.5 = half-speed).
-    pub fn stream_mock_log_file(
+    pub fn set_magnetometer_calibration(
         &mut self,
-        log_path: &str,
+        offsets: [f32; NUMBER_OF_CALIBRATION_OFFSETS],
+        scale_matrix: [f32; NUMBER_OF_CALIBRATION_SCALE_MATRIX_ELEMENTS],
+        timeout: Duration,
+    ) -> Result<Option<bool>> {
+        self.send_command(
+            FIRMCommandPacket::build_set_magnetometer_calibration_command(offsets, scale_matrix),
+        )?;
+        self.wait_for_matching_response(timeout, |res| match res {
+            FIRMResponse::SetMagnetometerCalibration(ok) => Some(*ok),
+            _ => None,
+        })
+    }
+
+    pub fn set_imu_calibration(
+        &mut self,
+        accel_offsets: [f32; NUMBER_OF_CALIBRATION_OFFSETS],
+        accel_scale_matrix: [f32; NUMBER_OF_CALIBRATION_SCALE_MATRIX_ELEMENTS],
+        gyro_offsets: [f32; NUMBER_OF_CALIBRATION_OFFSETS],
+        gyro_scale_matrix: [f32; NUMBER_OF_CALIBRATION_SCALE_MATRIX_ELEMENTS],
+        timeout: Duration,
+    ) -> Result<Option<bool>> {
+        self.send_command(FIRMCommandPacket::build_set_imu_calibration_command(
+            accel_offsets,
+            accel_scale_matrix,
+            gyro_offsets,
+            gyro_scale_matrix,
+        ))?;
+        self.wait_for_matching_response(timeout, |res| match res {
+            FIRMResponse::SetIMUCalibration(ok) => Some(*ok),
+            _ => None,
+        })
+    }
+
+    pub fn get_calibration(&mut self, timeout: Duration) -> Result<Option<CalibrationValues>> {
+        self.send_command(FIRMCommandPacket::build_get_calibration_command())?;
+        self.wait_for_matching_response(timeout, |res| match res {
+            FIRMResponse::GetCalibration(calibration) => Some(calibration.clone()),
+            _ => None,
+        })
+    }
+
+    /// Starts streaming a `.frm` mock log file on a background thread.
+    ///
+    /// While the mock stream is running you can continue to call `get_data_packets()` or other
+    /// APIs to read/log FIRM's output.
+    ///
+    /// Use `is_mock_log_streaming()` to check status and `try_join_mock_log_stream()` to
+    /// retrieve the sent packet count when finished.
+    pub fn start_mock_log_stream(
+        &mut self,
+        log_path: String,
         start_timeout: Duration,
         realtime: bool,
         speed: f64,
         chunk_size: usize,
-    ) -> Result<usize> {
-        if speed <= 0.0 {
-            return Err(anyhow::anyhow!("speed must be > 0"));
+        cancel_on_finish: bool,
+    ) -> Result<()> {
+        if self.is_mock_log_streaming() {
+            return Err(anyhow::anyhow!("Mock stream already running"));
+        }
+
+        if !self.is_running() {
+            self.start();
+        }
+
+        // If a previous stream finished but wasn't joined, join it now.
+        if self
+            .mock_stream_handle
+            .as_ref()
+            .is_some_and(|h| h.is_finished())
+        {
+            let _ = self.stop_mock_log_stream(false, true);
         }
 
         self.start_mock_mode(start_timeout)?;
 
-        let mut file = File::open(log_path)?;
-        let mut header = vec![0u8; HEADER_TOTAL_SIZE];
-        file.read_exact(&mut header)?;
+        self.mock_stream_stop.store(false, Ordering::Relaxed);
+        let stop = self.mock_stream_stop.clone();
+        let mock_sender = self.mock_sender.clone();
+        let command_sender = self.command_sender.clone();
+        let error_sender = self.error_sender.clone();
 
-        // Send the log header to the device, framed as a mock packet
-        let header_packet = FIRMLogPacket::new(FIRMLogPacketType::HeaderPacket, header.clone());
-        self.send_mock_packet(header_packet)?;
+        let handle = thread::spawn(move || {
+            let result = stream_mock_log_file_worker(
+                &log_path,
+                realtime,
+                speed,
+                chunk_size,
+                &stop,
+                &mock_sender,
+            );
 
-        // After we send the header we pause for a short time to let the device process it
-        thread::sleep(HEADER_PARSE_DELAY);
-
-        let mut parser = LogParser::new();
-        parser.read_header(&header);
-
-        let mut buf = vec![0u8; chunk_size];
-        let mut packets_sent = 0usize;
-        let stream_start = Instant::now();
-        let mut total_delay_seconds = 0.0f64;
-
-        loop {
-            let n = file.read(&mut buf)?;
-            if n == 0 {
-                break;
+            if cancel_on_finish {
+                // Fire-and-forget: we can't wait for ack from this background thread.
+                let _ = command_sender.send(FIRMCommandPacket::build_cancel_command());
             }
 
-            parser.parse_bytes(&buf[..n]);
-            let mock_start = Instant::now();
-
-            while let Some((packet, delay_seconds)) = parser.get_packet_and_time_delay() {
-                total_delay_seconds += delay_seconds;
-
-                // Mock packets are raw framed data packets; send them as raw bytes.
-                self.send_mock_packet(packet)?;
-                packets_sent += 1;
-
-                if realtime && delay_seconds > 0.0 {
-                    let stream_elapsed = stream_start.elapsed().as_secs_f64();
-                    // Only sleep if we're not already behind
-                    if stream_elapsed <= total_delay_seconds / speed {
-                        thread::sleep(Duration::from_secs_f64(delay_seconds / speed));
-                    }
-                }
+            if let Err(ref e) = result {
+                let _ = error_sender.send(e.to_string());
             }
+            result
+        });
 
-            if parser.eof_reached() {
-                println!(
-                    "Finished streaming mock log file in {:.2?}, sent {} packets",
-                    mock_start.elapsed(),
-                    packets_sent
-                );
+        self.mock_stream_handle = Some(handle);
+        Ok(())
+    }
 
-                break;
+    /// Returns `true` if a background mock stream is currently running.
+    pub fn is_mock_log_streaming(&self) -> bool {
+        self.mock_stream_handle
+            .as_ref()
+            .is_some_and(|h| !h.is_finished())
+    }
+
+    pub fn stop_mock_log_stream(
+        &mut self,
+        cancel_device: bool,
+        block: bool,
+    ) -> Result<Option<usize>> {
+        self.mock_stream_stop.store(true, Ordering::Relaxed);
+
+        if cancel_device {
+            let _ = self
+                .command_sender
+                .send(FIRMCommandPacket::build_cancel_command());
+        }
+
+        if !block {
+            // non-blocking: only join if already finished
+            let Some(h) = self.mock_stream_handle.as_ref() else {
+                return Ok(None);
+            };
+            if !h.is_finished() {
+                return Ok(None);
             }
         }
 
-        // Drain any remaining packets buffered by the parser.
-        while let Some((packet, delay_seconds)) = parser.get_packet_and_time_delay() {
-            total_delay_seconds += delay_seconds;
+        let Some(handle) = self.mock_stream_handle.take() else {
+            return Ok(None);
+        };
 
-            self.send_mock_packet(packet)?;
-            packets_sent += 1;
+        let res = handle
+            .join()
+            .map_err(|_| anyhow::anyhow!("Mock stream thread panicked"))??;
 
-            if realtime && delay_seconds > 0.0 {
-                let stream_elapsed = stream_start.elapsed().as_secs_f64();
-                // Only sleep if we're not already behind
-                if stream_elapsed <= total_delay_seconds / speed {
-                    thread::sleep(Duration::from_secs_f64(delay_seconds / speed));
-                }
-            }
-        }
-
-        // TODO: check this works
-        // Send a cancel command when it finishes
-        self.cancel(Duration::from_secs(5))?;
-
-        Ok(packets_sent)
+        Ok(Some(res))
     }
 
     /// Sends a cancel command and waits for acknowledgement.
@@ -449,20 +546,16 @@ impl FIRMClient {
         self.running.load(Ordering::Relaxed)
     }
 
-    /// Sends a mock command, waits for acknowledgement, then starts sending mock data packets.
-    fn mock(&mut self, timeout: Duration) -> Result<Option<bool>> {
-        self.send_command(FIRMCommandPacket::build_mock_command())?;
-        self.wait_for_matching_response(timeout, |res| match res {
-            FIRMResponse::Mock(ok) => Some(*ok),
-            _ => None,
-        })
-    }
-
-    /// Starts mock mode and requires an acknowledgement.
+    /// Enter mock mode and require an acknowledgement.
     ///
     /// Returns `Ok(())` only if the device explicitly acknowledges mock mode.
     fn start_mock_mode(&mut self, timeout: Duration) -> Result<()> {
-        match self.mock(timeout)? {
+        self.send_command(FIRMCommandPacket::build_mock_command())?;
+
+        match self.wait_for_matching_response(timeout, |res| match res {
+            FIRMResponse::Mock(ok) => Some(*ok),
+            _ => None,
+        })? {
             Some(true) => Ok(()),
             Some(false) => Err(anyhow::anyhow!("Device rejected mock mode")),
             None => Err(anyhow::anyhow!(
@@ -471,19 +564,55 @@ impl FIRMClient {
         }
     }
 
+    /// Runs a full magnetometer calibration sequence for a specific duration and applies the result.
+    ///
+    /// This is a blocking helper function that:
+    /// 1. Starts the background calibration listener.
+    /// 2. Sleeps for `collection_duration` (allows you to rotate the device).
+    /// 3. Stops the listener and calculates the offsets/matrix.
+    /// 4. Automatically sends the new calibration to the device.
+    ///
+    /// # Returns
+    /// - `Ok(Some(true))` if the calibration was calculated and accepted by the device.
+    /// - `Ok(None)` if the calibration failed (not enough data) or device did not ack.
+    /// - `Err(...)` if there was a communication error.
+    pub fn run_and_apply_magnetometer_calibration(
+        &mut self,
+        collection_duration: Duration,
+        apply_timeout: Duration,
+    ) -> Result<Option<bool>> {
+        // 1. Start listening
+        self.start_magnetometer_calibration()?;
+
+        // 2. Wait for data collection (Block thread while user rotates device)
+        // We use std::thread::sleep because this function is intended to be blocking.
+        std::thread::sleep(collection_duration);
+
+        // 3. Finish and Calculate
+        let calibration_result = self.finish_magnetometer_calibration()?;
+
+        match calibration_result {
+            Some((offsets, matrix)) => {
+                // 4. Apply to device
+                // We have valid data, so send the set command.
+                println!(
+                    "Calibration result: Offsets: {:?}, Matrix: {:?}",
+                    offsets, matrix
+                );
+                self.set_magnetometer_calibration(offsets, matrix, apply_timeout)
+            }
+            None => {
+                // Calibration failed (likely not enough distinct data points)
+                Ok(None)
+            }
+        }
+    }
+
     /// Sends a high-level command to the device.
     fn send_command(&self, command: FIRMCommandPacket) -> Result<()> {
         self.command_sender
             .send(command)
             .map_err(|_| io::Error::other("Command channel closed"))?;
-        Ok(())
-    }
-
-    /// Sends a mock packet to the device.
-    fn send_mock_packet(&self, packet: FIRMLogPacket) -> Result<()> {
-        self.mock_sender
-            .send(packet)
-            .map_err(|_| io::Error::other("Mock channel closed"))?;
         Ok(())
     }
 
@@ -562,6 +691,242 @@ impl FIRMClient {
             }
         }
     }
+
+    /// Starts the magnetometer calibration process in a background thread.
+    ///
+    /// This will automatically begin collecting data from the incoming stream.
+    /// Call `finish_magnetometer_calibration` to stop collecting and calculate the result.
+    pub fn start_magnetometer_calibration(&mut self) -> Result<()> {
+        if self.calibration_handle.is_some() {
+            return Err(anyhow::anyhow!("Calibration already in progress"));
+        }
+
+        // Create a channel for the serial thread to send data to the calibration thread
+        let (tx, rx) = channel();
+
+        // Register the sender in the shared snoop slot.
+        // The serial thread will pick this up on its next loop iteration.
+        {
+            let mut guard = self
+                .calibration_snoop
+                .write()
+                .map_err(|_| anyhow::anyhow!("Lock poisoned"))?;
+            *guard = Some(tx);
+        }
+
+        // Spawn the calibration thread
+        let handle = thread::spawn(move || {
+            let mut calibrator = MagnetometerCalibrator::new();
+            calibrator.start();
+
+            // Keep receiving data until the sender is dropped (which happens in finish_calibration)
+            while let Ok(data) = rx.recv() {
+                calibrator.add_sample(&data);
+            }
+
+            calibrator.stop();
+            calibrator.calculate()
+        });
+
+        self.calibration_handle = Some(handle);
+        Ok(())
+    }
+
+    /// Stops the calibration process and calculates the hard iron offsets and soft iron matrix.
+    ///
+    /// Returns `Ok(None)` if the calibration failed (e.g. not enough data points).
+    pub fn finish_magnetometer_calibration(&mut self) -> Result<Option<([f32; 3], [f32; 9])>> {
+        // 1. Remove the sender from the snoop slot.
+        // This causes the `rx.recv()` in the calibration thread to return an error, breaking its loop.
+        {
+            let mut guard = self
+                .calibration_snoop
+                .write()
+                .map_err(|_| anyhow::anyhow!("Lock poisoned"))?;
+            *guard = None;
+        }
+
+        // 2. Join the thread to get the result
+        if let Some(handle) = self.calibration_handle.take() {
+            let result = handle
+                .join()
+                .map_err(|_| anyhow::anyhow!("Calibration thread panicked"))?;
+
+            // 3. Convert result to the array format we need for FIRMCommand
+            if let Some(cal) = result {
+                return Ok(Some(cal.to_arrays()));
+            }
+        }
+
+        Ok(None)
+    }
+}
+
+fn sleep_interruptible(total: Duration, stop: &AtomicBool) {
+    let step = Duration::from_millis(10);
+    let mut remaining = total;
+    while remaining > Duration::ZERO && !stop.load(Ordering::Relaxed) {
+        let s = remaining.min(step);
+        thread::sleep(s);
+        remaining = remaining.saturating_sub(s);
+    }
+}
+
+fn stream_mock_log_file_worker(
+    log_path: &str,
+    realtime: bool,
+    speed: f64,
+    chunk_size: usize,
+    stop: &AtomicBool,
+    mock_sender: &Sender<FIRMLogPacket>,
+) -> Result<usize> {
+    if speed <= 0.0 {
+        return Err(anyhow::anyhow!("speed must be > 0"));
+    }
+
+    const PRELOAD_COUNT: usize = 75;
+    const BATCH_SIZE: usize = 10;
+
+    let mut file = File::open(log_path)?;
+    let mut header = vec![0u8; HEADER_TOTAL_SIZE];
+    file.read_exact(&mut header)?;
+
+    // Send the log header to the device, framed as a mock packet.
+    let header_packet = FIRMLogPacket::new(FIRMLogPacketType::HeaderPacket, header.clone());
+    mock_sender
+        .send(header_packet)
+        .map_err(|_| io::Error::other("Mock channel closed"))?;
+
+    let mut parser = LogParser::new();
+    parser.read_header(&header);
+
+    // After we send the header we pause for a short time to let the device process it.
+    sleep_interruptible(HEADER_PARSE_DELAY, stop);
+
+    let mut buf = vec![0u8; chunk_size];
+    let mut packets_sent = 0usize;
+
+    // Staging queue of parsed packets + their requested delay.
+    let mut staged: std::collections::VecDeque<(FIRMLogPacket, f64)> =
+        std::collections::VecDeque::new();
+
+    // Read+parse enough bytes to stage more packets.
+    // Returns Ok(true) if it read more bytes, Ok(false) if file is exhausted.
+    let refill = |file: &mut File,
+                  buf: &mut [u8],
+                  parser: &mut LogParser,
+                  staged: &mut std::collections::VecDeque<(FIRMLogPacket, f64)>|
+     -> Result<bool> {
+        let n = file.read(buf)?;
+        if n == 0 {
+            return Ok(false);
+        }
+
+        parser.parse_bytes(&buf[..n]);
+        while let Some((packet, delay_seconds)) = parser.get_packet_and_time_delay() {
+            staged.push_back((packet, delay_seconds));
+        }
+
+        Ok(true)
+    };
+
+    // -------------------------
+    // 1) PRELOAD: send 75 ASAP
+    // -------------------------
+    let mut sent_preload = 0usize;
+    while sent_preload < PRELOAD_COUNT && !stop.load(Ordering::Relaxed) {
+        // Ensure we have at least one staged packet.
+        while staged.is_empty() {
+            let read_more = refill(&mut file, &mut buf, &mut parser, &mut staged)?;
+            if !read_more {
+                // File ended; drain anything remaining in parser.
+                while let Some((packet, delay_seconds)) = parser.get_packet_and_time_delay() {
+                    staged.push_back((packet, delay_seconds));
+                }
+                break;
+            }
+        }
+
+        let Some((packet, _delay_seconds)) = staged.pop_front() else {
+            break; // no more packets available
+        };
+
+        // Send immediately (no pacing / no sleeping).
+        mock_sender
+            .send(packet)
+            .map_err(|_| io::Error::other("Mock channel closed"))?;
+        packets_sent += 1;
+        sent_preload += 1;
+    }
+
+    // After the burst, reset pacing so realtime timing starts “from here”.
+    let stream_start = Instant::now();
+    let mut total_delay_seconds = 0.0f64;
+
+    // -----------------------------------------
+    // 2) MAIN: send in batches of 10 packets
+    // -----------------------------------------
+    loop {
+        if stop.load(Ordering::Relaxed) {
+            break;
+        }
+
+        // Make sure we can form a batch (or hit EOF).
+        while staged.len() < BATCH_SIZE {
+            let read_more = refill(&mut file, &mut buf, &mut parser, &mut staged)?;
+            if !read_more {
+                // File ended; drain any remaining packets parser can produce.
+                while let Some((packet, delay_seconds)) = parser.get_packet_and_time_delay() {
+                    staged.push_back((packet, delay_seconds));
+                }
+                break;
+            }
+        }
+
+        if staged.is_empty() {
+            break;
+        }
+
+        // Pop up to BATCH_SIZE packets.
+        let mut batch_delay = 0.0f64;
+        let mut batch = Vec::with_capacity(BATCH_SIZE);
+        for _ in 0..BATCH_SIZE {
+            if let Some((packet, delay_seconds)) = staged.pop_front() {
+                batch_delay += delay_seconds;
+                batch.push(packet);
+            } else {
+                break;
+            }
+        }
+
+        // Send the whole batch (still individual send() calls, but no per-packet sleep).
+        for packet in batch {
+            if stop.load(Ordering::Relaxed) {
+                break;
+            }
+            mock_sender
+                .send(packet)
+                .map_err(|_| io::Error::other("Mock channel closed"))?;
+            packets_sent += 1;
+        }
+
+        // Sleep once per batch to approximate original pacing.
+        if realtime && batch_delay > 0.0 {
+            total_delay_seconds += batch_delay;
+
+            let stream_elapsed = stream_start.elapsed().as_secs_f64();
+            if stream_elapsed <= total_delay_seconds / speed {
+                sleep_interruptible(Duration::from_secs_f64(batch_delay / speed), stop);
+            }
+        }
+
+        // If parser knows it hit EOF and nothing is staged, we’re done.
+        if parser.eof_reached() && staged.is_empty() {
+            break;
+        }
+    }
+
+    Ok(packets_sent)
 }
 
 /// Ensures that the client is properly stopped when dropped, i.e. .stop() is called.
@@ -762,6 +1127,52 @@ mod tests {
                 protocol,
             })
         );
+    }
+
+    #[test]
+    fn test_get_calibration_command() {
+        let (mut client, device) = FIRMClient::new_mock(0.01);
+        client.start();
+
+        let expected = CalibrationValues {
+            imu_accelerometer_offsets: [1.0, 2.0, 3.0],
+            imu_accelerometer_scale_matrix: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+            imu_gyroscope_offsets: [4.0, 5.0, 6.0],
+            imu_gyroscope_scale_matrix: [2.0, 0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 0.0, 2.0],
+            magnetometer_offsets: [7.0, 8.0, 9.0],
+            magnetometer_scale_matrix: [3.0, 0.0, 0.0, 0.0, 3.0, 0.0, 0.0, 0.0, 3.0],
+        };
+
+        let mut payload: Vec<u8> = Vec::new();
+        for v in expected.imu_accelerometer_offsets {
+            payload.extend_from_slice(&v.to_le_bytes());
+        }
+        for v in expected.imu_accelerometer_scale_matrix {
+            payload.extend_from_slice(&v.to_le_bytes());
+        }
+        for v in expected.imu_gyroscope_offsets {
+            payload.extend_from_slice(&v.to_le_bytes());
+        }
+        for v in expected.imu_gyroscope_scale_matrix {
+            payload.extend_from_slice(&v.to_le_bytes());
+        }
+        for v in expected.magnetometer_offsets {
+            payload.extend_from_slice(&v.to_le_bytes());
+        }
+        for v in expected.magnetometer_scale_matrix {
+            payload.extend_from_slice(&v.to_le_bytes());
+        }
+
+        let response_packet = FramedPacket::new(
+            PacketHeader::Response,
+            FIRMCommand::GetCalibration.to_u16(),
+            payload,
+        );
+        device.inject_framed_packet(response_packet);
+
+        let result = client.get_calibration(Duration::from_millis(100));
+
+        assert_eq!(result.unwrap(), Some(expected));
     }
 
     #[test]

@@ -1,6 +1,6 @@
 [package]
 name = "firm_rust"
-version = "1.0.0"
+version = "1.1.2"
 readme = "../README.md"
 license = "MIT"
 description = "Official FIRM Client library in Rust"

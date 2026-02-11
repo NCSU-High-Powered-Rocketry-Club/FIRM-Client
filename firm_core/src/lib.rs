@@ -1,6 +1,7 @@
 #![cfg_attr(not(feature = "default"), no_std)]
 extern crate alloc;
 
+pub mod calibration;
 pub mod client_packets;
 pub mod constants;
 pub mod data_parser;

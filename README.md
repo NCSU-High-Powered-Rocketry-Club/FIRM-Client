@@ -129,13 +129,15 @@ We need to to first build wheels for each platform, right now the workflow is to
 and then upload to PyPI. At the minimum, we build for Linux x86_64 and aarch64 for python versions
 3.10+, including free threaded wheels.
 
-1. We should always bump the version in `firm_python/Cargo.toml` and `pyproject.toml` before
-   publishing. Make sure they match exactly.
+1. Always bump the version in `firm_python/Cargo.toml` before publishing.
 
-2. Build the wheels (.sh files can only run on Unix-like systems, so Windows users may simply open the file and run the commands manually):
-
+2. Build the wheels 
 ```bash
+# If you're on Linux
 ./compile.sh
+
+# If you're on Windows
+.\compile.ps1
 ```
 
 This will create wheels in the `target/wheels` directory, for Python versions 3.10 to 3.14,
@@ -158,11 +160,13 @@ This will ask for PyPI credentials, make sure you get the token from the website
 
 ### TypeScript Package (npm)
 
-1. Login to npm
+1. Always bump the version in `firm_typescript/Cargo.toml` and `package.json` before publishing. Make sure they match.
+
+2. Login to npm
 
 `npm login`
 
-2. Publish it
+3. Publish it
 
 `npm publish`
 

@@ -45,6 +45,9 @@ pub mod command {
         SetDeviceConfig = 0x0003,
         Reboot = 0x0004,
         Mock = 0x0005,
+        SetMagnetometerCalibration = 0x0006,
+        SetIMUCalibration = 0x0007,
+        GetCalibration = 0x0008,
         Cancel = 0x00FF,
     }
 
@@ -64,18 +67,37 @@ pub mod command {
                 }
                 id if id == FIRMCommand::Reboot.to_u16() => Ok(FIRMCommand::Reboot),
                 id if id == FIRMCommand::Mock.to_u16() => Ok(FIRMCommand::Mock),
+                id if id == FIRMCommand::SetMagnetometerCalibration.to_u16() => {
+                    Ok(FIRMCommand::SetMagnetometerCalibration)
+                }
+                id if id == FIRMCommand::SetIMUCalibration.to_u16() => {
+                    Ok(FIRMCommand::SetIMUCalibration)
+                }
+                id if id == FIRMCommand::GetCalibration.to_u16() => Ok(FIRMCommand::GetCalibration),
                 id if id == FIRMCommand::Cancel.to_u16() => Ok(FIRMCommand::Cancel),
                 _ => Err(FrameError::UnknownIdentifier(identifier)),
             }
         }
     }
 
-    pub const COMMAND_LENGTH: usize = 64;
     pub const CRC_LENGTH: usize = 2;
     pub const DEVICE_NAME_LENGTH: usize = 32;
     pub const DEVICE_ID_LENGTH: usize = 8;
     pub const FIRMWARE_VERSION_LENGTH: usize = 8;
     pub const FREQUENCY_LENGTH: usize = 2;
+    pub const NUMBER_OF_CALIBRATION_OFFSETS: usize = 3;
+    pub const NUMBER_OF_CALIBRATION_SCALE_MATRIX_ELEMENTS: usize = 9;
+    pub const CALIBRATION_OFFSETS_LENGTH: usize = NUMBER_OF_CALIBRATION_OFFSETS * 4;
+    pub const CALIBRATION_SCALE_MATRIX_LENGTH: usize =
+        NUMBER_OF_CALIBRATION_SCALE_MATRIX_ELEMENTS * 4;
+
+    /// IMU calibration includes both accelerometer and gyroscope calibration.
+    ///
+    /// Payload layout: [accel offsets (3 f32)][accel matrix (9 f32)][gyro offsets (3 f32)][gyro matrix (9 f32)]
+    pub const NUMBER_OF_IMU_CALIBRATION_SETS: usize = 2;
+    pub const IMU_CALIBRATION_PAYLOAD_LENGTH: usize = (CALIBRATION_OFFSETS_LENGTH
+        + CALIBRATION_SCALE_MATRIX_LENGTH)
+        * NUMBER_OF_IMU_CALIBRATION_SETS;
 }
 
 pub mod log_parsing {

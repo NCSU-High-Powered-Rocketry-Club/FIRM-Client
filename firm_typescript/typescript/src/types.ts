@@ -84,10 +84,53 @@ export interface DeviceConfig {
   protocol: DeviceProtocol;
 }
 
+export interface CalibrationValues {
+  imu_accelerometer_offsets: [number, number, number];
+  imu_accelerometer_scale_matrix: [
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+  ];
+  imu_gyroscope_offsets: [number, number, number];
+  imu_gyroscope_scale_matrix: [
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+  ];
+  magnetometer_offsets: [number, number, number];
+  magnetometer_scale_matrix: [
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+  ];
+}
+
 export type FIRMResponse =
   | { GetDeviceInfo: DeviceInfo }
   | { GetDeviceConfig: DeviceConfig }
   | { SetDeviceConfig: boolean }
+  | { SetMagnetometerCalibration: boolean }
+  | { SetIMUCalibration: boolean }
+  | { GetCalibration: CalibrationValues }
   | { Mock: boolean }
   | { Cancel: boolean }
   | { Error: string };
+

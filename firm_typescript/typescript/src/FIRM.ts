@@ -1,10 +1,18 @@
 import init, {
   FIRMDataParser,
   FIRMCommandBuilder,
+  MagnetometerCalibrator,
   MockLogParser,
   mock_header_size,
 } from '../../pkg/firm_client.js';
-import { FIRMPacket, FIRMResponse, DeviceInfo, DeviceConfig, DeviceProtocol } from './types.js';
+import {
+  FIRMPacket,
+  FIRMResponse,
+  DeviceInfo,
+  DeviceConfig,
+  DeviceProtocol,
+  CalibrationValues,
+} from './types.js';
 
 const RESPONSE_TIMEOUT_MS = 5000;
 
@@ -41,6 +49,9 @@ export class FIRMClient {
 
   /** Subscribers for raw outgoing serial bytes. */
   private outgoingBytesListeners: ((bytes: Uint8Array) => void)[] = [];
+
+  /** Subscribers for parsed data packets (snoop; does not consume queue). */
+  private packetListeners: ((pkt: FIRMPacket) => void)[] = [];
 
   /** Reader for the Web Serial stream. */
   private reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
@@ -244,33 +255,135 @@ export class FIRMClient {
     await this.sendBytes(parser.build_header_packet(header));
 
     let sent = 0;
+
+    // We want ONE burst of 75 total, not 75 per chunk.
+    // So we track whether we've already done the preload.
+    let didPreload = false;
+
     for (let offset = 0; offset < body.length; offset += chunkSize) {
       parser.parse_bytes(body.slice(offset, offset + chunkSize));
-      sent += await this.drainMockPackets(parser, realtime, speed);
+
+      // First drain does the preload burst, later drains do only batching
+      if (!didPreload) {
+        sent += await this.drainMockPacketsBatched(parser, realtime, speed, 75, 10);
+        didPreload = true;
+      } else {
+        // No preload after the first call; still batch in 10s
+        sent += await this.drainMockPacketsBatched(parser, realtime, speed, 0, 10);
+      }
     }
 
-    sent += await this.drainMockPackets(parser, realtime, speed);
-    return sent;
+    // Final drain in case parser buffered leftovers
+    if (!didPreload) {
+      sent += await this.drainMockPacketsBatched(parser, realtime, speed, 75, 10);
+    } else {
+      sent += await this.drainMockPacketsBatched(parser, realtime, speed, 0, 10);
+    }
+
+    return sent;  
   }
 
-  private async drainMockPackets(
+  /** Sends multiple frames as a single byte array. */
+  private async sendBatch(frames: Uint8Array[]): Promise<void> {
+    let total = 0;
+    for (const f of frames) total += f.length;
+
+    const out = new Uint8Array(total);
+    let off = 0;
+    for (const f of frames) {
+      out.set(f, off);
+      off += f.length;
+    }
+
+    await this.sendBytes(out);
+  }
+
+  private async drainMockPacketsBatched(
     parser: MockLogParser,
     realtime: boolean,
     speed: number,
+    preloadCount = 75,
+    batchSize = 10,
   ): Promise<number> {
-    let count = 0;
-    while (true) {
+    // Stage parsed packets here so we can burst + batch
+    const staged: { bytes: Uint8Array; delaySeconds: number }[] = [];
+
+    const popOne = () => {
+      if (staged.length > 0) return staged.shift()!;
       const pkt = parser.get_packet_with_delay() as
         | { bytes: Uint8Array; delaySeconds: number }
         | null;
-      if (!pkt) break;
-      if (realtime && pkt.delaySeconds > 0) {
-        await this.sleep((pkt.delaySeconds * 1000) / speed);
+      return pkt ?? null;
+    };
+
+    const fillUntil = (n: number) => {
+      while (staged.length < n) {
+        const pkt = parser.get_packet_with_delay() as
+          | { bytes: Uint8Array; delaySeconds: number }
+          | null;
+        if (!pkt) break;
+        staged.push(pkt);
       }
-      await this.sendBytes(pkt.bytes);
-      count += 1;
+    };
+
+    let sent = 0;
+
+    // -------------------------
+    // 1) PRELOAD burst (no sleep)
+    // -------------------------
+    fillUntil(preloadCount);
+
+    const batch: Uint8Array[] = [];
+    while (batch.length < preloadCount) {
+      const pkt = popOne();
+      if (!pkt) break;
+      batch.push(pkt.bytes);
     }
-    return count;
+
+    await this.sendBatch(batch);
+    sent += batch.length;
+
+    // Reset pacing after burst: we pace relative to "now"
+    const streamStart = performance.now();
+    let totalDelaySeconds = 0;
+
+    // -----------------------------------------
+    // 2) MAIN: batches of N (one sleep per batch)
+    // -----------------------------------------
+    while (true) {
+      // Make sure we have at least one packet available
+      fillUntil(batchSize);
+      if (staged.length === 0) {
+        const pkt = popOne();
+        if (!pkt) break;
+        staged.push(pkt);
+      }
+
+      // Build a batch up to batchSize
+      const batch = staged.splice(0, batchSize);
+      if (batch.length === 0) break;
+
+      let batchDelaySeconds = 0;
+      for (const pkt of batch) batchDelaySeconds += pkt.delaySeconds;
+
+      await this.sendBatch(batch.map((p) => p.bytes));
+      sent += batch.length;
+
+      // Sleep once per batch to approximate original pacing
+      if (realtime && batchDelaySeconds > 0) {
+        totalDelaySeconds += batchDelaySeconds;
+
+        const elapsedSeconds = (performance.now() - streamStart) / 1000;
+        const targetSeconds = totalDelaySeconds / speed;
+
+        // Only sleep if we're not already behind
+        if (elapsedSeconds <= targetSeconds) {
+          await this.sleep((batchDelaySeconds * 1000) / speed);
+        }
+      }
+    }
+
+    return sent;
   }
 
   /**
@@ -296,6 +409,17 @@ export class FIRMClient {
   }
 
   /**
+   * Gets device calibration values from the FIRM device.
+   * @returns The calibration values, or null if the request timed out.
+   */
+  async getCalibration(): Promise<CalibrationValues | null> {
+    return this.sendAndWait(
+      () => FIRMCommandBuilder.build_get_calibration(),
+      (res) => ('GetCalibration' in res ? res.GetCalibration : undefined),
+    );
+  }
+
+  /**
    * Sets device configuration on the FIRM device.
    * @param name the device name, 32 characters max.
    * @param frequency the data frequency in Hz, 1-1000 Hz.
@@ -312,6 +436,90 @@ export class FIRMClient {
         () => FIRMCommandBuilder.build_set_device_config(name, frequency, protocol),
         (res) => ('SetDeviceConfig' in res ? res.SetDeviceConfig : undefined),
       )) ?? false
+    );
+  }
+
+  async setIMUCalibration(
+    accel_offsets: number[],
+    accel_scale_matrix: number[],
+    gyro_offsets: number[],
+    gyro_scale_matrix: number[],
+  ): Promise<boolean> {
+    const accelOffsetsF32 = new Float32Array(accel_offsets);
+    const accelScaleF32 = new Float32Array(accel_scale_matrix);
+    const gyroOffsetsF32 = new Float32Array(gyro_offsets);
+    const gyroScaleF32 = new Float32Array(gyro_scale_matrix);
+
+    return (
+      (await this.sendAndWait(
+        () =>
+          FIRMCommandBuilder.build_set_imu_calibration(
+            accelOffsetsF32,
+            accelScaleF32,
+            gyroOffsetsF32,
+            gyroScaleF32,
+          ),
+        (res) => ('SetIMUCalibration' in res ? res.SetIMUCalibration : undefined),
+      )) ?? false
+    );
+  }
+
+  async setMagnetometerCalibration(offsets: number[], scale_matrix: number[]): Promise<boolean> {
+    const offsetsF32 = new Float32Array(offsets);
+    const scaleF32 = new Float32Array(scale_matrix);
+
+    return (
+      (await this.sendAndWait(
+        () => FIRMCommandBuilder.build_set_magnetometer_calibration(offsetsF32, scaleF32),
+        (res) => ('SetMagnetometerCalibration' in res ? res.SetMagnetometerCalibration : undefined),
+      )) ?? false
+    );
+  }
+
+  /**
+   * Runs a full magnetometer calibration sequence and applies it to the device.
+   *
+   * Mirrors the Rust helper `run_and_apply_magnetometer_calibration`:
+   * 1) Collects samples for `collectionDurationMs` while you rotate the device.
+   * 2) Fits offsets + soft-iron matrix.
+   * 3) Sends `SetMagnetometerCalibration` and returns the device acknowledgement.
+   *
+   * @returns `true/false` if the device responded, or `null` if calibration failed or timed out.
+   */
+  async runAndApplyMagnetometerCalibration(
+    collectionDurationMs: number,
+    applyTimeoutMs = RESPONSE_TIMEOUT_MS,
+  ): Promise<boolean | null> {
+    if (!this.running) throw new Error('Not connected');
+    if (!(collectionDurationMs > 0)) throw new Error('collectionDurationMs must be > 0');
+
+    const calibrator = new MagnetometerCalibrator();
+    calibrator.start();
+
+    const unsubscribe = this.onPacket((pkt) => {
+      try {
+        calibrator.add_sample(pkt as unknown as object);
+      } catch {
+        // Ignore per-sample errors (should be rare; keeps stream alive)
+      }
+    });
+
+    await this.sleep(collectionDurationMs);
+
+    unsubscribe();
+    calibrator.stop();
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = calibrator.calculate() as any | null;
+    if (!result) return null;
+
+    const offsetsF32 = new Float32Array(result.offsets as number[]);
+    const scaleF32 = new Float32Array(result.scaleMatrix as number[]);
+
+    return await this.sendAndWait(
+      () => FIRMCommandBuilder.build_set_magnetometer_calibration(offsetsF32, scaleF32),
+      (res) => ('SetMagnetometerCalibration' in res ? res.SetMagnetometerCalibration : undefined),
+      applyTimeoutMs,
     );
   }
 
@@ -341,7 +549,27 @@ export class FIRMClient {
    * @param dataPacket Parsed FIRM data packet.
    */
   private enqueuePacket(dataPacket: FIRMPacket): void {
+    this.packetListeners.forEach((fn) => {
+      try {
+        fn(dataPacket);
+      } catch (e) {
+        console.warn('[FIRM] packet listener error:', e);
+      }
+    });
     (this.packetWaiters.shift() || this.packetQueue.push.bind(this.packetQueue))(dataPacket);
+  }
+
+  /**
+   * Subscribe to parsed data packets.
+   *
+   * This is a non-consuming "snoop" hook (packets still go into the normal queue).
+   */
+  private onPacket(listener: (pkt: FIRMPacket) => void): () => void {
+    this.packetListeners.push(listener);
+    return () => {
+      const idx = this.packetListeners.indexOf(listener);
+      if (idx !== -1) this.packetListeners.splice(idx, 1);
+    };
   }
 
   /**

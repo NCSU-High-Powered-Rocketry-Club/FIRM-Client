@@ -8,4 +8,5 @@ export {
   type DeviceInfo,
   type DeviceConfig,
   type DeviceProtocol,
+  type CalibrationValues,
 } from './types.js';

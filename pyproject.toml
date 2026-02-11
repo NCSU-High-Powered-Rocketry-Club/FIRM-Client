@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "firm-client"
-version = "1.0.0"
+dynamic = ["version"]
 readme = "README.md"  # Todo: Make a python readme.md file
 description = "Python bindings for FIRM Client using Rust"
 license = "MIT"
@@ -36,6 +36,15 @@ dev = [
     "ziglang"  # for maturin's zig support when cross-compiling
 ]
 
+[project.optional-dependencies]
+extras = [
+    "pandas>=2.0",
+    "plotly>=5.20",
+    "dash>=2.16",
+    "flask",
+    "matplotlib>=3.10.8",
+    "numpy",
+]
 
 [tool.uv]
 # Rebuild package when any rust files change
@@ -46,5 +55,3 @@ cache-keys = [{file = "pyproject.toml"}, {file = "Cargo.toml"}, {file = "**/*.rs
 [tool.maturin]
 features = ["pyo3/extension-module"]
 manifest-path = "firm_python/Cargo.toml"
-# include the stub from the firm_python folder so all wheels contain it
-include = ["firm_python/firm_client.pyi"]

@@ -73,6 +73,12 @@ pub struct MagnetometerCalibrator {
     is_collecting: bool,
 }
 
+impl Default for MagnetometerCalibrator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MagnetometerCalibrator {
     /// Creates a new calibrator instance.
     pub fn new() -> Self {

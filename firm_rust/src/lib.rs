@@ -1,11 +1,14 @@
 use anyhow::Result;
+use firm_core::calibration::{MagnetometerCalibration, MagnetometerCalibrator};
 use firm_core::client_packets::{FIRMCommandPacket, FIRMLogPacket};
 use firm_core::constants::command::{
     NUMBER_OF_CALIBRATION_OFFSETS, NUMBER_OF_CALIBRATION_SCALE_MATRIX_ELEMENTS,
 };
 use firm_core::constants::log_parsing::{FIRMLogPacketType, HEADER_PARSE_DELAY, HEADER_TOTAL_SIZE};
 use firm_core::data_parser::SerialParser;
-use firm_core::firm_packets::{CalibrationValues, DeviceConfig, DeviceInfo, DeviceProtocol, FIRMData, FIRMResponse};
+use firm_core::firm_packets::{
+    CalibrationValues, DeviceConfig, DeviceInfo, DeviceProtocol, FIRMData, FIRMResponse,
+};
 use firm_core::framed_packet::Framed;
 use firm_core::log_parsing::LogParser;
 use serialport::SerialPort;
@@ -13,12 +16,11 @@ use std::collections::VecDeque;
 use std::fs::File;
 use std::io::{self, Read, Write};
 use std::sync::Arc;
+use std::sync::RwLock;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, channel};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
-use firm_core::calibration::{MagnetometerCalibration, MagnetometerCalibrator};
-use std::sync::RwLock;
 
 pub mod mock_serial;
 
@@ -74,7 +76,7 @@ impl FIRMClient {
     /// - `timeout` (`f64`) - Read timeout in seconds for the serial port.
     pub fn new(port_name: &str, baud_rate: u32, timeout: f64) -> Result<Self> {
         // Sets up the serial port
-        let mut  port: Box<dyn SerialPort> = serialport::new(port_name, baud_rate)
+        let mut port: Box<dyn SerialPort> = serialport::new(port_name, baud_rate)
             .timeout(Duration::from_millis((timeout * 1000.0) as u64))
             .open()
             .map_err(io::Error::other)?;
@@ -208,18 +210,17 @@ impl FIRMClient {
                         // Reads all available data packets and send them to the main thread and calibration if wanted
                         while let Some(firm_data_packet) = parser.get_data_packet() {
                             let packet = firm_data_packet.data().clone();
-                            
+
                             if sender.send(packet.clone()).is_err() {
                                 return port; // Receiver dropped
                             }
 
                             // We use a read lock which is very fast if no one is writing.
-                            if let Ok(guard) = calibration_snoop.read() {
-                                if let Some(cal_tx) = &*guard {
+                            if let Ok(guard) = calibration_snoop.read()
+                                && let Some(cal_tx) = &*guard {
                                     // Ignore errors (if cal thread died, we don't care)
-                                    let _ = cal_tx.send(packet); 
+                                    let _ = cal_tx.send(packet);
                                 }
-                            }
                         }
 
                         // Reads all available response packets and send them to the main thread
@@ -258,7 +259,7 @@ impl FIRMClient {
         }
 
         self.running.store(false, Ordering::Relaxed);
-                // todo: explain this properly when I understand it better (it's mostly for restarting)
+        // todo: explain this properly when I understand it better (it's mostly for restarting)
         if let Some(handle) = self.join_handle.take()
             && let Ok(port) = handle.join()
         {
@@ -593,7 +594,10 @@ impl FIRMClient {
             Some((offsets, matrix)) => {
                 // 4. Apply to device
                 // We have valid data, so send the set command.
-                println!("Calibration result: Offsets: {:?}, Matrix: {:?}", offsets, matrix);
+                println!(
+                    "Calibration result: Offsets: {:?}, Matrix: {:?}",
+                    offsets, matrix
+                );
                 self.set_magnetometer_calibration(offsets, matrix, apply_timeout)
             }
             None => {
@@ -688,7 +692,7 @@ impl FIRMClient {
     }
 
     /// Starts the magnetometer calibration process in a background thread.
-    /// 
+    ///
     /// This will automatically begin collecting data from the incoming stream.
     /// Call `finish_magnetometer_calibration` to stop collecting and calculate the result.
     pub fn start_magnetometer_calibration(&mut self) -> Result<()> {
@@ -702,7 +706,10 @@ impl FIRMClient {
         // Register the sender in the shared snoop slot.
         // The serial thread will pick this up on its next loop iteration.
         {
-            let mut guard = self.calibration_snoop.write().map_err(|_| anyhow::anyhow!("Lock poisoned"))?;
+            let mut guard = self
+                .calibration_snoop
+                .write()
+                .map_err(|_| anyhow::anyhow!("Lock poisoned"))?;
             *guard = Some(tx);
         }
 
@@ -725,26 +732,31 @@ impl FIRMClient {
     }
 
     /// Stops the calibration process and calculates the hard iron offsets and soft iron matrix.
-    /// 
+    ///
     /// Returns `Ok(None)` if the calibration failed (e.g. not enough data points).
     pub fn finish_magnetometer_calibration(&mut self) -> Result<Option<([f32; 3], [f32; 9])>> {
         // 1. Remove the sender from the snoop slot.
         // This causes the `rx.recv()` in the calibration thread to return an error, breaking its loop.
         {
-            let mut guard = self.calibration_snoop.write().map_err(|_| anyhow::anyhow!("Lock poisoned"))?;
+            let mut guard = self
+                .calibration_snoop
+                .write()
+                .map_err(|_| anyhow::anyhow!("Lock poisoned"))?;
             *guard = None;
         }
 
         // 2. Join the thread to get the result
         if let Some(handle) = self.calibration_handle.take() {
-            let result = handle.join().map_err(|_| anyhow::anyhow!("Calibration thread panicked"))?;
-            
+            let result = handle
+                .join()
+                .map_err(|_| anyhow::anyhow!("Calibration thread panicked"))?;
+
             // 3. Convert result to the array format we need for FIRMCommand
             if let Some(cal) = result {
                 return Ok(Some(cal.to_arrays()));
             }
         }
-        
+
         Ok(None)
     }
 }
@@ -800,9 +812,9 @@ fn stream_mock_log_file_worker(
     // Read+parse enough bytes to stage more packets.
     // Returns Ok(true) if it read more bytes, Ok(false) if file is exhausted.
     let refill = |file: &mut File,
-                      buf: &mut [u8],
-                      parser: &mut LogParser,
-                      staged: &mut std::collections::VecDeque<(FIRMLogPacket, f64)>|
+                  buf: &mut [u8],
+                  parser: &mut LogParser,
+                  staged: &mut std::collections::VecDeque<(FIRMLogPacket, f64)>|
      -> Result<bool> {
         let n = file.read(buf)?;
         if n == 0 {
@@ -1123,23 +1135,11 @@ mod tests {
 
         let expected = CalibrationValues {
             imu_accelerometer_offsets: [1.0, 2.0, 3.0],
-            imu_accelerometer_scale_matrix: [
-                1.0, 0.0, 0.0,
-                0.0, 1.0, 0.0,
-                0.0, 0.0, 1.0,
-            ],
+            imu_accelerometer_scale_matrix: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
             imu_gyroscope_offsets: [4.0, 5.0, 6.0],
-            imu_gyroscope_scale_matrix: [
-                2.0, 0.0, 0.0,
-                0.0, 2.0, 0.0,
-                0.0, 0.0, 2.0,
-            ],
+            imu_gyroscope_scale_matrix: [2.0, 0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 0.0, 2.0],
             magnetometer_offsets: [7.0, 8.0, 9.0],
-            magnetometer_scale_matrix: [
-                3.0, 0.0, 0.0,
-                0.0, 3.0, 0.0,
-                0.0, 0.0, 3.0,
-            ],
+            magnetometer_scale_matrix: [3.0, 0.0, 0.0, 0.0, 3.0, 0.0, 0.0, 0.0, 3.0],
         };
 
         let mut payload: Vec<u8> = Vec::new();

@@ -2,7 +2,9 @@ use firm_core::constants::command::{
     NUMBER_OF_CALIBRATION_OFFSETS, NUMBER_OF_CALIBRATION_SCALE_MATRIX_ELEMENTS,
 };
 use firm_core::constants::packet::PacketHeader;
-use firm_core::firm_packets::{CalibrationValues, DeviceConfig, DeviceInfo, DeviceProtocol, FIRMData};
+use firm_core::firm_packets::{
+    CalibrationValues, DeviceConfig, DeviceInfo, DeviceProtocol, FIRMData,
+};
 use firm_core::framed_packet::FramedPacket;
 use firm_rust::FIRMClient as RustFirmClient;
 use firm_rust::mock_serial::MockDeviceHandle as RustMockDeviceHandle;
@@ -267,10 +269,10 @@ impl FIRMClient {
         let apply_timeout = Duration::from_secs_f64(apply_timeout_seconds);
 
         // Call the inner Rust method we created earlier.
-        let res = map_io(self.inner.run_and_apply_magnetometer_calibration(
-            collection_duration,
-            apply_timeout,
-        ))?;
+        let res = map_io(
+            self.inner
+                .run_and_apply_magnetometer_calibration(collection_duration, apply_timeout),
+        )?;
 
         Ok(res)
     }

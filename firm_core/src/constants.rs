@@ -47,6 +47,7 @@ pub mod command {
         Mock = 0x0005,
         SetMagnetometerCalibration = 0x0006,
         SetIMUCalibration = 0x0007,
+        GetCalibration = 0x0008,
         Cancel = 0x00FF,
     }
 
@@ -70,13 +71,13 @@ pub mod command {
                     Ok(FIRMCommand::SetMagnetometerCalibration)
                 }
                 id if id == FIRMCommand::SetIMUCalibration.to_u16() => Ok(FIRMCommand::SetIMUCalibration),
+                id if id == FIRMCommand::GetCalibration.to_u16() => Ok(FIRMCommand::GetCalibration),
                 id if id == FIRMCommand::Cancel.to_u16() => Ok(FIRMCommand::Cancel),
                 _ => Err(FrameError::UnknownIdentifier(identifier)),
             }
         }
     }
 
-    pub const COMMAND_LENGTH: usize = 64;
     pub const CRC_LENGTH: usize = 2;
     pub const DEVICE_NAME_LENGTH: usize = 32;
     pub const DEVICE_ID_LENGTH: usize = 8;

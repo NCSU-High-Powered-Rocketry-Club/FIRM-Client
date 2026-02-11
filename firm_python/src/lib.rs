@@ -2,7 +2,7 @@ use firm_core::constants::command::{
     NUMBER_OF_CALIBRATION_OFFSETS, NUMBER_OF_CALIBRATION_SCALE_MATRIX_ELEMENTS,
 };
 use firm_core::constants::packet::PacketHeader;
-use firm_core::firm_packets::{DeviceConfig, DeviceInfo, DeviceProtocol, FIRMData};
+use firm_core::firm_packets::{CalibrationValues, DeviceConfig, DeviceInfo, DeviceProtocol, FIRMData};
 use firm_core::framed_packet::FramedPacket;
 use firm_rust::FIRMClient as RustFirmClient;
 use firm_rust::mock_serial::MockDeviceHandle as RustMockDeviceHandle;
@@ -238,6 +238,16 @@ impl FIRMClient {
         Ok(res.unwrap_or(false))
     }
 
+    #[pyo3(signature = (timeout_seconds=5.0))]
+    fn get_calibration(&mut self, timeout_seconds: f64) -> PyResult<Option<CalibrationValues>> {
+        self.ensure_ok()?;
+        let calibration = map_io(
+            self.inner
+                .get_calibration(Duration::from_secs_f64(timeout_seconds)),
+        )?;
+        Ok(calibration)
+    }
+
     /// Runs a blocking magnetometer calibration sequence.
     ///
     /// This function will:
@@ -326,6 +336,7 @@ fn firm_client(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<DeviceProtocol>()?;
     m.add_class::<DeviceInfo>()?;
     m.add_class::<DeviceConfig>()?;
+    m.add_class::<CalibrationValues>()?;
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     Ok(())
 }

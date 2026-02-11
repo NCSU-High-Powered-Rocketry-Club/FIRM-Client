@@ -1,6 +1,6 @@
 use crate::constants::command::*;
 use crate::framed_packet::{FrameError, Framed, FramedPacket};
-use crate::utils::bytes_to_str;
+use crate::utils::{bytes_to_str, parse_bytes_to_f32, parse_bytes_to_many_f32s};
 use field_names::FieldNames;
 use serde::{Deserialize, Serialize};
 
@@ -31,6 +31,19 @@ pub struct DeviceInfo {
     #[cfg_attr(feature = "wasm", serde(serialize_with = "serialize_u64_as_string"))]
     // We need this because JS can't handle u64
     pub id: u64,
+}
+
+/// Represents the calibration values for the FIRM device. All matrices
+/// are stored in row-major order.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "python", pyclass(get_all, set_all))]
+pub struct CalibrationValues {
+    pub imu_accelerometer_offsets: [f32; NUMBER_OF_CALIBRATION_OFFSETS],
+    pub imu_accelerometer_scale_matrix: [f32; NUMBER_OF_CALIBRATION_SCALE_MATRIX_ELEMENTS],
+    pub imu_gyroscope_offsets: [f32; NUMBER_OF_CALIBRATION_OFFSETS],
+    pub imu_gyroscope_scale_matrix: [f32; NUMBER_OF_CALIBRATION_SCALE_MATRIX_ELEMENTS],
+    pub magnetometer_offsets: [f32; NUMBER_OF_CALIBRATION_OFFSETS],
+    pub magnetometer_scale_matrix: [f32; NUMBER_OF_CALIBRATION_SCALE_MATRIX_ELEMENTS],
 }
 
 /// Serializes a u64 as a string for WASM compatibility. JS gets unhappy with
@@ -221,6 +234,7 @@ pub enum FIRMResponse {
     SetDeviceConfig(bool),
     SetMagnetometerCalibration(bool),
     SetIMUCalibration(bool),
+    GetCalibration(CalibrationValues),
     Mock(bool),
     Cancel(bool),
     Error(String),
@@ -258,17 +272,6 @@ impl Framed for FIRMDataPacket {
 impl FIRMData {
     /// Constructs a `FIRMData` from a raw payload byte slice.
     pub fn from_bytes(bytes: &[u8]) -> Self {
-        fn four_bytes(bytes: &[u8], idx: &mut usize) -> [u8; 4] {
-            let res = [
-                bytes[*idx],
-                bytes[*idx + 1],
-                bytes[*idx + 2],
-                bytes[*idx + 3],
-            ];
-            *idx += 4;
-            res
-        }
-
         let mut idx = 0;
 
         let timestamp_seconds: f64 = f64::from_le_bytes([
@@ -283,41 +286,41 @@ impl FIRMData {
         ]);
         idx += 8;
 
-        let temperature_celsius: f32 = f32::from_le_bytes(four_bytes(bytes, &mut idx));
-        let pressure_pascals: f32 = f32::from_le_bytes(four_bytes(bytes, &mut idx));
+        let temperature_celsius: f32 = parse_bytes_to_f32(bytes, &mut idx);
+        let pressure_pascals: f32 = parse_bytes_to_f32(bytes, &mut idx);
 
-        let raw_acceleration_x_gs: f32 = f32::from_le_bytes(four_bytes(bytes, &mut idx));
-        let raw_acceleration_y_gs: f32 = f32::from_le_bytes(four_bytes(bytes, &mut idx));
-        let raw_acceleration_z_gs: f32 = f32::from_le_bytes(four_bytes(bytes, &mut idx));
+        let raw_acceleration_x_gs: f32 = parse_bytes_to_f32(bytes, &mut idx);
+        let raw_acceleration_y_gs: f32 = parse_bytes_to_f32(bytes, &mut idx);
+        let raw_acceleration_z_gs: f32 = parse_bytes_to_f32(bytes, &mut idx);
 
-        let raw_angular_rate_x_deg_per_s: f32 = f32::from_le_bytes(four_bytes(bytes, &mut idx));
-        let raw_angular_rate_y_deg_per_s: f32 = f32::from_le_bytes(four_bytes(bytes, &mut idx));
-        let raw_angular_rate_z_deg_per_s: f32 = f32::from_le_bytes(four_bytes(bytes, &mut idx));
+        let raw_angular_rate_x_deg_per_s: f32 = parse_bytes_to_f32(bytes, &mut idx);
+        let raw_angular_rate_y_deg_per_s: f32 = parse_bytes_to_f32(bytes, &mut idx);
+        let raw_angular_rate_z_deg_per_s: f32 = parse_bytes_to_f32(bytes, &mut idx);
 
-        let magnetic_field_x_microteslas: f32 = f32::from_le_bytes(four_bytes(bytes, &mut idx));
-        let magnetic_field_y_microteslas: f32 = f32::from_le_bytes(four_bytes(bytes, &mut idx));
-        let magnetic_field_z_microteslas: f32 = f32::from_le_bytes(four_bytes(bytes, &mut idx));
+        let magnetic_field_x_microteslas: f32 = parse_bytes_to_f32(bytes, &mut idx);
+        let magnetic_field_y_microteslas: f32 = parse_bytes_to_f32(bytes, &mut idx);
+        let magnetic_field_z_microteslas: f32 = parse_bytes_to_f32(bytes, &mut idx);
 
-        let est_position_x_meters: f32 = f32::from_le_bytes(four_bytes(bytes, &mut idx));
-        let est_position_y_meters: f32 = f32::from_le_bytes(four_bytes(bytes, &mut idx));
-        let est_position_z_meters: f32 = f32::from_le_bytes(four_bytes(bytes, &mut idx));
+        let est_position_x_meters: f32 = parse_bytes_to_f32(bytes, &mut idx);
+        let est_position_y_meters: f32 = parse_bytes_to_f32(bytes, &mut idx);
+        let est_position_z_meters: f32 = parse_bytes_to_f32(bytes, &mut idx);
 
-        let est_velocity_x_meters_per_s: f32 = f32::from_le_bytes(four_bytes(bytes, &mut idx));
-        let est_velocity_y_meters_per_s: f32 = f32::from_le_bytes(four_bytes(bytes, &mut idx));
-        let est_velocity_z_meters_per_s: f32 = f32::from_le_bytes(four_bytes(bytes, &mut idx));
+        let est_velocity_x_meters_per_s: f32 = parse_bytes_to_f32(bytes, &mut idx);
+        let est_velocity_y_meters_per_s: f32 = parse_bytes_to_f32(bytes, &mut idx);
+        let est_velocity_z_meters_per_s: f32 = parse_bytes_to_f32(bytes, &mut idx);
 
-        let est_acceleration_x_gs: f32 = f32::from_le_bytes(four_bytes(bytes, &mut idx));
-        let est_acceleration_y_gs: f32 = f32::from_le_bytes(four_bytes(bytes, &mut idx));
-        let est_acceleration_z_gs: f32 = f32::from_le_bytes(four_bytes(bytes, &mut idx));
+        let est_acceleration_x_gs: f32 = parse_bytes_to_f32(bytes, &mut idx);
+        let est_acceleration_y_gs: f32 = parse_bytes_to_f32(bytes, &mut idx);
+        let est_acceleration_z_gs: f32 = parse_bytes_to_f32(bytes, &mut idx);
 
-        let est_angular_rate_x_rad_per_s: f32 = f32::from_le_bytes(four_bytes(bytes, &mut idx));
-        let est_angular_rate_y_rad_per_s: f32 = f32::from_le_bytes(four_bytes(bytes, &mut idx));
-        let est_angular_rate_z_rad_per_s: f32 = f32::from_le_bytes(four_bytes(bytes, &mut idx));
+        let est_angular_rate_x_rad_per_s: f32 = parse_bytes_to_f32(bytes, &mut idx);
+        let est_angular_rate_y_rad_per_s: f32 = parse_bytes_to_f32(bytes, &mut idx);
+        let est_angular_rate_z_rad_per_s: f32 = parse_bytes_to_f32(bytes, &mut idx);
 
-        let est_quaternion_w: f32 = f32::from_le_bytes(four_bytes(bytes, &mut idx));
-        let est_quaternion_x: f32 = f32::from_le_bytes(four_bytes(bytes, &mut idx));
-        let est_quaternion_y: f32 = f32::from_le_bytes(four_bytes(bytes, &mut idx));
-        let est_quaternion_z: f32 = f32::from_le_bytes(four_bytes(bytes, &mut idx));
+        let est_quaternion_w: f32 = parse_bytes_to_f32(bytes, &mut idx);
+        let est_quaternion_x: f32 = parse_bytes_to_f32(bytes, &mut idx);
+        let est_quaternion_y: f32 = parse_bytes_to_f32(bytes, &mut idx);
+        let est_quaternion_z: f32 = parse_bytes_to_f32(bytes, &mut idx);
 
         Self {
             timestamp_seconds,
@@ -462,6 +465,40 @@ impl FIRMResponse {
             FIRMCommand::SetIMUCalibration => {
                 let success = data.first() == Some(&1);
                 FIRMResponse::SetIMUCalibration(success)
+            }
+            FIRMCommand::GetCalibration => {
+                let mut idx = 0;
+                let imu_accelerometer_offsets =
+                    parse_bytes_to_many_f32s(data, NUMBER_OF_CALIBRATION_OFFSETS, &mut idx);
+                let imu_accelerometer_scale_matrix = parse_bytes_to_many_f32s(
+                    data,
+                    NUMBER_OF_CALIBRATION_SCALE_MATRIX_ELEMENTS,
+                    &mut idx,
+                );
+                let imu_gyroscope_offsets =
+                    parse_bytes_to_many_f32s(data, NUMBER_OF_CALIBRATION_OFFSETS, &mut idx);
+                let imu_gyroscope_scale_matrix = parse_bytes_to_many_f32s(
+                    data,
+                    NUMBER_OF_CALIBRATION_SCALE_MATRIX_ELEMENTS,
+                    &mut idx,
+                );
+                let magnetometer_offsets =
+                    parse_bytes_to_many_f32s(data, NUMBER_OF_CALIBRATION_OFFSETS, &mut idx);
+                let magnetometer_scale_matrix = parse_bytes_to_many_f32s(
+                    data,
+                    NUMBER_OF_CALIBRATION_SCALE_MATRIX_ELEMENTS,
+                    &mut idx,
+                );
+                FIRMResponse::GetCalibration(CalibrationValues {
+                    imu_accelerometer_offsets: imu_accelerometer_offsets.try_into().unwrap(),
+                    imu_accelerometer_scale_matrix: imu_accelerometer_scale_matrix
+                        .try_into()
+                        .unwrap(),
+                    imu_gyroscope_offsets: imu_gyroscope_offsets.try_into().unwrap(),
+                    imu_gyroscope_scale_matrix: imu_gyroscope_scale_matrix.try_into().unwrap(),
+                    magnetometer_offsets: magnetometer_offsets.try_into().unwrap(),
+                    magnetometer_scale_matrix: magnetometer_scale_matrix.try_into().unwrap(),
+                })
             }
             // Reboot currently has no decoded response type.
             FIRMCommand::Reboot => {

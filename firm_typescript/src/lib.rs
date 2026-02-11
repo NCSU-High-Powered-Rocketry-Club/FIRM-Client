@@ -27,6 +27,10 @@ impl FIRMCommandBuilder {
         FIRMCommandPacket::build_get_device_config_command().to_bytes()
     }
 
+    pub fn build_get_calibration() -> Vec<u8> {
+        FIRMCommandPacket::build_get_calibration_command().to_bytes()
+    }
+
     pub fn build_set_device_config(
         name: String,
         frequency: u16,

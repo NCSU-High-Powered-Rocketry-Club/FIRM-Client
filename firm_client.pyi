@@ -9,10 +9,10 @@ __version__: str
 class DeviceProtocol(IntEnum):
     """Enum of the supported device communication protocols."""
 
-    USB = 0
-    UART = 1
-    I2C = 2
-    SPI = 3
+    USB = 1
+    UART = 2
+    I2C = 3
+    SPI = 4
 
 class DeviceInfo:
     """Represents information about the FIRM device."""
@@ -26,6 +26,22 @@ class DeviceConfig:
     name: str
     frequency: int
     protocol: DeviceProtocol
+
+class CalibrationValues:
+    """Represents the calibration values for the FIRM device."""
+
+    imu_accelerometer_offsets: tuple[float, float, float]
+    imu_accelerometer_scale_matrix: tuple[
+        float, float, float, float, float, float, float, float, float
+    ]
+    imu_gyroscope_offsets: tuple[float, float, float]
+    imu_gyroscope_scale_matrix: tuple[
+        float, float, float, float, float, float, float, float, float
+    ]
+    magnetometer_offsets: tuple[float, float, float]
+    magnetometer_scale_matrix: tuple[
+        float, float, float, float, float, float, float, float, float
+    ]
 
 class FIRMDataPacket:
     """Represents a data packet received from the FIRM device."""
@@ -229,6 +245,13 @@ class FIRMClient:
         timeout_seconds: float = 5.0,
     ) -> bool: ...
     """Set IMU calibration and wait up to timeout_seconds for acknowledgement."""
+
+    def get_calibration(
+        self, timeout_seconds: float = 5.0
+    ) -> CalibrationValues | None: ...
+    """Request calibration values and wait up to timeout_seconds."""
+
+
 
     def cancel(self, timeout_seconds: float = 5.0) -> bool: ...
     """Send cancel and wait up to timeout_seconds for acknowledgement."""

@@ -103,6 +103,10 @@ impl FIRMCommandPacket {
         }
         Self::new(FIRMCommand::SetIMUCalibration, payload)
     }
+
+    pub fn build_get_calibration_command() -> Self {
+        Self::new(FIRMCommand::GetCalibration, Vec::new())
+    }
 }
 
 impl Framed for FIRMCommandPacket {

@@ -5,7 +5,7 @@ use firm_core::constants::command::{
 };
 use firm_core::constants::log_parsing::{FIRMLogPacketType, HEADER_PARSE_DELAY, HEADER_TOTAL_SIZE};
 use firm_core::data_parser::SerialParser;
-use firm_core::firm_packets::{DeviceConfig, DeviceInfo, DeviceProtocol, FIRMData, FIRMResponse};
+use firm_core::firm_packets::{CalibrationValues, DeviceConfig, DeviceInfo, DeviceProtocol, FIRMData, FIRMResponse};
 use firm_core::framed_packet::Framed;
 use firm_core::log_parsing::LogParser;
 use serialport::SerialPort;
@@ -397,6 +397,14 @@ impl FIRMClient {
         ))?;
         self.wait_for_matching_response(timeout, |res| match res {
             FIRMResponse::SetIMUCalibration(ok) => Some(*ok),
+            _ => None,
+        })
+    }
+
+    pub fn get_calibration(&mut self, timeout: Duration) -> Result<Option<CalibrationValues>> {
+        self.send_command(FIRMCommandPacket::build_get_calibration_command())?;
+        self.wait_for_matching_response(timeout, |res| match res {
+            FIRMResponse::GetCalibration(calibration) => Some(calibration.clone()),
             _ => None,
         })
     }
@@ -1106,6 +1114,64 @@ mod tests {
                 protocol,
             })
         );
+    }
+
+    #[test]
+    fn test_get_calibration_command() {
+        let (mut client, device) = FIRMClient::new_mock(0.01);
+        client.start();
+
+        let expected = CalibrationValues {
+            imu_accelerometer_offsets: [1.0, 2.0, 3.0],
+            imu_accelerometer_scale_matrix: [
+                1.0, 0.0, 0.0,
+                0.0, 1.0, 0.0,
+                0.0, 0.0, 1.0,
+            ],
+            imu_gyroscope_offsets: [4.0, 5.0, 6.0],
+            imu_gyroscope_scale_matrix: [
+                2.0, 0.0, 0.0,
+                0.0, 2.0, 0.0,
+                0.0, 0.0, 2.0,
+            ],
+            magnetometer_offsets: [7.0, 8.0, 9.0],
+            magnetometer_scale_matrix: [
+                3.0, 0.0, 0.0,
+                0.0, 3.0, 0.0,
+                0.0, 0.0, 3.0,
+            ],
+        };
+
+        let mut payload: Vec<u8> = Vec::new();
+        for v in expected.imu_accelerometer_offsets {
+            payload.extend_from_slice(&v.to_le_bytes());
+        }
+        for v in expected.imu_accelerometer_scale_matrix {
+            payload.extend_from_slice(&v.to_le_bytes());
+        }
+        for v in expected.imu_gyroscope_offsets {
+            payload.extend_from_slice(&v.to_le_bytes());
+        }
+        for v in expected.imu_gyroscope_scale_matrix {
+            payload.extend_from_slice(&v.to_le_bytes());
+        }
+        for v in expected.magnetometer_offsets {
+            payload.extend_from_slice(&v.to_le_bytes());
+        }
+        for v in expected.magnetometer_scale_matrix {
+            payload.extend_from_slice(&v.to_le_bytes());
+        }
+
+        let response_packet = FramedPacket::new(
+            PacketHeader::Response,
+            FIRMCommand::GetCalibration.to_u16(),
+            payload,
+        );
+        device.inject_framed_packet(response_packet);
+
+        let result = client.get_calibration(Duration::from_millis(100));
+
+        assert_eq!(result.unwrap(), Some(expected));
     }
 
     #[test]

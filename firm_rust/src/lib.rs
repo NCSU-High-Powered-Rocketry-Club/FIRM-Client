@@ -217,10 +217,11 @@ impl FIRMClient {
 
                             // We use a read lock which is very fast if no one is writing.
                             if let Ok(guard) = calibration_snoop.read()
-                                && let Some(cal_tx) = &*guard {
-                                    // Ignore errors (if cal thread died, we don't care)
-                                    let _ = cal_tx.send(packet);
-                                }
+                                && let Some(cal_tx) = &*guard
+                            {
+                                // Ignore errors (if cal thread died, we don't care)
+                                let _ = cal_tx.send(packet);
+                            }
                         }
 
                         // Reads all available response packets and send them to the main thread

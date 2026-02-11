@@ -197,7 +197,7 @@ impl MagnetometerCalibrator {
         let term = center.transpose() * q_matrix * center;
         let term_scalar = term[(0, 0)];
         let radius_sq = 1.0 + term_scalar;
-        if !(radius_sq > 0.0) {
+        if radius_sq <= 0.0 {
             return None;
         }
         let estimated_field_strength = radius_sq.sqrt();

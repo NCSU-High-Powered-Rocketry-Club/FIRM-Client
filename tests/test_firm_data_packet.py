@@ -100,16 +100,14 @@ def test_firm_data_packet_default_zero() -> None:
 
 def test_firm_data_packet_struct_fields() -> None:
     fields = FIRMDataPacket.__struct_fields__
-    
+
     assert isinstance(fields, list)
 
     sig = inspect.signature(FIRMDataPacket)
     constructor_params = list(sig.parameters.keys())
-    
+
     assert fields == constructor_params
 
-
-from firm_client import FIRMDataPacket
 
 def test_firm_data_packet_as_dict() -> None:
     packet = FIRMDataPacket(
@@ -152,7 +150,7 @@ def test_firm_data_packet_as_dict() -> None:
     assert data_dict["timestamp_seconds"] == 1.0
     assert data_dict["temperature_celsius"] == 2.0
     assert data_dict["est_quaternion_z"] == 28.0
-    
+
     # Make sure modifying the dict does not affect the original packet
     data_dict["timestamp_seconds"] = 999.9
     assert packet.timestamp_seconds == 1.0

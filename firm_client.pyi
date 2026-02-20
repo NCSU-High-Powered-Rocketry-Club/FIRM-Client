@@ -166,7 +166,6 @@ class FIRMDataPacket:
         """
         ...
 
-
 class MockDeviceHandle:
     """Handle for controlling an in-process mock device."""
 
@@ -250,7 +249,6 @@ class FIRMClient:
         self, timeout_seconds: float = 5.0
     ) -> CalibrationValues | None: ...
     """Request calibration values and wait up to timeout_seconds."""
-
 
     def cancel(self, timeout_seconds: float = 5.0) -> bool: ...
     """Send cancel and wait up to timeout_seconds for acknowledgement."""

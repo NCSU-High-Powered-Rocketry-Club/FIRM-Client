@@ -595,10 +595,21 @@ impl FIRMClient {
             Some((offsets, matrix)) => {
                 // 4. Apply to device
                 // We have valid data, so send the set command.
-                println!(
-                    "Calibration result: Offsets: {:?}, Matrix: {:?}",
-                    offsets, matrix
-                );
+                // println!(
+                //     "Calibration result (MATLAB magcal convention):\\n  b = [{:.6}, {:.6}, {:.6}]",
+                //     offsets[0], offsets[1], offsets[2]
+                // );
+
+                // let a = [
+                //     matrix[0], matrix[3], matrix[6], matrix[1], matrix[4], matrix[7], matrix[2],
+                //     matrix[5], matrix[8],
+                // ];
+
+                // println!(
+                //     "  A = [{:.6}, {:.6}, {:.6}; {:.6}, {:.6}, {:.6}; {:.6}, {:.6}, {:.6}]",
+                //     a[0], a[1], a[2], a[3], a[4], a[5], a[6], a[7], a[8]
+                // );
+
                 self.set_magnetometer_calibration(offsets, matrix, apply_timeout)
             }
             None => {

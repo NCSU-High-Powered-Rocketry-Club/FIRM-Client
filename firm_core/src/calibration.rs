@@ -19,7 +19,6 @@ impl MagnetometerCalibration {
     pub fn apply(&self, x: f32, y: f32, z: f32) -> Vector3<f32> {
         let raw = Vector3::new(x, y, z);
         // Formula: M * (raw - bias)
-        // Note: We use Matrix * Vec multiplication in Rust/nalgebra
         self.soft_iron_matrix * (raw - self.hard_iron_bias)
     }
 
@@ -65,7 +64,7 @@ impl MagnetometerCalibration {
 }
 
 /// Accumulates FIRMData packets and calculates magnetometer calibration parameters
-/// using Least Squares Ellipsoid Fitting (similar to MATLAB's magcal).
+/// using least squares ellipsoid fitting (similar to MATLAB's magcal).
 pub struct MagnetometerCalibrator {
     /// Buffer of collected points (x, y, z).
     samples: Vec<Vector3<f32>>,
@@ -110,6 +109,13 @@ impl MagnetometerCalibrator {
         }
     }
 
+    /// Adds a raw magnetometer sample (x, y, z) to the calibration buffer if collecting.
+    pub fn add_sample_xyz(&mut self, x: f32, y: f32, z: f32) {
+        if self.is_collecting {
+            self.samples.push(Vector3::new(x, y, z));
+        }
+    }
+
     /// Returns the number of samples currently collected.
     pub fn sample_count(&self) -> usize {
         self.samples.len()
@@ -126,15 +132,8 @@ impl MagnetometerCalibrator {
             return None;
         }
 
-        // 1. Construct the Design Matrix D (N x 9)
-        // We are fitting the equation: ax^2 + by^2 + cz^2 + 2dxy + 2exz + 2fyz + 2gx + 2hy + 2iz = 1
-        // Note: We set the RHS to 1 to simplify solution, assuming origin is inside the point cloud.
-
-        // For the full linear least squares, we are solving M * v = b
-        // In practice with nalgebra for collecting buffers, we can construct the matrices directly.
-
-        // Let's use the explicit Design Matrix construction for clarity,
-        // though strictly accumulating moments is more memory efficient.
+        // Construct the Design Matrix D (N x 9) for:
+        // ax^2 + by^2 + cz^2 + 2dxy + 2exz + 2fyz + 2gx + 2hy + 2iz = 1
         let mut d_matrix = nalgebra::DMatrix::<f32>::zeros(n, 9);
         let ones = nalgebra::DVector::<f32>::from_element(n, 1.0);
 
@@ -214,15 +213,28 @@ impl MagnetometerCalibrator {
             d_sqrt[(idx, idx)] = eigen.eigenvalues[idx].sqrt();
         }
 
-        // sqrt(Q) = V * sqrt(D) * V^T
-        // Scale by the estimated field strength so corrected vectors are normalized.
-        let soft_iron = (eigen.eigenvectors * d_sqrt * eigen.eigenvectors.transpose())
+        // This matrix maps the fitted ellipsoid to a unit sphere.
+        let soft_iron_unit = (eigen.eigenvectors * d_sqrt * eigen.eigenvectors.transpose())
             * (1.0 / estimated_field_strength);
+
+        let mut sum_norm = 0.0f32;
+        for p in &self.samples {
+            let v = p - center;
+            sum_norm += v.norm();
+        }
+        let mean_norm = sum_norm / (n as f32);
+        let scale = if mean_norm.is_finite() && mean_norm > 0.0 {
+            mean_norm
+        } else {
+            1.0
+        };
+
+        let soft_iron = soft_iron_unit * scale;
 
         Some(MagnetometerCalibration {
             hard_iron_bias: center,
             soft_iron_matrix: soft_iron,
-            field_strength: estimated_field_strength,
+            field_strength: mean_norm,
         })
     }
 }

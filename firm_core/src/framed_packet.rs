@@ -53,6 +53,7 @@ pub trait Framed: Sized {
 pub struct FramedPacket {
     header: PacketHeader,
     identifier: u16,
+    // There is also a length field in the header, but we store it implicitly as the length of the payload.
     payload: Vec<u8>,
     crc: u16,
 }

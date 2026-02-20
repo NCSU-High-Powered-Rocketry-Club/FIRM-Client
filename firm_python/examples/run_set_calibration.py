@@ -88,5 +88,6 @@ def main() -> None:
             print("magnetometer_offsets:", cal.magnetometer_offsets)
             print("magnetometer_scale_matrix:", cal.magnetometer_scale_matrix)
 
+
 if __name__ == "__main__":
     main()

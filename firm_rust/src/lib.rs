@@ -581,6 +581,20 @@ impl FIRMClient {
         collection_duration: Duration,
         apply_timeout: Duration,
     ) -> Result<Option<bool>> {
+        // Reset magnetometer calibration to a known state before collecting.
+        // This avoids using stale calibration while we gather new samples.
+        let zero_offsets: [f32; NUMBER_OF_CALIBRATION_OFFSETS] = [0.0; NUMBER_OF_CALIBRATION_OFFSETS];
+        let identity_matrix: [f32; NUMBER_OF_CALIBRATION_SCALE_MATRIX_ELEMENTS] = [
+            1.0, 0.0, 0.0,
+            0.0, 1.0, 0.0,
+            0.0, 0.0, 1.0,
+        ];
+
+        match self.set_magnetometer_calibration(zero_offsets, identity_matrix, apply_timeout)? {
+            Some(true) => {}
+            _ => return Ok(None),
+        }
+
         // 1. Start listening
         self.start_magnetometer_calibration()?;
 
@@ -595,20 +609,20 @@ impl FIRMClient {
             Some((offsets, matrix)) => {
                 // 4. Apply to device
                 // We have valid data, so send the set command.
-                // println!(
-                //     "Calibration result (MATLAB magcal convention):\\n  b = [{:.6}, {:.6}, {:.6}]",
-                //     offsets[0], offsets[1], offsets[2]
-                // );
+                println!(
+                    "Calibration result:\\n  b = [{:.6}, {:.6}, {:.6}]",
+                    offsets[0], offsets[1], offsets[2]
+                );
 
-                // let a = [
-                //     matrix[0], matrix[3], matrix[6], matrix[1], matrix[4], matrix[7], matrix[2],
-                //     matrix[5], matrix[8],
-                // ];
+                let a = [
+                    matrix[0], matrix[3], matrix[6], matrix[1], matrix[4], matrix[7], matrix[2],
+                    matrix[5], matrix[8],
+                ];
 
-                // println!(
-                //     "  A = [{:.6}, {:.6}, {:.6}; {:.6}, {:.6}, {:.6}; {:.6}, {:.6}, {:.6}]",
-                //     a[0], a[1], a[2], a[3], a[4], a[5], a[6], a[7], a[8]
-                // );
+                println!(
+                    "  A = [{:.6}, {:.6}, {:.6}; {:.6}, {:.6}, {:.6}; {:.6}, {:.6}, {:.6}]",
+                    a[0], a[1], a[2], a[3], a[4], a[5], a[6], a[7], a[8]
+                );
 
                 self.set_magnetometer_calibration(offsets, matrix, apply_timeout)
             }

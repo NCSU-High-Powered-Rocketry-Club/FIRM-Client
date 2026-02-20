@@ -252,7 +252,6 @@ class FIRMClient:
     """Request calibration values and wait up to timeout_seconds."""
 
 
-
     def cancel(self, timeout_seconds: float = 5.0) -> bool: ...
     """Send cancel and wait up to timeout_seconds for acknowledgement."""
 

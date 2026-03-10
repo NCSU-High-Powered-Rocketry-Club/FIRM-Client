@@ -14,6 +14,13 @@ export interface FIRMPacket {
   /** Raw accelerometer reading for Z-axis in Gs. */
   raw_acceleration_z_gs: number;
 
+  /** Raw acceleration X rotated into world frame in Gs. */
+  raw_rotated_acceleration_x_gs: number;
+  /** Raw acceleration Y rotated into world frame in Gs. */
+  raw_rotated_acceleration_y_gs: number;
+  /** Raw acceleration Z rotated into world frame in Gs. */
+  raw_rotated_acceleration_z_gs: number;
+
   /** Raw gyroscope reading for X-axis in degrees per second. */
   raw_angular_rate_x_deg_per_s: number;
   /** Raw gyroscope reading for Y-axis in degrees per second. */
@@ -42,6 +49,9 @@ export interface FIRMPacket {
   /** Estimated velocity along the Z-axis in meters per second. */
   est_velocity_z_meters_per_s: number;
 
+  /** Estimated Mach number from velocity magnitude and ambient temperature. */
+  est_mach_number: number;
+
   /** Estimated acceleration along the X-axis in Gs. */
   est_acceleration_x_gs: number;
   /** Estimated acceleration along the Y-axis in Gs. */
@@ -64,6 +74,10 @@ export interface FIRMPacket {
   est_quaternion_y: number;
   /** Estimated orientation quaternion vector component (Z). */
   est_quaternion_z: number;
+
+  /** Total tilt angle from +Z based on raw acceleration in degrees. */
+  est_tilt_angle_degrees: number;
+
 }
 
 export enum DeviceProtocol {

@@ -1,4 +1,7 @@
 use crate::constants::command::*;
+use crate::data_deriver::{
+    derive_mach_number, derive_rotated_raw_acceleration, derive_tilt_angle_degrees,
+};
 use crate::framed_packet::{FrameError, Framed, FramedPacket};
 use crate::utils::{bytes_to_str, parse_bytes_to_f32, parse_bytes_to_many_f32s};
 use field_names::FieldNames;
@@ -83,6 +86,11 @@ pub struct FIRMData {
     pub raw_acceleration_y_gs: f32,
     pub raw_acceleration_z_gs: f32,
 
+    pub raw_rotated_acceleration_x_gs: f32,
+    pub raw_rotated_acceleration_y_gs: f32,
+    pub raw_rotated_acceleration_z_gs: f32,
+    pub est_tilt_angle_degrees: f32,
+
     pub raw_angular_rate_x_deg_per_s: f32,
     pub raw_angular_rate_y_deg_per_s: f32,
     pub raw_angular_rate_z_deg_per_s: f32,
@@ -98,6 +106,7 @@ pub struct FIRMData {
     pub est_velocity_x_meters_per_s: f32,
     pub est_velocity_y_meters_per_s: f32,
     pub est_velocity_z_meters_per_s: f32,
+    pub est_mach_number: f32,
 
     pub est_acceleration_x_gs: f32,
     pub est_acceleration_y_gs: f32,
@@ -111,6 +120,101 @@ pub struct FIRMData {
     pub est_quaternion_x: f32,
     pub est_quaternion_y: f32,
     pub est_quaternion_z: f32,
+}
+
+impl FIRMData {
+    #[allow(clippy::too_many_arguments)]
+    fn from_base_fields(
+        timestamp_seconds: f64,
+        temperature_celsius: f32,
+        pressure_pascals: f32,
+        raw_acceleration_x_gs: f32,
+        raw_acceleration_y_gs: f32,
+        raw_acceleration_z_gs: f32,
+        raw_angular_rate_x_deg_per_s: f32,
+        raw_angular_rate_y_deg_per_s: f32,
+        raw_angular_rate_z_deg_per_s: f32,
+        magnetic_field_x_microteslas: f32,
+        magnetic_field_y_microteslas: f32,
+        magnetic_field_z_microteslas: f32,
+        est_position_x_meters: f32,
+        est_position_y_meters: f32,
+        est_position_z_meters: f32,
+        est_velocity_x_meters_per_s: f32,
+        est_velocity_y_meters_per_s: f32,
+        est_velocity_z_meters_per_s: f32,
+        est_acceleration_x_gs: f32,
+        est_acceleration_y_gs: f32,
+        est_acceleration_z_gs: f32,
+        est_angular_rate_x_rad_per_s: f32,
+        est_angular_rate_y_rad_per_s: f32,
+        est_angular_rate_z_rad_per_s: f32,
+        est_quaternion_w: f32,
+        est_quaternion_x: f32,
+        est_quaternion_y: f32,
+        est_quaternion_z: f32,
+    ) -> Self {
+        let (
+            raw_rotated_acceleration_x_gs,
+            raw_rotated_acceleration_y_gs,
+            raw_rotated_acceleration_z_gs,
+        ) = derive_rotated_raw_acceleration(
+            raw_acceleration_x_gs,
+            raw_acceleration_y_gs,
+            raw_acceleration_z_gs,
+            est_quaternion_w,
+            est_quaternion_x,
+            est_quaternion_y,
+            est_quaternion_z,
+        );
+        let est_tilt_angle_degrees = derive_tilt_angle_degrees(
+            raw_acceleration_x_gs,
+            raw_acceleration_y_gs,
+            raw_acceleration_z_gs,
+        );
+        let est_mach_number = derive_mach_number(
+            est_velocity_x_meters_per_s,
+            est_velocity_y_meters_per_s,
+            est_velocity_z_meters_per_s,
+            temperature_celsius,
+        );
+
+        Self {
+            timestamp_seconds,
+            temperature_celsius,
+            pressure_pascals,
+            raw_acceleration_x_gs,
+            raw_acceleration_y_gs,
+            raw_acceleration_z_gs,
+            raw_rotated_acceleration_x_gs,
+            raw_rotated_acceleration_y_gs,
+            raw_rotated_acceleration_z_gs,
+            est_tilt_angle_degrees,
+            raw_angular_rate_x_deg_per_s,
+            raw_angular_rate_y_deg_per_s,
+            raw_angular_rate_z_deg_per_s,
+            magnetic_field_x_microteslas,
+            magnetic_field_y_microteslas,
+            magnetic_field_z_microteslas,
+            est_position_x_meters,
+            est_position_y_meters,
+            est_position_z_meters,
+            est_velocity_x_meters_per_s,
+            est_velocity_y_meters_per_s,
+            est_velocity_z_meters_per_s,
+            est_mach_number,
+            est_acceleration_x_gs,
+            est_acceleration_y_gs,
+            est_acceleration_z_gs,
+            est_angular_rate_x_rad_per_s,
+            est_angular_rate_y_rad_per_s,
+            est_angular_rate_z_rad_per_s,
+            est_quaternion_w,
+            est_quaternion_x,
+            est_quaternion_y,
+            est_quaternion_z,
+        }
+    }
 }
 
 #[cfg(feature = "python")]
@@ -153,7 +257,7 @@ impl FIRMData {
         est_quaternion_y: f32,
         est_quaternion_z: f32,
     ) -> Self {
-        FIRMData {
+        Self::from_base_fields(
             timestamp_seconds,
             temperature_celsius,
             pressure_pascals,
@@ -182,41 +286,16 @@ impl FIRMData {
             est_quaternion_x,
             est_quaternion_y,
             est_quaternion_z,
-        }
+        )
     }
 
     #[staticmethod]
     fn default_zero() -> Self {
-        FIRMData {
-            timestamp_seconds: 0.0,
-            temperature_celsius: 0.0,
-            pressure_pascals: 0.0,
-            raw_acceleration_x_gs: 0.0,
-            raw_acceleration_y_gs: 0.0,
-            raw_acceleration_z_gs: 0.0,
-            raw_angular_rate_x_deg_per_s: 0.0,
-            raw_angular_rate_y_deg_per_s: 0.0,
-            raw_angular_rate_z_deg_per_s: 0.0,
-            magnetic_field_x_microteslas: 0.0,
-            magnetic_field_y_microteslas: 0.0,
-            magnetic_field_z_microteslas: 0.0,
-            est_position_x_meters: 0.0,
-            est_position_y_meters: 0.0,
-            est_position_z_meters: 0.0,
-            est_velocity_x_meters_per_s: 0.0,
-            est_velocity_y_meters_per_s: 0.0,
-            est_velocity_z_meters_per_s: 0.0,
-            est_acceleration_x_gs: 0.0,
-            est_acceleration_y_gs: 0.0,
-            est_acceleration_z_gs: 0.0,
-            est_angular_rate_x_rad_per_s: 0.0,
-            est_angular_rate_y_rad_per_s: 0.0,
-            est_angular_rate_z_rad_per_s: 0.0,
-            est_quaternion_w: 1.0, // Identity quaternion
-            est_quaternion_x: 0.0,
-            est_quaternion_y: 0.0,
-            est_quaternion_z: 0.0,
-        }
+        Self::from_base_fields(
+            0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+            0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, // Identity quaternion
+            0.0, 0.0, 0.0,
+        )
     }
 
     fn as_dict<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
@@ -322,44 +401,36 @@ impl FIRMData {
         let est_quaternion_y: f32 = parse_bytes_to_f32(bytes, &mut idx);
         let est_quaternion_z: f32 = parse_bytes_to_f32(bytes, &mut idx);
 
-        Self {
+        Self::from_base_fields(
             timestamp_seconds,
             temperature_celsius,
             pressure_pascals,
-
             raw_acceleration_x_gs,
             raw_acceleration_y_gs,
             raw_acceleration_z_gs,
-
             raw_angular_rate_x_deg_per_s,
             raw_angular_rate_y_deg_per_s,
             raw_angular_rate_z_deg_per_s,
-
             magnetic_field_x_microteslas,
             magnetic_field_y_microteslas,
             magnetic_field_z_microteslas,
-
             est_position_x_meters,
             est_position_y_meters,
             est_position_z_meters,
-
             est_velocity_x_meters_per_s,
             est_velocity_y_meters_per_s,
             est_velocity_z_meters_per_s,
-
             est_acceleration_x_gs,
             est_acceleration_y_gs,
             est_acceleration_z_gs,
-
             est_angular_rate_x_rad_per_s,
             est_angular_rate_y_rad_per_s,
             est_angular_rate_z_rad_per_s,
-
             est_quaternion_w,
             est_quaternion_x,
             est_quaternion_y,
             est_quaternion_z,
-        }
+        )
     }
 }
 

@@ -1,4 +1,5 @@
 import inspect
+import math
 
 from firm_client import FIRMDataPacket
 
@@ -30,9 +31,9 @@ def test_firm_data_packet_constructor() -> None:
         23.0,
         24.0,
         25.0,
-        26.0,
-        27.0,
-        28.0,
+        0.0,
+        0.0,
+        0.0,
     )
 
     assert packet.timestamp_seconds == 1.0
@@ -60,9 +61,21 @@ def test_firm_data_packet_constructor() -> None:
     assert packet.est_angular_rate_y_rad_per_s == 23.0
     assert packet.est_angular_rate_z_rad_per_s == 24.0
     assert packet.est_quaternion_w == 25.0
-    assert packet.est_quaternion_x == 26.0
-    assert packet.est_quaternion_y == 27.0
-    assert packet.est_quaternion_z == 28.0
+    assert packet.est_quaternion_x == 0.0
+    assert packet.est_quaternion_y == 0.0
+    assert packet.est_quaternion_z == 0.0
+
+    assert packet.raw_rotated_acceleration_x_gs == 4.0
+    assert packet.raw_rotated_acceleration_y_gs == 5.0
+    assert packet.raw_rotated_acceleration_z_gs == 6.0
+
+    expected_tilt = math.degrees(math.acos(6.0 / math.sqrt(4.0**2 + 5.0**2 + 6.0**2)))
+    assert packet.est_tilt_angle_degrees == expected_tilt
+
+    temperature_kelvin = 2.0 + 273.15
+    speed_of_sound = math.sqrt(1.4 * 287.05 * temperature_kelvin)
+    expected_mach = math.sqrt(16.0**2 + 17.0**2 + 18.0**2) / speed_of_sound
+    assert packet.est_mach_number == expected_mach
 
 
 def test_firm_data_packet_default_zero() -> None:
@@ -96,6 +109,11 @@ def test_firm_data_packet_default_zero() -> None:
     assert firm_data_packet.est_quaternion_x == 0.0
     assert firm_data_packet.est_quaternion_y == 0.0
     assert firm_data_packet.est_quaternion_z == 0.0
+    assert firm_data_packet.raw_rotated_acceleration_x_gs == 0.0
+    assert firm_data_packet.raw_rotated_acceleration_y_gs == 0.0
+    assert firm_data_packet.raw_rotated_acceleration_z_gs == 0.0
+    assert firm_data_packet.est_tilt_angle_degrees == 0.0
+    assert firm_data_packet.est_mach_number == 0.0
 
 
 def test_firm_data_packet_struct_fields() -> None:
@@ -106,7 +124,12 @@ def test_firm_data_packet_struct_fields() -> None:
     sig = inspect.signature(FIRMDataPacket)
     constructor_params = list(sig.parameters.keys())
 
-    assert fields == constructor_params
+    assert set(constructor_params).issubset(set(fields))
+    assert "raw_rotated_acceleration_x_gs" in fields
+    assert "raw_rotated_acceleration_y_gs" in fields
+    assert "raw_rotated_acceleration_z_gs" in fields
+    assert "est_tilt_angle_degrees" in fields
+    assert "est_mach_number" in fields
 
 
 def test_firm_data_packet_as_dict() -> None:
@@ -136,9 +159,9 @@ def test_firm_data_packet_as_dict() -> None:
         est_angular_rate_y_rad_per_s=23.0,
         est_angular_rate_z_rad_per_s=24.0,
         est_quaternion_w=25.0,
-        est_quaternion_x=26.0,
-        est_quaternion_y=27.0,
-        est_quaternion_z=28.0,
+        est_quaternion_x=0.0,
+        est_quaternion_y=0.0,
+        est_quaternion_z=0.0,
     )
 
     data_dict = packet.as_dict()
@@ -149,7 +172,8 @@ def test_firm_data_packet_as_dict() -> None:
 
     assert data_dict["timestamp_seconds"] == 1.0
     assert data_dict["temperature_celsius"] == 2.0
-    assert data_dict["est_quaternion_z"] == 28.0
+    assert data_dict["est_quaternion_z"] == 0.0
+    assert data_dict["raw_rotated_acceleration_x_gs"] == 4.0
 
     # Make sure modifying the dict does not affect the original packet
     data_dict["timestamp_seconds"] = 999.9

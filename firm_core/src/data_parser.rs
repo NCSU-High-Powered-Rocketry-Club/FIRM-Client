@@ -1,4 +1,5 @@
 use crate::constants::packet::{PacketHeader, *};
+use crate::data_deriver::DataDeriver;
 use crate::firm_packets::{FIRMDataPacket, FIRMResponsePacket};
 use crate::framed_packet::Framed;
 use crate::utils::crc16_ccitt;
@@ -13,6 +14,8 @@ pub struct SerialParser {
     parsed_data_packets: VecDeque<FIRMDataPacket>,
     /// Queue of framed responses ready to be consumed.
     parsed_response_packets: VecDeque<FIRMResponsePacket>,
+    /// Stateful deriver used across parsed data packets.
+    data_deriver: DataDeriver,
 }
 
 impl SerialParser {
@@ -30,6 +33,7 @@ impl SerialParser {
             serial_bytes: Vec::new(),
             parsed_data_packets: VecDeque::new(),
             parsed_response_packets: VecDeque::new(),
+            data_deriver: DataDeriver::default(),
         }
     }
 
@@ -107,7 +111,9 @@ impl SerialParser {
 
             if is_data {
                 // If we successfully parse, queue the frame, otherwise keep looking
-                if let Ok(frame) = FIRMDataPacket::from_bytes(packet_bytes) {
+                if let Ok(frame) =
+                    FIRMDataPacket::from_bytes_with_deriver(packet_bytes, &mut self.data_deriver)
+                {
                     self.parsed_data_packets.push_back(frame);
                 } else {
                     position += 1;

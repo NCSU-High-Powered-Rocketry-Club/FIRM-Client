@@ -1,7 +1,5 @@
 use crate::constants::command::*;
-use crate::data_deriver::{
-    derive_mach_number, derive_rotated_raw_acceleration, derive_tilt_angle_degrees,
-};
+use crate::data_deriver::DataDeriver;
 use crate::framed_packet::{FrameError, Framed, FramedPacket};
 use crate::utils::{bytes_to_str, parse_bytes_to_f32, parse_bytes_to_many_f32s};
 use field_names::FieldNames;
@@ -125,6 +123,7 @@ pub struct FIRMData {
 impl FIRMData {
     #[allow(clippy::too_many_arguments)]
     fn from_base_fields(
+        deriver: &mut DataDeriver,
         timestamp_seconds: f64,
         temperature_celsius: f32,
         pressure_pascals: f32,
@@ -158,7 +157,7 @@ impl FIRMData {
             raw_rotated_acceleration_x_gs,
             raw_rotated_acceleration_y_gs,
             raw_rotated_acceleration_z_gs,
-        ) = derive_rotated_raw_acceleration(
+        ) = deriver.derive_rotated_raw_acceleration(
             raw_acceleration_x_gs,
             raw_acceleration_y_gs,
             raw_acceleration_z_gs,
@@ -167,12 +166,16 @@ impl FIRMData {
             est_quaternion_y,
             est_quaternion_z,
         );
-        let est_tilt_angle_degrees = derive_tilt_angle_degrees(
+        let est_tilt_angle_degrees = deriver.derive_tilt_angle_degrees(
             raw_acceleration_x_gs,
             raw_acceleration_y_gs,
             raw_acceleration_z_gs,
+            est_quaternion_w,
+            est_quaternion_x,
+            est_quaternion_y,
+            est_quaternion_z,
         );
-        let est_mach_number = derive_mach_number(
+        let est_mach_number = deriver.derive_mach_number(
             est_velocity_x_meters_per_s,
             est_velocity_y_meters_per_s,
             est_velocity_z_meters_per_s,
@@ -257,7 +260,9 @@ impl FIRMData {
         est_quaternion_y: f32,
         est_quaternion_z: f32,
     ) -> Self {
+        let mut deriver = DataDeriver::default();
         Self::from_base_fields(
+            &mut deriver,
             timestamp_seconds,
             temperature_celsius,
             pressure_pascals,
@@ -291,10 +296,37 @@ impl FIRMData {
 
     #[staticmethod]
     fn default_zero() -> Self {
+        let mut deriver = DataDeriver::default();
         Self::from_base_fields(
-            0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-            0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, // Identity quaternion
-            0.0, 0.0, 0.0,
+            &mut deriver,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0, // Identity quaternion
+            0.0,
+            0.0,
+            0.0,
         )
     }
 
@@ -332,6 +364,17 @@ impl FIRMDataPacket {
     pub fn data(&self) -> &FIRMData {
         &self.data
     }
+
+    pub fn from_bytes_with_deriver(
+        bytes: &[u8],
+        deriver: &mut DataDeriver,
+    ) -> Result<Self, FrameError> {
+        let frame = FramedPacket::from_bytes(bytes)?;
+        Ok(Self {
+            data: FIRMData::from_bytes_with_deriver(frame.payload(), deriver),
+            frame,
+        })
+    }
 }
 
 impl Framed for FIRMDataPacket {
@@ -340,17 +383,13 @@ impl Framed for FIRMDataPacket {
     }
 
     fn from_bytes(bytes: &[u8]) -> Result<Self, FrameError> {
-        let frame = FramedPacket::from_bytes(bytes)?;
-        Ok(Self {
-            data: FIRMData::from_bytes(frame.payload()),
-            frame,
-        })
+        let mut deriver = DataDeriver::default();
+        Self::from_bytes_with_deriver(bytes, &mut deriver)
     }
 }
 
 impl FIRMData {
-    /// Constructs a `FIRMData` from a raw payload byte slice.
-    pub fn from_bytes(bytes: &[u8]) -> Self {
+    pub fn from_bytes_with_deriver(bytes: &[u8], deriver: &mut DataDeriver) -> Self {
         let mut idx = 0;
 
         let timestamp_seconds: f64 = f64::from_le_bytes([
@@ -402,6 +441,7 @@ impl FIRMData {
         let est_quaternion_z: f32 = parse_bytes_to_f32(bytes, &mut idx);
 
         Self::from_base_fields(
+            deriver,
             timestamp_seconds,
             temperature_celsius,
             pressure_pascals,
@@ -431,6 +471,12 @@ impl FIRMData {
             est_quaternion_y,
             est_quaternion_z,
         )
+    }
+
+    /// Constructs a `FIRMData` from a raw payload byte slice.
+    pub fn from_bytes(bytes: &[u8]) -> Self {
+        let mut deriver = DataDeriver::default();
+        Self::from_bytes_with_deriver(bytes, &mut deriver)
     }
 }
 

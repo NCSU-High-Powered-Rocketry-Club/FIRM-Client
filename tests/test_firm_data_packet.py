@@ -2,6 +2,7 @@ import inspect
 import math
 
 from firm_client import FIRMDataPacket
+import pytest
 
 
 def test_firm_data_packet_constructor() -> None:
@@ -70,12 +71,12 @@ def test_firm_data_packet_constructor() -> None:
     assert packet.raw_rotated_acceleration_z_gs == 6.0
 
     expected_tilt = math.degrees(math.acos(6.0 / math.sqrt(4.0**2 + 5.0**2 + 6.0**2)))
-    assert packet.est_tilt_angle_degrees == expected_tilt
+    assert packet.est_tilt_angle_degrees == pytest.approx(expected_tilt, rel=1e-6, abs=1e-6)
 
     temperature_kelvin = 2.0 + 273.15
     speed_of_sound = math.sqrt(1.4 * 287.05 * temperature_kelvin)
     expected_mach = math.sqrt(16.0**2 + 17.0**2 + 18.0**2) / speed_of_sound
-    assert packet.est_mach_number == expected_mach
+    assert packet.est_mach_number == pytest.approx(expected_mach, rel=1e-6, abs=1e-6)
 
 
 def test_firm_data_packet_default_zero() -> None:

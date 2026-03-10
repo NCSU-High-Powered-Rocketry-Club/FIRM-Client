@@ -65,14 +65,14 @@ class FIRMDataPacket:
     raw_acceleration_z_gs: float
     """Raw accelerometer reading for Z-axis in Gs."""
 
-    der_rotated_raw_acceleration_x_gs: float
+    raw_rotated_acceleration_x_gs: float
     """Raw acceleration X rotated into world frame in Gs."""
-    der_rotated_raw_acceleration_y_gs: float
+    raw_rotated_acceleration_y_gs: float
     """Raw acceleration Y rotated into world frame in Gs."""
-    der_rotated_raw_acceleration_z_gs: float
+    raw_rotated_acceleration_z_gs: float
     """Raw acceleration Z rotated into world frame in Gs."""
 
-    tilt_angle_degrees: float
+    est_tilt_angle_degrees: float
     """Total tilt angle from +Z based on raw acceleration in degrees."""
 
     raw_angular_rate_x_deg_per_s: float
@@ -103,7 +103,7 @@ class FIRMDataPacket:
     est_velocity_z_meters_per_s: float
     """Estimated velocity along the Z-axis in meters per second."""
 
-    mach_number: float
+    est_mach_number: float
     """Estimated Mach number from velocity magnitude and ambient temperature."""
 
     est_acceleration_x_gs: float

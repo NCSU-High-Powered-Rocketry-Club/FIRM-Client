@@ -5,8 +5,8 @@ const RAD_TO_DEG: f32 = 180.0 / core::f32::consts::PI;
 
 /// Rotates a body-frame acceleration vector using an orientation quaternion.
 ///
-/// The quaternion is normalized internally, and treated as the body-to-world
-/// rotation.
+/// The quaternion is normalized internally, and treated as a world-to-body
+/// rotation estimate, so we apply its conjugate to map body vectors to world.
 pub fn derive_rotated_raw_acceleration(
     raw_acceleration_x_gs: f32,
     raw_acceleration_y_gs: f32,
@@ -42,9 +42,10 @@ pub fn derive_rotated_raw_acceleration(
     }
 
     let qw = est_quaternion_w / quaternion_norm;
-    let qx = est_quaternion_x / quaternion_norm;
-    let qy = est_quaternion_y / quaternion_norm;
-    let qz = est_quaternion_z / quaternion_norm;
+    // Use conjugate(q) to rotate body -> world when q is world -> body.
+    let qx = -est_quaternion_x / quaternion_norm;
+    let qy = -est_quaternion_y / quaternion_norm;
+    let qz = -est_quaternion_z / quaternion_norm;
 
     let vx = raw_acceleration_x_gs;
     let vy = raw_acceleration_y_gs;
@@ -129,12 +130,62 @@ pub fn derive_mach_number(
 mod tests {
     use super::{derive_mach_number, derive_rotated_raw_acceleration, derive_tilt_angle_degrees};
 
+    fn rotate_with_quaternion(
+        vx: f32,
+        vy: f32,
+        vz: f32,
+        qw: f32,
+        qx: f32,
+        qy: f32,
+        qz: f32,
+    ) -> (f32, f32, f32) {
+        let tx = 2.0 * (qy * vz - qz * vy);
+        let ty = 2.0 * (qz * vx - qx * vz);
+        let tz = 2.0 * (qx * vy - qy * vx);
+
+        let rotated_x = vx + qw * tx + (qy * tz - qz * ty);
+        let rotated_y = vy + qw * ty + (qz * tx - qx * tz);
+        let rotated_z = vz + qw * tz + (qx * ty - qy * tx);
+
+        (rotated_x, rotated_y, rotated_z)
+    }
+
     #[test]
     fn test_derive_rotated_raw_acceleration_identity_quaternion() {
         let (x, y, z) = derive_rotated_raw_acceleration(0.1, -0.2, 1.0, 1.0, 0.0, 0.0, 0.0);
         assert!((x - 0.1).abs() < 1e-6);
         assert!((y + 0.2).abs() < 1e-6);
         assert!((z - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_derive_rotated_raw_acceleration_undoes_world_to_body_rotation() {
+        // Simulate gravity in world frame and a 45 deg tilt about Y represented as world->body.
+        let world_gravity = (0.0f32, 0.0f32, 1.0f32);
+        let half_angle = core::f32::consts::FRAC_PI_4 / 2.0;
+        let qw = half_angle.cos();
+        let qx = 0.0;
+        let qy = half_angle.sin();
+        let qz = 0.0;
+
+        // Sensor/body reading is world gravity rotated by world->body quaternion.
+        let (body_x, body_y, body_z) = rotate_with_quaternion(
+            world_gravity.0,
+            world_gravity.1,
+            world_gravity.2,
+            qw,
+            qx,
+            qy,
+            qz,
+        );
+
+        // Deriver should rotate body reading back into world frame.
+        let (world_x, world_y, world_z) =
+            derive_rotated_raw_acceleration(body_x, body_y, body_z, qw, qx, qy, qz);
+
+        assert!(world_x.abs() < 1e-5);
+        assert!(world_y.abs() < 1e-5);
+        assert!((world_z - 1.0).abs() < 1e-5);
     }
 
     #[test]

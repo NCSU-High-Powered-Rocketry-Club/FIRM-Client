@@ -1,6 +1,6 @@
 use crate::constants::packet::{PacketHeader, *};
-use crate::data_deriver::DataDeriver;
-use crate::firm_packets::{FIRMDataPacket, FIRMResponsePacket};
+use crate::data_processor::DataProcessor;
+use crate::firm_packets::{FIRMDataPacket, FIRMResponsePacket, ProcessedFIRMData};
 use crate::framed_packet::Framed;
 use crate::utils::crc16_ccitt;
 use alloc::collections::VecDeque;
@@ -10,12 +10,12 @@ use alloc::vec::Vec;
 pub struct SerialParser {
     /// Rolling buffer of unprocessed serial bytes.
     serial_bytes: Vec<u8>,
-    /// Queue of framed data packets ready to be consumed.
-    parsed_data_packets: VecDeque<FIRMDataPacket>,
+    /// Queue of processed data packets ready to be consumed.
+    parsed_data_packets: VecDeque<ProcessedFIRMData>,
     /// Queue of framed responses ready to be consumed.
     parsed_response_packets: VecDeque<FIRMResponsePacket>,
-    /// Stateful deriver used across parsed data packets.
-    data_deriver: DataDeriver,
+    /// Stateful processor used across parsed data packets.
+    data_processor: DataProcessor,
 }
 
 impl SerialParser {
@@ -33,7 +33,7 @@ impl SerialParser {
             serial_bytes: Vec::new(),
             parsed_data_packets: VecDeque::new(),
             parsed_response_packets: VecDeque::new(),
-            data_deriver: DataDeriver::default(),
+            data_processor: DataProcessor::default(),
         }
     }
 
@@ -110,11 +110,12 @@ impl SerialParser {
             let packet_bytes = &self.serial_bytes[header_start..packet_end];
 
             if is_data {
-                // If we successfully parse, queue the frame, otherwise keep looking
-                if let Ok(frame) =
-                    FIRMDataPacket::from_bytes_with_deriver(packet_bytes, &mut self.data_deriver)
-                {
-                    self.parsed_data_packets.push_back(frame);
+                // If we successfully parse, queue processed telemetry.
+                if let Ok(frame) = FIRMDataPacket::from_bytes(packet_bytes) {
+                    let processed = self
+                        .data_processor
+                        .process_firm_data_bytes(frame.frame().payload());
+                    self.parsed_data_packets.push_back(processed);
                 } else {
                     position += 1;
                     continue;
@@ -141,8 +142,8 @@ impl SerialParser {
     ///
     /// # Returns
     ///
-    /// - `Option<FIRMDataPacket>` - `Some(frame)` if a frame is available, otherwise `None`.
-    pub fn get_data_packet(&mut self) -> Option<FIRMDataPacket> {
+    /// - `Option<ProcessedFIRMData>` - `Some(packet)` if a packet is available, otherwise `None`.
+    pub fn get_data_packet(&mut self) -> Option<ProcessedFIRMData> {
         self.parsed_data_packets.pop_front()
     }
 
@@ -187,8 +188,8 @@ mod tests {
         parser.parse_bytes(&bytes);
 
         let packet = parser.get_data_packet().expect("expected one data frame");
-        assert_eq!(packet.data().timestamp_seconds, 42.0);
-        assert_eq!(packet.data().temperature_celsius, 25.0);
+        assert_eq!(packet.timestamp_seconds, 42.0);
+        assert_eq!(packet.temperature_celsius, 25.0);
         assert!(parser.get_data_packet().is_none());
         assert!(parser.get_response_packet().is_none());
     }

@@ -3,7 +3,7 @@ use firm_core::constants::command::{
 };
 use firm_core::constants::packet::PacketHeader;
 use firm_core::firm_packets::{
-    CalibrationValues, DeviceConfig, DeviceInfo, DeviceProtocol, FIRMData,
+    CalibrationValues, DeviceConfig, DeviceInfo, DeviceProtocol, ProcessedFIRMData,
 };
 use firm_core::framed_packet::FramedPacket;
 use firm_rust::FIRMClient as RustFirmClient;
@@ -147,7 +147,7 @@ impl FIRMClient {
     }
 
     #[pyo3(signature = (block=false))]
-    fn get_data_packets(&mut self, block: bool) -> PyResult<Vec<FIRMData>> {
+    fn get_data_packets(&mut self, block: bool) -> PyResult<Vec<ProcessedFIRMData>> {
         self.ensure_ok()?;
 
         let timeout = if block {
@@ -334,7 +334,7 @@ impl MockDeviceHandle {
 fn firm_client(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<FIRMClient>()?;
     m.add_class::<MockDeviceHandle>()?;
-    m.add_class::<FIRMData>()?;
+    m.add_class::<ProcessedFIRMData>()?;
     m.add_class::<DeviceProtocol>()?;
     m.add_class::<DeviceInfo>()?;
     m.add_class::<DeviceConfig>()?;

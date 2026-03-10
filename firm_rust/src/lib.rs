@@ -7,7 +7,8 @@ use firm_core::constants::command::{
 use firm_core::constants::log_parsing::{FIRMLogPacketType, HEADER_PARSE_DELAY, HEADER_TOTAL_SIZE};
 use firm_core::data_parser::SerialParser;
 use firm_core::firm_packets::{
-    CalibrationValues, DeviceConfig, DeviceInfo, DeviceProtocol, FIRMData, FIRMResponse,
+    CalibrationValues, DeviceConfig, DeviceInfo, DeviceProtocol, FIRMResponse,
+    ProcessedFIRMData,
 };
 use firm_core::framed_packet::Framed;
 use firm_core::log_parsing::LogParser;
@@ -43,12 +44,12 @@ pub mod mock_serial;
 ///     }
 /// }
 pub struct FIRMClient {
-    packet_receiver: Receiver<FIRMData>,
+    packet_receiver: Receiver<ProcessedFIRMData>,
     response_receiver: Receiver<FIRMResponse>,
     error_receiver: Receiver<String>,
     running: Arc<AtomicBool>,
     join_handle: Option<JoinHandle<Box<dyn SerialPort>>>,
-    sender: Sender<FIRMData>,
+    sender: Sender<ProcessedFIRMData>,
     response_sender: Sender<FIRMResponse>,
     error_sender: Sender<String>,
     command_sender: Sender<FIRMCommandPacket>,
@@ -62,7 +63,7 @@ pub struct FIRMClient {
     mock_stream_stop: Arc<AtomicBool>,
     mock_stream_handle: Option<JoinHandle<anyhow::Result<usize>>>,
 
-    calibration_snoop: Arc<RwLock<Option<Sender<FIRMData>>>>,
+    calibration_snoop: Arc<RwLock<Option<Sender<ProcessedFIRMData>>>>,
     calibration_handle: Option<JoinHandle<Option<MagnetometerCalibration>>>,
 }
 
@@ -208,17 +209,14 @@ impl FIRMClient {
                         parser.parse_bytes(&buffer[..bytes_read]);
 
                         // Reads all available data packets and send them to the main thread and calibration if wanted
-                        while let Some(firm_data_packet) = parser.get_data_packet() {
-                            let packet = firm_data_packet.data().clone();
+                        while let Some(packet) = parser.get_data_packet() {
 
                             if sender.send(packet.clone()).is_err() {
                                 return port; // Receiver dropped
                             }
 
                             // We use a read lock which is very fast if no one is writing.
-                            if let Ok(guard) = calibration_snoop.read()
-                                && let Some(cal_tx) = &*guard
-                            {
+                            if let Ok(guard) = calibration_snoop.read() && let Some(cal_tx) = &*guard {
                                 // Ignore errors (if cal thread died, we don't care)
                                 let _ = cal_tx.send(packet);
                             }
@@ -290,7 +288,7 @@ impl FIRMClient {
     pub fn get_data_packets(
         &mut self,
         timeout: Option<Duration>,
-    ) -> Result<Vec<FIRMData>, RecvTimeoutError> {
+    ) -> Result<Vec<ProcessedFIRMData>, RecvTimeoutError> {
         let mut packets = Vec::new();
 
         // If blocking, wait for at most one packet. The next loop will drain any others.

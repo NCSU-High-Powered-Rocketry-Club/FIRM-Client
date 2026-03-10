@@ -1,5 +1,5 @@
 use crate::constants::command::*;
-use crate::data_deriver::DataDeriver;
+use crate::data_processor::DataProcessor;
 use crate::framed_packet::{FrameError, Framed, FramedPacket};
 use crate::utils::{bytes_to_str, parse_bytes_to_f32, parse_bytes_to_many_f32s};
 use field_names::FieldNames;
@@ -66,15 +66,58 @@ pub struct DeviceConfig {
     pub protocol: DeviceProtocol,
 }
 
-/// Represents a decoded FIRM telemetry packet with converted physical units. In our Python code
-/// it's called FIRMDataPacket, but to avoid confusion with the Rust packet struct
-/// we name this FIRMData.
+/// Represents decoded raw telemetry fields from the wire payload.
+///
+/// This type intentionally excludes derived fields and is intended for
+/// internal processing.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FIRMData {
+    pub timestamp_seconds: f64,
+
+    pub temperature_celsius: f32,
+    pub pressure_pascals: f32,
+
+    pub raw_acceleration_x_gs: f32,
+    pub raw_acceleration_y_gs: f32,
+    pub raw_acceleration_z_gs: f32,
+
+    pub raw_angular_rate_x_deg_per_s: f32,
+    pub raw_angular_rate_y_deg_per_s: f32,
+    pub raw_angular_rate_z_deg_per_s: f32,
+
+    pub magnetic_field_x_microteslas: f32,
+    pub magnetic_field_y_microteslas: f32,
+    pub magnetic_field_z_microteslas: f32,
+
+    pub est_position_x_meters: f32,
+    pub est_position_y_meters: f32,
+    pub est_position_z_meters: f32,
+
+    pub est_velocity_x_meters_per_s: f32,
+    pub est_velocity_y_meters_per_s: f32,
+    pub est_velocity_z_meters_per_s: f32,
+
+    pub est_acceleration_x_gs: f32,
+    pub est_acceleration_y_gs: f32,
+    pub est_acceleration_z_gs: f32,
+
+    pub est_angular_rate_x_rad_per_s: f32,
+    pub est_angular_rate_y_rad_per_s: f32,
+    pub est_angular_rate_z_rad_per_s: f32,
+
+    pub est_quaternion_w: f32,
+    pub est_quaternion_x: f32,
+    pub est_quaternion_y: f32,
+    pub est_quaternion_z: f32,
+}
+
+/// Represents processed telemetry with derived fields included.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, FieldNames)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(name = "FIRMDataPacket", get_all, freelist = 20, frozen)
 )]
-pub struct FIRMData {
+pub struct ProcessedFIRMData {
     pub timestamp_seconds: f64,
 
     pub temperature_celsius: f32,
@@ -120,10 +163,84 @@ pub struct FIRMData {
     pub est_quaternion_z: f32,
 }
 
-impl FIRMData {
+impl DataProcessor {
+    // TODO just pass FIRMDataPacket into here
+    pub fn process_firm_data_bytes(&mut self, bytes: &[u8]) -> ProcessedFIRMData {
+        self.process_firm_data(FIRMData::from_bytes(bytes))
+    }
+
+    pub fn process_firm_data(&mut self, raw: FIRMData) -> ProcessedFIRMData {
+        let (
+            raw_rotated_acceleration_x_gs,
+            raw_rotated_acceleration_y_gs,
+            raw_rotated_acceleration_z_gs,
+        ) = self.derive_rotated_raw_acceleration(
+            raw.raw_acceleration_x_gs,
+            raw.raw_acceleration_y_gs,
+            raw.raw_acceleration_z_gs,
+            raw.est_quaternion_w,
+            raw.est_quaternion_x,
+            raw.est_quaternion_y,
+            raw.est_quaternion_z,
+        );
+        let est_tilt_angle_degrees = self.derive_tilt_angle_degrees(
+            raw.raw_acceleration_x_gs,
+            raw.raw_acceleration_y_gs,
+            raw.raw_acceleration_z_gs,
+            raw.est_quaternion_w,
+            raw.est_quaternion_x,
+            raw.est_quaternion_y,
+            raw.est_quaternion_z,
+        );
+        let est_mach_number = self.derive_mach_number(
+            raw.est_velocity_x_meters_per_s,
+            raw.est_velocity_y_meters_per_s,
+            raw.est_velocity_z_meters_per_s,
+            raw.temperature_celsius,
+        );
+
+        ProcessedFIRMData {
+            timestamp_seconds: raw.timestamp_seconds,
+            temperature_celsius: raw.temperature_celsius,
+            pressure_pascals: raw.pressure_pascals,
+            raw_acceleration_x_gs: raw.raw_acceleration_x_gs,
+            raw_acceleration_y_gs: raw.raw_acceleration_y_gs,
+            raw_acceleration_z_gs: raw.raw_acceleration_z_gs,
+            raw_rotated_acceleration_x_gs,
+            raw_rotated_acceleration_y_gs,
+            raw_rotated_acceleration_z_gs,
+            est_tilt_angle_degrees,
+            raw_angular_rate_x_deg_per_s: raw.raw_angular_rate_x_deg_per_s,
+            raw_angular_rate_y_deg_per_s: raw.raw_angular_rate_y_deg_per_s,
+            raw_angular_rate_z_deg_per_s: raw.raw_angular_rate_z_deg_per_s,
+            magnetic_field_x_microteslas: raw.magnetic_field_x_microteslas,
+            magnetic_field_y_microteslas: raw.magnetic_field_y_microteslas,
+            magnetic_field_z_microteslas: raw.magnetic_field_z_microteslas,
+            est_position_x_meters: raw.est_position_x_meters,
+            est_position_y_meters: raw.est_position_y_meters,
+            est_position_z_meters: raw.est_position_z_meters,
+            est_velocity_x_meters_per_s: raw.est_velocity_x_meters_per_s,
+            est_velocity_y_meters_per_s: raw.est_velocity_y_meters_per_s,
+            est_velocity_z_meters_per_s: raw.est_velocity_z_meters_per_s,
+            est_mach_number,
+            est_acceleration_x_gs: raw.est_acceleration_x_gs,
+            est_acceleration_y_gs: raw.est_acceleration_y_gs,
+            est_acceleration_z_gs: raw.est_acceleration_z_gs,
+            est_angular_rate_x_rad_per_s: raw.est_angular_rate_x_rad_per_s,
+            est_angular_rate_y_rad_per_s: raw.est_angular_rate_y_rad_per_s,
+            est_angular_rate_z_rad_per_s: raw.est_angular_rate_z_rad_per_s,
+            est_quaternion_w: raw.est_quaternion_w,
+            est_quaternion_x: raw.est_quaternion_x,
+            est_quaternion_y: raw.est_quaternion_y,
+            est_quaternion_z: raw.est_quaternion_z,
+        }
+    }
+}
+
+#[cfg(feature = "python")]
+impl ProcessedFIRMData {
     #[allow(clippy::too_many_arguments)]
     fn from_base_fields(
-        deriver: &mut DataDeriver,
         timestamp_seconds: f64,
         temperature_celsius: f32,
         pressure_pascals: f32,
@@ -153,46 +270,14 @@ impl FIRMData {
         est_quaternion_y: f32,
         est_quaternion_z: f32,
     ) -> Self {
-        let (
-            raw_rotated_acceleration_x_gs,
-            raw_rotated_acceleration_y_gs,
-            raw_rotated_acceleration_z_gs,
-        ) = deriver.derive_rotated_raw_acceleration(
-            raw_acceleration_x_gs,
-            raw_acceleration_y_gs,
-            raw_acceleration_z_gs,
-            est_quaternion_w,
-            est_quaternion_x,
-            est_quaternion_y,
-            est_quaternion_z,
-        );
-        let est_tilt_angle_degrees = deriver.derive_tilt_angle_degrees(
-            raw_acceleration_x_gs,
-            raw_acceleration_y_gs,
-            raw_acceleration_z_gs,
-            est_quaternion_w,
-            est_quaternion_x,
-            est_quaternion_y,
-            est_quaternion_z,
-        );
-        let est_mach_number = deriver.derive_mach_number(
-            est_velocity_x_meters_per_s,
-            est_velocity_y_meters_per_s,
-            est_velocity_z_meters_per_s,
-            temperature_celsius,
-        );
-
-        Self {
+        let mut processor = DataProcessor::default();
+        processor.process_firm_data(FIRMData {
             timestamp_seconds,
             temperature_celsius,
             pressure_pascals,
             raw_acceleration_x_gs,
             raw_acceleration_y_gs,
             raw_acceleration_z_gs,
-            raw_rotated_acceleration_x_gs,
-            raw_rotated_acceleration_y_gs,
-            raw_rotated_acceleration_z_gs,
-            est_tilt_angle_degrees,
             raw_angular_rate_x_deg_per_s,
             raw_angular_rate_y_deg_per_s,
             raw_angular_rate_z_deg_per_s,
@@ -205,7 +290,6 @@ impl FIRMData {
             est_velocity_x_meters_per_s,
             est_velocity_y_meters_per_s,
             est_velocity_z_meters_per_s,
-            est_mach_number,
             est_acceleration_x_gs,
             est_acceleration_y_gs,
             est_acceleration_z_gs,
@@ -216,16 +300,16 @@ impl FIRMData {
             est_quaternion_x,
             est_quaternion_y,
             est_quaternion_z,
-        }
+        })
     }
 }
 
 #[cfg(feature = "python")]
 #[pymethods]
-impl FIRMData {
+impl ProcessedFIRMData {
     #[classattr]
     fn __struct_fields__() -> Vec<&'static str> {
-        FIRMData::FIELDS.to_vec()
+        ProcessedFIRMData::FIELDS.to_vec()
     }
 
     #[new]
@@ -260,9 +344,7 @@ impl FIRMData {
         est_quaternion_y: f32,
         est_quaternion_z: f32,
     ) -> Self {
-        let mut deriver = DataDeriver::default();
         Self::from_base_fields(
-            &mut deriver,
             timestamp_seconds,
             temperature_celsius,
             pressure_pascals,
@@ -296,37 +378,10 @@ impl FIRMData {
 
     #[staticmethod]
     fn default_zero() -> Self {
-        let mut deriver = DataDeriver::default();
         Self::from_base_fields(
-            &mut deriver,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            1.0, // Identity quaternion
-            0.0,
-            0.0,
-            0.0,
+            0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+            0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, // Identity quaternion
+            0.0, 0.0, 0.0,
         )
     }
 
@@ -364,17 +419,6 @@ impl FIRMDataPacket {
     pub fn data(&self) -> &FIRMData {
         &self.data
     }
-
-    pub fn from_bytes_with_deriver(
-        bytes: &[u8],
-        deriver: &mut DataDeriver,
-    ) -> Result<Self, FrameError> {
-        let frame = FramedPacket::from_bytes(bytes)?;
-        Ok(Self {
-            data: FIRMData::from_bytes_with_deriver(frame.payload(), deriver),
-            frame,
-        })
-    }
 }
 
 impl Framed for FIRMDataPacket {
@@ -383,13 +427,17 @@ impl Framed for FIRMDataPacket {
     }
 
     fn from_bytes(bytes: &[u8]) -> Result<Self, FrameError> {
-        let mut deriver = DataDeriver::default();
-        Self::from_bytes_with_deriver(bytes, &mut deriver)
+        let frame = FramedPacket::from_bytes(bytes)?;
+        Ok(Self {
+            data: FIRMData::from_bytes(frame.payload()),
+            frame,
+        })
     }
 }
 
 impl FIRMData {
-    pub fn from_bytes_with_deriver(bytes: &[u8], deriver: &mut DataDeriver) -> Self {
+    /// Constructs a `FIRMData` from a raw payload byte slice.
+    pub fn from_bytes(bytes: &[u8]) -> Self {
         let mut idx = 0;
 
         let timestamp_seconds: f64 = f64::from_le_bytes([
@@ -440,8 +488,7 @@ impl FIRMData {
         let est_quaternion_y: f32 = parse_bytes_to_f32(bytes, &mut idx);
         let est_quaternion_z: f32 = parse_bytes_to_f32(bytes, &mut idx);
 
-        Self::from_base_fields(
-            deriver,
+        Self {
             timestamp_seconds,
             temperature_celsius,
             pressure_pascals,
@@ -470,13 +517,7 @@ impl FIRMData {
             est_quaternion_x,
             est_quaternion_y,
             est_quaternion_z,
-        )
-    }
-
-    /// Constructs a `FIRMData` from a raw payload byte slice.
-    pub fn from_bytes(bytes: &[u8]) -> Self {
-        let mut deriver = DataDeriver::default();
-        Self::from_bytes_with_deriver(bytes, &mut deriver)
+        }
     }
 }
 

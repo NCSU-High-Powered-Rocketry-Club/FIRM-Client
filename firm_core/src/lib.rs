@@ -4,7 +4,7 @@ extern crate alloc;
 pub mod calibration;
 pub mod client_packets;
 pub mod constants;
-pub mod data_deriver;
+pub mod data_processor;
 pub mod data_parser;
 pub mod firm_packets;
 pub mod framed_packet;

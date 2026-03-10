@@ -30,11 +30,11 @@ impl MountAxis {
 }
 
 #[derive(Debug, Clone)]
-pub struct DataDeriver {
+pub struct DataProcessor {
     mount_axis: Option<MountAxis>,
 }
 
-impl DataDeriver {
+impl DataProcessor {
     pub fn new() -> Self {
         Self { mount_axis: None }
     }
@@ -252,7 +252,7 @@ impl DataDeriver {
     }
 }
 
-impl Default for DataDeriver {
+impl Default for DataProcessor {
     fn default() -> Self {
         Self::new()
     }
@@ -260,7 +260,7 @@ impl Default for DataDeriver {
 
 #[cfg(test)]
 mod tests {
-    use super::{DataDeriver, MountAxis};
+    use super::{DataProcessor, MountAxis};
 
     fn rotate_with_quaternion(
         vx: f32,
@@ -284,7 +284,7 @@ mod tests {
 
     #[test]
     fn rotated_accel_identity() {
-        let deriver = DataDeriver::new();
+        let deriver = DataProcessor::new();
         let (x, y, z) = deriver.derive_rotated_raw_acceleration(0.1, -0.2, 1.0, 1.0, 0.0, 0.0, 0.0);
         assert!((x - 0.1).abs() < 1e-6);
         assert!((y + 0.2).abs() < 1e-6);
@@ -293,7 +293,7 @@ mod tests {
 
     #[test]
     fn rotated_accel_undoes_world_to_body() {
-        let deriver = DataDeriver::new();
+        let deriver = DataProcessor::new();
         // Simulate gravity in world frame and a 45 deg tilt about Y represented as world->body.
         let world_gravity = (0.0f32, 0.0f32, 1.0f32);
         let half_angle = core::f32::consts::FRAC_PI_4 / 2.0;
@@ -324,7 +324,7 @@ mod tests {
 
     #[test]
     fn tilt_from_quaternion_aligned_and_perpendicular() {
-        let mut deriver = DataDeriver::new();
+        let mut deriver = DataProcessor::new();
 
         let aligned = deriver.derive_tilt_angle_degrees(0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0);
         assert!(aligned.abs() < 1e-6);
@@ -336,14 +336,14 @@ mod tests {
 
     #[test]
     fn mount_axis_snap_chooses_closest_axis() {
-        let deriver = DataDeriver::new();
+        let deriver = DataProcessor::new();
         let axis = deriver.derive_mount_axis_from_boot_acceleration(0.05, -0.97, 0.14);
         assert_eq!(axis, MountAxis::NegY);
     }
 
     #[test]
     fn mach_zero_velocity() {
-        let deriver = DataDeriver::new();
+        let deriver = DataProcessor::new();
         let mach = deriver.derive_mach_number(0.0, 0.0, 0.0, 20.0);
         assert!(mach.abs() < 1e-6);
     }

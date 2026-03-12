@@ -67,6 +67,7 @@ impl DataProcessor {
     /// Acceleration is only used to infer the rocket axis in body frame once.
     /// The tilt itself is then computed from quaternion-rotated rocket axis to world +Z.
     /// TODO: unsure if this works or not, FIRM might just have the wrong orientations for sensors.
+    #[allow(clippy::too_many_arguments)]
     pub fn derive_tilt_angle_degrees(
         &mut self,
         raw_acceleration_x_gs: f32,
@@ -144,6 +145,7 @@ impl DataProcessor {
     ///
     /// The quaternion is normalized internally and treated as a vehicle-to-world
     /// rotation estimate, so it is applied directly to map body vectors to world.
+    #[allow(clippy::too_many_arguments)]
     pub fn derive_rotated_raw_acceleration(
         &self,
         raw_acceleration_x_gs: f32,

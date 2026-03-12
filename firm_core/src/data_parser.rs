@@ -112,9 +112,7 @@ impl SerialParser {
             if is_data {
                 // If we successfully parse, queue processed telemetry.
                 if let Ok(frame) = FIRMDataPacket::from_bytes(packet_bytes) {
-                    let processed = self
-                        .data_processor
-                        .process_firm_data(frame.data());
+                    let processed = self.data_processor.process_firm_data(frame.data());
                     self.parsed_data_packets.push_back(processed);
                 } else {
                     position += 1;

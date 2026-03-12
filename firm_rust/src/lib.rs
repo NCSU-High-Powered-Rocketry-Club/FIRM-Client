@@ -7,8 +7,7 @@ use firm_core::constants::command::{
 use firm_core::constants::log_parsing::{FIRMLogPacketType, HEADER_PARSE_DELAY, HEADER_TOTAL_SIZE};
 use firm_core::data_parser::SerialParser;
 use firm_core::firm_packets::{
-    CalibrationValues, DeviceConfig, DeviceInfo, DeviceProtocol, FIRMResponse,
-    ProcessedFIRMData,
+    CalibrationValues, DeviceConfig, DeviceInfo, DeviceProtocol, FIRMResponse, ProcessedFIRMData,
 };
 use firm_core::framed_packet::Framed;
 use firm_core::log_parsing::LogParser;
@@ -210,13 +209,14 @@ impl FIRMClient {
 
                         // Reads all available data packets and send them to the main thread and calibration if wanted
                         while let Some(packet) = parser.get_data_packet() {
-
                             if sender.send(packet.clone()).is_err() {
                                 return port; // Receiver dropped
                             }
 
                             // We use a read lock which is very fast if no one is writing.
-                            if let Ok(guard) = calibration_snoop.read() && let Some(cal_tx) = &*guard {
+                            if let Ok(guard) = calibration_snoop.read()
+                                && let Some(cal_tx) = &*guard
+                            {
                                 // Ignore errors (if cal thread died, we don't care)
                                 let _ = cal_tx.send(packet);
                             }
@@ -581,12 +581,10 @@ impl FIRMClient {
     ) -> Result<Option<bool>> {
         // Reset magnetometer calibration to a known state before collecting.
         // This avoids using stale calibration while we gather new samples.
-        let zero_offsets: [f32; NUMBER_OF_CALIBRATION_OFFSETS] = [0.0; NUMBER_OF_CALIBRATION_OFFSETS];
-        let identity_matrix: [f32; NUMBER_OF_CALIBRATION_SCALE_MATRIX_ELEMENTS] = [
-            1.0, 0.0, 0.0,
-            0.0, 1.0, 0.0,
-            0.0, 0.0, 1.0,
-        ];
+        let zero_offsets: [f32; NUMBER_OF_CALIBRATION_OFFSETS] =
+            [0.0; NUMBER_OF_CALIBRATION_OFFSETS];
+        let identity_matrix: [f32; NUMBER_OF_CALIBRATION_SCALE_MATRIX_ELEMENTS] =
+            [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
 
         match self.set_magnetometer_calibration(zero_offsets, identity_matrix, apply_timeout)? {
             Some(true) => {}

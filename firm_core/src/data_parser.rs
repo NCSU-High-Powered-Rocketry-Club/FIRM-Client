@@ -114,7 +114,7 @@ impl SerialParser {
                 if let Ok(frame) = FIRMDataPacket::from_bytes(packet_bytes) {
                     let processed = self
                         .data_processor
-                        .process_firm_data_bytes(frame.frame().payload());
+                        .process_firm_data(frame.data());
                     self.parsed_data_packets.push_back(processed);
                 } else {
                     position += 1;

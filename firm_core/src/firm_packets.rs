@@ -164,75 +164,70 @@ pub struct ProcessedFIRMData {
 }
 
 impl DataProcessor {
-    // TODO just pass FIRMDataPacket into here
-    pub fn process_firm_data_bytes(&mut self, bytes: &[u8]) -> ProcessedFIRMData {
-        self.process_firm_data(FIRMData::from_bytes(bytes))
-    }
-
-    pub fn process_firm_data(&mut self, raw: FIRMData) -> ProcessedFIRMData {
+    pub fn process_firm_data(&mut self, firm_data: &FIRMData) -> ProcessedFIRMData {
         let (
             raw_rotated_acceleration_x_gs,
             raw_rotated_acceleration_y_gs,
             raw_rotated_acceleration_z_gs,
         ) = self.derive_rotated_raw_acceleration(
-            raw.raw_acceleration_x_gs,
-            raw.raw_acceleration_y_gs,
-            raw.raw_acceleration_z_gs,
-            raw.est_quaternion_w,
-            raw.est_quaternion_x,
-            raw.est_quaternion_y,
-            raw.est_quaternion_z,
+            firm_data.raw_acceleration_x_gs,
+            firm_data.raw_acceleration_y_gs,
+            firm_data.raw_acceleration_z_gs,
+            firm_data.est_quaternion_w,
+            firm_data.est_quaternion_x,
+            firm_data.est_quaternion_y,
+            firm_data.est_quaternion_z,
         );
         let est_tilt_angle_degrees = self.derive_tilt_angle_degrees(
-            raw.raw_acceleration_x_gs,
-            raw.raw_acceleration_y_gs,
-            raw.raw_acceleration_z_gs,
-            raw.est_quaternion_w,
-            raw.est_quaternion_x,
-            raw.est_quaternion_y,
-            raw.est_quaternion_z,
+            firm_data.raw_acceleration_x_gs,
+            firm_data.raw_acceleration_y_gs,
+            firm_data.raw_acceleration_z_gs,
+            firm_data.est_quaternion_w,
+            firm_data.est_quaternion_x,
+            firm_data.est_quaternion_y,
+            firm_data.est_quaternion_z,
         );
         let est_mach_number = self.derive_mach_number(
-            raw.est_velocity_x_meters_per_s,
-            raw.est_velocity_y_meters_per_s,
-            raw.est_velocity_z_meters_per_s,
-            raw.temperature_celsius,
+            firm_data.est_velocity_x_meters_per_s,
+            firm_data.est_velocity_y_meters_per_s,
+            firm_data.est_velocity_z_meters_per_s,
+            firm_data.temperature_celsius,
         );
 
         ProcessedFIRMData {
-            timestamp_seconds: raw.timestamp_seconds,
-            temperature_celsius: raw.temperature_celsius,
-            pressure_pascals: raw.pressure_pascals,
-            raw_acceleration_x_gs: raw.raw_acceleration_x_gs,
-            raw_acceleration_y_gs: raw.raw_acceleration_y_gs,
-            raw_acceleration_z_gs: raw.raw_acceleration_z_gs,
+            timestamp_seconds: firm_data.timestamp_seconds,
+            temperature_celsius: firm_data.temperature_celsius,
+            pressure_pascals: firm_data.pressure_pascals,
+            raw_acceleration_x_gs: firm_data.raw_acceleration_x_gs,
+            raw_acceleration_y_gs: firm_data.raw_acceleration_y_gs,
+            raw_acceleration_z_gs: firm_data.raw_acceleration_z_gs,
             raw_rotated_acceleration_x_gs,
             raw_rotated_acceleration_y_gs,
             raw_rotated_acceleration_z_gs,
             est_tilt_angle_degrees,
-            raw_angular_rate_x_deg_per_s: raw.raw_angular_rate_x_deg_per_s,
-            raw_angular_rate_y_deg_per_s: raw.raw_angular_rate_y_deg_per_s,
-            raw_angular_rate_z_deg_per_s: raw.raw_angular_rate_z_deg_per_s,
-            magnetic_field_x_microteslas: raw.magnetic_field_x_microteslas,
-            magnetic_field_y_microteslas: raw.magnetic_field_y_microteslas,
-            magnetic_field_z_microteslas: raw.magnetic_field_z_microteslas,
-            est_position_x_meters: raw.est_position_x_meters,
-            est_position_y_meters: raw.est_position_y_meters,
-            est_position_z_meters: raw.est_position_z_meters,
-            est_velocity_x_meters_per_s: raw.est_velocity_x_meters_per_s,
-            est_velocity_y_meters_per_s: raw.est_velocity_y_meters_per_s,
-            est_velocity_z_meters_per_s: raw.est_velocity_z_meters_per_s,
+            raw_angular_rate_x_deg_per_s: firm_data.raw_angular_rate_x_deg_per_s,
+            raw_angular_rate_y_deg_per_s: firm_data.raw_angular_rate_y_deg_per_s,
+            raw_angular_rate_z_deg_per_s: firm_data.raw_angular_rate_z_deg_per_s,
+            magnetic_field_x_microteslas: firm_data.magnetic_field_x_microteslas,
+            magnetic_field_y_microteslas: firm_data.magnetic_field_y_microteslas,
+            magnetic_field_z_microteslas: firm_data.magnetic_field_z_microteslas,
+            est_position_x_meters: firm_data.est_position_x_meters,
+            est_position_y_meters: firm_data.est_position_y_meters,
+            est_position_z_meters: firm_data.est_position_z_meters,
+            est_velocity_x_meters_per_s: firm_data.est_velocity_x_meters_per_s,
+            est_velocity_y_meters_per_s: firm_data.est_velocity_y_meters_per_s,
+            est_velocity_z_meters_per_s: firm_data.est_velocity_z_meters_per_s,
             est_mach_number,
-            est_acceleration_x_gs: raw.est_acceleration_x_gs,
-            est_acceleration_y_gs: raw.est_acceleration_y_gs,
-            est_acceleration_z_gs: raw.est_acceleration_z_gs,
-            est_angular_rate_x_rad_per_s: raw.est_angular_rate_x_rad_per_s,
-            est_angular_rate_y_rad_per_s: raw.est_angular_rate_y_rad_per_s,
-            est_angular_rate_z_rad_per_s: raw.est_angular_rate_z_rad_per_s,
-            est_quaternion_w: raw.est_quaternion_w,
-            est_quaternion_x: raw.est_quaternion_x,
-            est_quaternion_y: raw.est_quaternion_y,
-            est_quaternion_z: raw.est_quaternion_z,
+            est_acceleration_x_gs: firm_data.est_acceleration_x_gs,
+            est_acceleration_y_gs: firm_data.est_acceleration_y_gs,
+            est_acceleration_z_gs: firm_data.est_acceleration_z_gs,
+            est_angular_rate_x_rad_per_s: firm_data.est_angular_rate_x_rad_per_s,
+            est_angular_rate_y_rad_per_s: firm_data.est_angular_rate_y_rad_per_s,
+            est_angular_rate_z_rad_per_s: firm_data.est_angular_rate_z_rad_per_s,
+            est_quaternion_w: firm_data.est_quaternion_w,
+            est_quaternion_x: firm_data.est_quaternion_x,
+            est_quaternion_y: firm_data.est_quaternion_y,
+            est_quaternion_z: firm_data.est_quaternion_z,
         }
     }
 }
@@ -271,7 +266,7 @@ impl ProcessedFIRMData {
         est_quaternion_z: f32,
     ) -> Self {
         let mut processor = DataProcessor::default();
-        processor.process_firm_data(FIRMData {
+        let firm_data = FIRMData {
             timestamp_seconds,
             temperature_celsius,
             pressure_pascals,
@@ -300,7 +295,8 @@ impl ProcessedFIRMData {
             est_quaternion_x,
             est_quaternion_y,
             est_quaternion_z,
-        })
+        };
+        processor.process_firm_data(&firm_data)
     }
 }
 

@@ -106,20 +106,6 @@ class FIRMDataPacket:
     est_mach_number: float
     """Estimated Mach number from velocity magnitude and ambient temperature."""
 
-    est_acceleration_x_gs: float
-    """Estimated acceleration along the X-axis in Gs."""
-    est_acceleration_y_gs: float
-    """Estimated acceleration along the Y-axis in Gs."""
-    est_acceleration_z_gs: float
-    """Estimated acceleration along the Z-axis in Gs."""
-
-    est_angular_rate_x_rad_per_s: float
-    """Estimated angular rate around the X-axis in radians per second."""
-    est_angular_rate_y_rad_per_s: float
-    """Estimated angular rate around the Y-axis in radians per second."""
-    est_angular_rate_z_rad_per_s: float
-    """Estimated angular rate around the Z-axis in radians per second."""
-
     est_quaternion_w: float
     """Estimated orientation quaternion scalar component (W)."""
     est_quaternion_x: float
@@ -149,12 +135,6 @@ class FIRMDataPacket:
         est_velocity_x_meters_per_s: float,
         est_velocity_y_meters_per_s: float,
         est_velocity_z_meters_per_s: float,
-        est_acceleration_x_gs: float,
-        est_acceleration_y_gs: float,
-        est_acceleration_z_gs: float,
-        est_angular_rate_x_rad_per_s: float,
-        est_angular_rate_y_rad_per_s: float,
-        est_angular_rate_z_rad_per_s: float,
         est_quaternion_w: float,
         est_quaternion_x: float,
         est_quaternion_y: float,

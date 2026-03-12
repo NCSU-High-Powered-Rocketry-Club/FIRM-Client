@@ -26,12 +26,6 @@ def test_firm_data_packet_constructor() -> None:
         17.0,
         18.0,
         19.0,
-        20.0,
-        21.0,
-        22.0,
-        23.0,
-        24.0,
-        25.0,
         0.0,
         0.0,
         0.0,
@@ -55,13 +49,7 @@ def test_firm_data_packet_constructor() -> None:
     assert packet.est_velocity_x_meters_per_s == 16.0
     assert packet.est_velocity_y_meters_per_s == 17.0
     assert packet.est_velocity_z_meters_per_s == 18.0
-    assert packet.est_acceleration_x_gs == 19.0
-    assert packet.est_acceleration_y_gs == 20.0
-    assert packet.est_acceleration_z_gs == 21.0
-    assert packet.est_angular_rate_x_rad_per_s == 22.0
-    assert packet.est_angular_rate_y_rad_per_s == 23.0
-    assert packet.est_angular_rate_z_rad_per_s == 24.0
-    assert packet.est_quaternion_w == 25.0
+    assert packet.est_quaternion_w == 19.0
     assert packet.est_quaternion_x == 0.0
     assert packet.est_quaternion_y == 0.0
     assert packet.est_quaternion_z == 0.0
@@ -112,12 +100,6 @@ def test_firm_data_packet_default_zero() -> None:
     assert firm_data_packet.est_velocity_x_meters_per_s == 0.0
     assert firm_data_packet.est_velocity_y_meters_per_s == 0.0
     assert firm_data_packet.est_velocity_z_meters_per_s == 0.0
-    assert firm_data_packet.est_acceleration_x_gs == 0.0
-    assert firm_data_packet.est_acceleration_y_gs == 0.0
-    assert firm_data_packet.est_acceleration_z_gs == 0.0
-    assert firm_data_packet.est_angular_rate_x_rad_per_s == 0.0
-    assert firm_data_packet.est_angular_rate_y_rad_per_s == 0.0
-    assert firm_data_packet.est_angular_rate_z_rad_per_s == 0.0
     assert firm_data_packet.est_quaternion_w == 1.0
     assert firm_data_packet.est_quaternion_x == 0.0
     assert firm_data_packet.est_quaternion_y == 0.0
@@ -165,13 +147,7 @@ def test_firm_data_packet_as_dict() -> None:
         est_velocity_x_meters_per_s=16.0,
         est_velocity_y_meters_per_s=17.0,
         est_velocity_z_meters_per_s=18.0,
-        est_acceleration_x_gs=19.0,
-        est_acceleration_y_gs=20.0,
-        est_acceleration_z_gs=21.0,
-        est_angular_rate_x_rad_per_s=22.0,
-        est_angular_rate_y_rad_per_s=23.0,
-        est_angular_rate_z_rad_per_s=24.0,
-        est_quaternion_w=25.0,
+        est_quaternion_w=19.0,
         est_quaternion_x=0.0,
         est_quaternion_y=0.0,
         est_quaternion_z=0.0,

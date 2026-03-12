@@ -52,20 +52,6 @@ export interface FIRMPacket {
   /** Estimated Mach number from velocity magnitude and ambient temperature. */
   est_mach_number: number;
 
-  /** Estimated acceleration along the X-axis in Gs. */
-  est_acceleration_x_gs: number;
-  /** Estimated acceleration along the Y-axis in Gs. */
-  est_acceleration_y_gs: number;
-  /** Estimated acceleration along the Z-axis in Gs. */
-  est_acceleration_z_gs: number;
-
-  /** Estimated angular rate around the X-axis in radians per second. */
-  est_angular_rate_x_rad_per_s: number;
-  /** Estimated angular rate around the Y-axis in radians per second. */
-  est_angular_rate_y_rad_per_s: number;
-  /** Estimated angular rate around the Z-axis in radians per second. */
-  est_angular_rate_z_rad_per_s: number;
-
   /** Estimated orientation quaternion scalar component (W). */
   est_quaternion_w: number;
   /** Estimated orientation quaternion vector component (X). */

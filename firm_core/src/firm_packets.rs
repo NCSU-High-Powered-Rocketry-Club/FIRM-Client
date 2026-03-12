@@ -97,14 +97,6 @@ pub struct FIRMData {
     pub est_velocity_y_meters_per_s: f32,
     pub est_velocity_z_meters_per_s: f32,
 
-    pub est_acceleration_x_gs: f32,
-    pub est_acceleration_y_gs: f32,
-    pub est_acceleration_z_gs: f32,
-
-    pub est_angular_rate_x_rad_per_s: f32,
-    pub est_angular_rate_y_rad_per_s: f32,
-    pub est_angular_rate_z_rad_per_s: f32,
-
     pub est_quaternion_w: f32,
     pub est_quaternion_x: f32,
     pub est_quaternion_y: f32,
@@ -148,14 +140,6 @@ pub struct ProcessedFIRMData {
     pub est_velocity_y_meters_per_s: f32,
     pub est_velocity_z_meters_per_s: f32,
     pub est_mach_number: f32,
-
-    pub est_acceleration_x_gs: f32,
-    pub est_acceleration_y_gs: f32,
-    pub est_acceleration_z_gs: f32,
-
-    pub est_angular_rate_x_rad_per_s: f32,
-    pub est_angular_rate_y_rad_per_s: f32,
-    pub est_angular_rate_z_rad_per_s: f32,
 
     pub est_quaternion_w: f32,
     pub est_quaternion_x: f32,
@@ -218,12 +202,6 @@ impl DataProcessor {
             est_velocity_y_meters_per_s: firm_data.est_velocity_y_meters_per_s,
             est_velocity_z_meters_per_s: firm_data.est_velocity_z_meters_per_s,
             est_mach_number,
-            est_acceleration_x_gs: firm_data.est_acceleration_x_gs,
-            est_acceleration_y_gs: firm_data.est_acceleration_y_gs,
-            est_acceleration_z_gs: firm_data.est_acceleration_z_gs,
-            est_angular_rate_x_rad_per_s: firm_data.est_angular_rate_x_rad_per_s,
-            est_angular_rate_y_rad_per_s: firm_data.est_angular_rate_y_rad_per_s,
-            est_angular_rate_z_rad_per_s: firm_data.est_angular_rate_z_rad_per_s,
             est_quaternion_w: firm_data.est_quaternion_w,
             est_quaternion_x: firm_data.est_quaternion_x,
             est_quaternion_y: firm_data.est_quaternion_y,
@@ -254,12 +232,6 @@ impl ProcessedFIRMData {
         est_velocity_x_meters_per_s: f32,
         est_velocity_y_meters_per_s: f32,
         est_velocity_z_meters_per_s: f32,
-        est_acceleration_x_gs: f32,
-        est_acceleration_y_gs: f32,
-        est_acceleration_z_gs: f32,
-        est_angular_rate_x_rad_per_s: f32,
-        est_angular_rate_y_rad_per_s: f32,
-        est_angular_rate_z_rad_per_s: f32,
         est_quaternion_w: f32,
         est_quaternion_x: f32,
         est_quaternion_y: f32,
@@ -285,12 +257,6 @@ impl ProcessedFIRMData {
             est_velocity_x_meters_per_s,
             est_velocity_y_meters_per_s,
             est_velocity_z_meters_per_s,
-            est_acceleration_x_gs,
-            est_acceleration_y_gs,
-            est_acceleration_z_gs,
-            est_angular_rate_x_rad_per_s,
-            est_angular_rate_y_rad_per_s,
-            est_angular_rate_z_rad_per_s,
             est_quaternion_w,
             est_quaternion_x,
             est_quaternion_y,
@@ -329,12 +295,6 @@ impl ProcessedFIRMData {
         est_velocity_x_meters_per_s: f32,
         est_velocity_y_meters_per_s: f32,
         est_velocity_z_meters_per_s: f32,
-        est_acceleration_x_gs: f32,
-        est_acceleration_y_gs: f32,
-        est_acceleration_z_gs: f32,
-        est_angular_rate_x_rad_per_s: f32,
-        est_angular_rate_y_rad_per_s: f32,
-        est_angular_rate_z_rad_per_s: f32,
         est_quaternion_w: f32,
         est_quaternion_x: f32,
         est_quaternion_y: f32,
@@ -359,12 +319,6 @@ impl ProcessedFIRMData {
             est_velocity_x_meters_per_s,
             est_velocity_y_meters_per_s,
             est_velocity_z_meters_per_s,
-            est_acceleration_x_gs,
-            est_acceleration_y_gs,
-            est_acceleration_z_gs,
-            est_angular_rate_x_rad_per_s,
-            est_angular_rate_y_rad_per_s,
-            est_angular_rate_z_rad_per_s,
             est_quaternion_w,
             est_quaternion_x,
             est_quaternion_y,
@@ -376,7 +330,7 @@ impl ProcessedFIRMData {
     fn default_zero() -> Self {
         Self::from_base_fields(
             0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-            0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, // Identity quaternion
+            0.0, 1.0, // Identity quaternion
             0.0, 0.0, 0.0,
         )
     }
@@ -471,14 +425,6 @@ impl FIRMData {
         let est_velocity_y_meters_per_s: f32 = parse_bytes_to_f32(bytes, &mut idx);
         let est_velocity_z_meters_per_s: f32 = parse_bytes_to_f32(bytes, &mut idx);
 
-        let est_acceleration_x_gs: f32 = parse_bytes_to_f32(bytes, &mut idx);
-        let est_acceleration_y_gs: f32 = parse_bytes_to_f32(bytes, &mut idx);
-        let est_acceleration_z_gs: f32 = parse_bytes_to_f32(bytes, &mut idx);
-
-        let est_angular_rate_x_rad_per_s: f32 = parse_bytes_to_f32(bytes, &mut idx);
-        let est_angular_rate_y_rad_per_s: f32 = parse_bytes_to_f32(bytes, &mut idx);
-        let est_angular_rate_z_rad_per_s: f32 = parse_bytes_to_f32(bytes, &mut idx);
-
         let est_quaternion_w: f32 = parse_bytes_to_f32(bytes, &mut idx);
         let est_quaternion_x: f32 = parse_bytes_to_f32(bytes, &mut idx);
         let est_quaternion_y: f32 = parse_bytes_to_f32(bytes, &mut idx);
@@ -503,12 +449,6 @@ impl FIRMData {
             est_velocity_x_meters_per_s,
             est_velocity_y_meters_per_s,
             est_velocity_z_meters_per_s,
-            est_acceleration_x_gs,
-            est_acceleration_y_gs,
-            est_acceleration_z_gs,
-            est_angular_rate_x_rad_per_s,
-            est_angular_rate_y_rad_per_s,
-            est_angular_rate_z_rad_per_s,
             est_quaternion_w,
             est_quaternion_x,
             est_quaternion_y,

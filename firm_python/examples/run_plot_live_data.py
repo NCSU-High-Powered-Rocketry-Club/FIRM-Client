@@ -12,7 +12,6 @@ DEFAULT_PORT = "COM12"
 DEFAULT_BAUD_RATE = 2_000_000
 
 FIELDS: List[str] = [
-    "est_acceleration_x_gs",
     "raw_acceleration_x_gs",
     "raw_acceleration_y_gs",
     "raw_acceleration_z_gs",
@@ -36,12 +35,6 @@ KALMAN_FIELDS: List[str] = [
     "est_velocity_x_meters_per_s",
     "est_velocity_y_meters_per_s",
     "est_velocity_z_meters_per_s",
-    "est_acceleration_x_gs",
-    "est_acceleration_y_gs",
-    "est_acceleration_z_gs",
-    "est_angular_rate_x_rad_per_s",
-    "est_angular_rate_y_rad_per_s",
-    "est_angular_rate_z_rad_per_s",
     "est_quaternion_w",
     "est_quaternion_x",
     "est_quaternion_y",

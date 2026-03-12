@@ -17,25 +17,23 @@ pub enum MountAxis {
     NegZ,
 }
 
-impl MountAxis {
-    fn unit_vector(self) -> (f32, f32, f32) {
-        match self {
-            Self::PosX => (1.0, 0.0, 0.0),
-            Self::NegX => (-1.0, 0.0, 0.0),
-            Self::PosY => (0.0, 1.0, 0.0),
-            Self::NegY => (0.0, -1.0, 0.0),
-            Self::PosZ => (0.0, 0.0, 1.0),
-            Self::NegZ => (0.0, 0.0, -1.0),
-        }
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct DataProcessor {
     mount_axis: Option<MountAxis>,
 }
 
 impl DataProcessor {
+    fn mount_axis_unit_vector(mount_axis: MountAxis) -> (f32, f32, f32) {
+        match mount_axis {
+            MountAxis::PosX => (1.0, 0.0, 0.0),
+            MountAxis::NegX => (-1.0, 0.0, 0.0),
+            MountAxis::PosY => (0.0, 1.0, 0.0),
+            MountAxis::NegY => (0.0, -1.0, 0.0),
+            MountAxis::PosZ => (0.0, 0.0, 1.0),
+            MountAxis::NegZ => (0.0, 0.0, -1.0),
+        }
+    }
+
     fn rotate_acceleration_about_z_ccw(
         &self,
         acceleration_x_gs: f32,
@@ -64,8 +62,11 @@ impl DataProcessor {
         self.mount_axis = None;
     }
 
-    /// Computes total tilt angle (degrees) between the inferred rocket body axis
-    /// and +Z in world coordinates, using the estimated orientation quaternion.
+    /// Computes tilt angle (degrees) from the rocket body axis and orientation quaternion.
+    ///
+    /// Acceleration is only used to infer the rocket axis in body frame once.
+    /// The tilt itself is then computed from quaternion-rotated rocket axis to world +Z.
+    /// TODO: unsure if this works or not, FIRM might just have the wrong orientations for sensors.
     pub fn derive_tilt_angle_degrees(
         &mut self,
         raw_acceleration_x_gs: f32,
@@ -102,17 +103,30 @@ impl DataProcessor {
             ));
         }
 
-        let (axis_x, axis_y, axis_z) = self.mount_axis.unwrap_or(MountAxis::PosZ).unit_vector();
+        let quaternion_norm = (est_quaternion_w * est_quaternion_w
+            + est_quaternion_x * est_quaternion_x
+            + est_quaternion_y * est_quaternion_y
+            + est_quaternion_z * est_quaternion_z)
+            .sqrt();
+        if quaternion_norm <= f32::EPSILON {
+            return 0.0;
+        }
 
-        let (world_axis_x, world_axis_y, world_axis_z) = self.derive_rotated_raw_acceleration(
-            axis_x,
-            axis_y,
-            axis_z,
-            est_quaternion_w,
-            est_quaternion_x,
-            est_quaternion_y,
-            est_quaternion_z,
-        );
+        let qw = est_quaternion_w / quaternion_norm;
+        let qx = est_quaternion_x / quaternion_norm;
+        let qy = est_quaternion_y / quaternion_norm;
+        let qz = est_quaternion_z / quaternion_norm;
+
+        let (axis_x, axis_y, axis_z) =
+            Self::mount_axis_unit_vector(self.mount_axis.unwrap_or(MountAxis::PosZ));
+
+        let tx = 2.0 * (qy * axis_z - qz * axis_y);
+        let ty = 2.0 * (qz * axis_x - qx * axis_z);
+        let tz = 2.0 * (qx * axis_y - qy * axis_x);
+
+        let world_axis_x = axis_x + qw * tx + (qy * tz - qz * ty);
+        let world_axis_y = axis_y + qw * ty + (qz * tx - qx * tz);
+        let world_axis_z = axis_z + qw * tz + (qx * ty - qy * tx);
 
         let world_axis_magnitude = (world_axis_x * world_axis_x
             + world_axis_y * world_axis_y
@@ -350,6 +364,18 @@ mod tests {
         deriver.reset_mount_axis();
         let perpendicular = deriver.derive_tilt_angle_degrees(1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0);
         assert!((perpendicular - 90.0).abs() < 1e-5);
+    }
+
+    #[test]
+    fn tilt_uses_quaternion_after_axis_latched() {
+        let mut deriver = DataProcessor::new();
+
+        let aligned = deriver.derive_tilt_angle_degrees(0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0);
+        assert!(aligned.abs() < 1e-6);
+
+        // Once axis is latched, noisy acceleration should not change tilt when quaternion is unchanged.
+        let noisy = deriver.derive_tilt_angle_degrees(0.3, -0.7, 0.2, 1.0, 0.0, 0.0, 0.0);
+        assert!(noisy.abs() < 1e-6);
     }
 
     #[test]

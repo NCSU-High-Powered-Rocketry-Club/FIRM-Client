@@ -382,9 +382,15 @@ mod tests {
     }
 
     #[test]
-    fn mach_zero_velocity() {
+    fn test_mach_number() {
         let deriver = DataProcessor::new();
         let mach = deriver.derive_mach_number(0.0, 20.0);
         assert!(mach.abs() < 1e-6);
+
+        let mach = deriver.derive_mach_number(50.0, 20.0);
+        assert!((mach - 0.14568).abs() < 1e-3);
+
+        let mach = deriver.derive_mach_number(360.0, 20.0);
+        assert!((mach - 1.049).abs() < 1e-3);
     }
 }

@@ -29,11 +29,7 @@ MAX_POINTS = 4_000
 USE_PACKET_TIMESTAMP = True
 
 KALMAN_FIELDS: List[str] = [
-    "est_position_x_meters",
-    "est_position_y_meters",
     "est_position_z_meters",
-    "est_velocity_x_meters_per_s",
-    "est_velocity_y_meters_per_s",
     "est_velocity_z_meters_per_s",
     "est_quaternion_w",
     "est_quaternion_x",

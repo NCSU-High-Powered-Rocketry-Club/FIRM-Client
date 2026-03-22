@@ -89,12 +89,8 @@ pub struct FIRMData {
     pub magnetic_field_y_microteslas: f32,
     pub magnetic_field_z_microteslas: f32,
 
-    pub est_position_x_meters: f32,
-    pub est_position_y_meters: f32,
     pub est_position_z_meters: f32,
 
-    pub est_velocity_x_meters_per_s: f32,
-    pub est_velocity_y_meters_per_s: f32,
     pub est_velocity_z_meters_per_s: f32,
 
     pub est_quaternion_w: f32,
@@ -132,12 +128,8 @@ pub struct ProcessedFIRMData {
     pub magnetic_field_y_microteslas: f32,
     pub magnetic_field_z_microteslas: f32,
 
-    pub est_position_x_meters: f32,
-    pub est_position_y_meters: f32,
     pub est_position_z_meters: f32,
 
-    pub est_velocity_x_meters_per_s: f32,
-    pub est_velocity_y_meters_per_s: f32,
     pub est_velocity_z_meters_per_s: f32,
     pub est_mach_number: f32,
 
@@ -172,8 +164,6 @@ impl DataProcessor {
             firm_data.est_quaternion_z,
         );
         let est_mach_number = self.derive_mach_number(
-            firm_data.est_velocity_x_meters_per_s,
-            firm_data.est_velocity_y_meters_per_s,
             firm_data.est_velocity_z_meters_per_s,
             firm_data.temperature_celsius,
         );
@@ -195,11 +185,7 @@ impl DataProcessor {
             magnetic_field_x_microteslas: firm_data.magnetic_field_x_microteslas,
             magnetic_field_y_microteslas: firm_data.magnetic_field_y_microteslas,
             magnetic_field_z_microteslas: firm_data.magnetic_field_z_microteslas,
-            est_position_x_meters: firm_data.est_position_x_meters,
-            est_position_y_meters: firm_data.est_position_y_meters,
             est_position_z_meters: firm_data.est_position_z_meters,
-            est_velocity_x_meters_per_s: firm_data.est_velocity_x_meters_per_s,
-            est_velocity_y_meters_per_s: firm_data.est_velocity_y_meters_per_s,
             est_velocity_z_meters_per_s: firm_data.est_velocity_z_meters_per_s,
             est_mach_number,
             est_quaternion_w: firm_data.est_quaternion_w,
@@ -226,11 +212,7 @@ impl ProcessedFIRMData {
         magnetic_field_x_microteslas: f32,
         magnetic_field_y_microteslas: f32,
         magnetic_field_z_microteslas: f32,
-        est_position_x_meters: f32,
-        est_position_y_meters: f32,
         est_position_z_meters: f32,
-        est_velocity_x_meters_per_s: f32,
-        est_velocity_y_meters_per_s: f32,
         est_velocity_z_meters_per_s: f32,
         est_quaternion_w: f32,
         est_quaternion_x: f32,
@@ -251,11 +233,7 @@ impl ProcessedFIRMData {
             magnetic_field_x_microteslas,
             magnetic_field_y_microteslas,
             magnetic_field_z_microteslas,
-            est_position_x_meters,
-            est_position_y_meters,
             est_position_z_meters,
-            est_velocity_x_meters_per_s,
-            est_velocity_y_meters_per_s,
             est_velocity_z_meters_per_s,
             est_quaternion_w,
             est_quaternion_x,
@@ -289,11 +267,7 @@ impl ProcessedFIRMData {
         magnetic_field_x_microteslas: f32,
         magnetic_field_y_microteslas: f32,
         magnetic_field_z_microteslas: f32,
-        est_position_x_meters: f32,
-        est_position_y_meters: f32,
         est_position_z_meters: f32,
-        est_velocity_x_meters_per_s: f32,
-        est_velocity_y_meters_per_s: f32,
         est_velocity_z_meters_per_s: f32,
         est_quaternion_w: f32,
         est_quaternion_x: f32,
@@ -313,11 +287,7 @@ impl ProcessedFIRMData {
             magnetic_field_x_microteslas,
             magnetic_field_y_microteslas,
             magnetic_field_z_microteslas,
-            est_position_x_meters,
-            est_position_y_meters,
             est_position_z_meters,
-            est_velocity_x_meters_per_s,
-            est_velocity_y_meters_per_s,
             est_velocity_z_meters_per_s,
             est_quaternion_w,
             est_quaternion_x,
@@ -329,8 +299,8 @@ impl ProcessedFIRMData {
     #[staticmethod]
     fn default_zero() -> Self {
         Self::from_base_fields(
-            0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-            0.0, 1.0, // Identity quaternion
+            0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+            1.0, // Identity quaternion
             0.0, 0.0, 0.0,
         )
     }
@@ -417,12 +387,8 @@ impl FIRMData {
         let magnetic_field_y_microteslas: f32 = parse_bytes_to_f32(bytes, &mut idx);
         let magnetic_field_z_microteslas: f32 = parse_bytes_to_f32(bytes, &mut idx);
 
-        let est_position_x_meters: f32 = parse_bytes_to_f32(bytes, &mut idx);
-        let est_position_y_meters: f32 = parse_bytes_to_f32(bytes, &mut idx);
         let est_position_z_meters: f32 = parse_bytes_to_f32(bytes, &mut idx);
 
-        let est_velocity_x_meters_per_s: f32 = parse_bytes_to_f32(bytes, &mut idx);
-        let est_velocity_y_meters_per_s: f32 = parse_bytes_to_f32(bytes, &mut idx);
         let est_velocity_z_meters_per_s: f32 = parse_bytes_to_f32(bytes, &mut idx);
 
         let est_quaternion_w: f32 = parse_bytes_to_f32(bytes, &mut idx);
@@ -443,11 +409,7 @@ impl FIRMData {
             magnetic_field_x_microteslas,
             magnetic_field_y_microteslas,
             magnetic_field_z_microteslas,
-            est_position_x_meters,
-            est_position_y_meters,
             est_position_z_meters,
-            est_velocity_x_meters_per_s,
-            est_velocity_y_meters_per_s,
             est_velocity_z_meters_per_s,
             est_quaternion_w,
             est_quaternion_x,

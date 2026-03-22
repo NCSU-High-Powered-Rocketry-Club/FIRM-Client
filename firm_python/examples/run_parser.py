@@ -13,8 +13,8 @@ def render_packet(packet) -> str:
             f"Est Mach:           {packet.est_mach_number: >8.4f}",
             f"Raw Gyro (d/s):     x={packet.raw_angular_rate_x_deg_per_s: >8.4f}, y={packet.raw_angular_rate_y_deg_per_s: >8.4f}, z={packet.raw_angular_rate_z_deg_per_s: >8.4f}",
             f"Mag Field (uT):     x={packet.magnetic_field_x_microteslas: >8.4f}, y={packet.magnetic_field_y_microteslas: >8.4f}, z={packet.magnetic_field_z_microteslas: >8.4f}",
-            f"Est Pos (m):        x={packet.est_position_x_meters: >8.4f}, y={packet.est_position_y_meters: >8.4f}, z={packet.est_position_z_meters: >8.4f}",
-            f"Est Vel (m/s):      x={packet.est_velocity_x_meters_per_s: >8.4f}, y={packet.est_velocity_y_meters_per_s: >8.4f}, z={packet.est_velocity_z_meters_per_s: >8.4f}",
+            f"Est Pos (m):        z={packet.est_position_z_meters: >8.4f}",
+            f"Est Vel (m/s):      z={packet.est_velocity_z_meters_per_s: >8.4f}",
             f"Est Quat:           w={packet.est_quaternion_w: >6.3f}, x={packet.est_quaternion_x: >6.3f}, y={packet.est_quaternion_y: >6.3f}, z={packet.est_quaternion_z: >6.3f}",
             "-------------------------------------------",
         ]

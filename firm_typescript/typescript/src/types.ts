@@ -35,17 +35,9 @@ export interface FIRMPacket {
   /** Magnetometer reading for Z-axis in micro-Teslas. */
   magnetic_field_z_microteslas: number;
 
-  /** Estimated position along the X-axis in meters. */
-  est_position_x_meters: number;
-  /** Estimated position along the Y-axis in meters. */
-  est_position_y_meters: number;
   /** Estimated position along the Z-axis in meters. */
   est_position_z_meters: number;
 
-  /** Estimated velocity along the X-axis in meters per second. */
-  est_velocity_x_meters_per_s: number;
-  /** Estimated velocity along the Y-axis in meters per second. */
-  est_velocity_y_meters_per_s: number;
   /** Estimated velocity along the Z-axis in meters per second. */
   est_velocity_z_meters_per_s: number;
 

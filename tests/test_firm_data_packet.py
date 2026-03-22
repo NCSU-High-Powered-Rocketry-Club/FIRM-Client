@@ -19,11 +19,7 @@ def test_firm_data_packet_constructor() -> None:
         10.0,
         11.0,
         12.0,
-        13.0,
-        14.0,
         15.0,
-        16.0,
-        17.0,
         18.0,
         19.0,
         0.0,
@@ -43,11 +39,7 @@ def test_firm_data_packet_constructor() -> None:
     assert packet.magnetic_field_x_microteslas == 10.0
     assert packet.magnetic_field_y_microteslas == 11.0
     assert packet.magnetic_field_z_microteslas == 12.0
-    assert packet.est_position_x_meters == 13.0
-    assert packet.est_position_y_meters == 14.0
     assert packet.est_position_z_meters == 15.0
-    assert packet.est_velocity_x_meters_per_s == 16.0
-    assert packet.est_velocity_y_meters_per_s == 17.0
     assert packet.est_velocity_z_meters_per_s == 18.0
     assert packet.est_quaternion_w == 19.0
     assert packet.est_quaternion_x == 0.0
@@ -75,7 +67,7 @@ def test_firm_data_packet_constructor() -> None:
 
     temperature_kelvin = 2.0 + 273.15
     speed_of_sound = math.sqrt(1.4 * 287.05 * temperature_kelvin)
-    expected_mach = math.sqrt(16.0**2 + 17.0**2 + 18.0**2) / speed_of_sound
+    expected_mach = abs(18.0) / speed_of_sound
     assert packet.est_mach_number == pytest.approx(expected_mach, rel=1e-6, abs=1e-6)
 
 
@@ -94,11 +86,7 @@ def test_firm_data_packet_default_zero() -> None:
     assert firm_data_packet.magnetic_field_x_microteslas == 0.0
     assert firm_data_packet.magnetic_field_y_microteslas == 0.0
     assert firm_data_packet.magnetic_field_z_microteslas == 0.0
-    assert firm_data_packet.est_position_x_meters == 0.0
-    assert firm_data_packet.est_position_y_meters == 0.0
     assert firm_data_packet.est_position_z_meters == 0.0
-    assert firm_data_packet.est_velocity_x_meters_per_s == 0.0
-    assert firm_data_packet.est_velocity_y_meters_per_s == 0.0
     assert firm_data_packet.est_velocity_z_meters_per_s == 0.0
     assert firm_data_packet.est_quaternion_w == 1.0
     assert firm_data_packet.est_quaternion_x == 0.0
@@ -141,11 +129,7 @@ def test_firm_data_packet_as_dict() -> None:
         magnetic_field_x_microteslas=10.0,
         magnetic_field_y_microteslas=11.0,
         magnetic_field_z_microteslas=12.0,
-        est_position_x_meters=13.0,
-        est_position_y_meters=14.0,
         est_position_z_meters=15.0,
-        est_velocity_x_meters_per_s=16.0,
-        est_velocity_y_meters_per_s=17.0,
         est_velocity_z_meters_per_s=18.0,
         est_quaternion_w=19.0,
         est_quaternion_x=0.0,

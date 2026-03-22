@@ -89,17 +89,9 @@ class FIRMDataPacket:
     magnetic_field_z_microteslas: float
     """Magnetometer reading for Z-axis in micro-Teslas."""
 
-    est_position_x_meters: float
-    """Estimated position along the X-axis in meters."""
-    est_position_y_meters: float
-    """Estimated position along the Y-axis in meters."""
     est_position_z_meters: float
     """Estimated position along the Z-axis in meters."""
 
-    est_velocity_x_meters_per_s: float
-    """Estimated velocity along the X-axis in meters per second."""
-    est_velocity_y_meters_per_s: float
-    """Estimated velocity along the Y-axis in meters per second."""
     est_velocity_z_meters_per_s: float
     """Estimated velocity along the Z-axis in meters per second."""
 
@@ -129,11 +121,7 @@ class FIRMDataPacket:
         magnetic_field_x_microteslas: float,
         magnetic_field_y_microteslas: float,
         magnetic_field_z_microteslas: float,
-        est_position_x_meters: float,
-        est_position_y_meters: float,
         est_position_z_meters: float,
-        est_velocity_x_meters_per_s: float,
-        est_velocity_y_meters_per_s: float,
         est_velocity_z_meters_per_s: float,
         est_quaternion_w: float,
         est_quaternion_x: float,

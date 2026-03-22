@@ -264,14 +264,10 @@ impl DataProcessor {
     /// Computes Mach number from estimated velocity magnitude and ambient temperature.
     pub fn derive_mach_number(
         &self,
-        est_velocity_x_meters_per_s: f32,
-        est_velocity_y_meters_per_s: f32,
         est_velocity_z_meters_per_s: f32,
         temperature_celsius: f32,
     ) -> f32 {
-        if !est_velocity_x_meters_per_s.is_finite()
-            || !est_velocity_y_meters_per_s.is_finite()
-            || !est_velocity_z_meters_per_s.is_finite()
+        if !est_velocity_z_meters_per_s.is_finite()
             || !temperature_celsius.is_finite()
         {
             return 0.0;
@@ -289,9 +285,7 @@ impl DataProcessor {
             return 0.0;
         }
 
-        let speed_m_per_s = (est_velocity_x_meters_per_s * est_velocity_x_meters_per_s
-            + est_velocity_y_meters_per_s * est_velocity_y_meters_per_s
-            + est_velocity_z_meters_per_s * est_velocity_z_meters_per_s)
+        let speed_m_per_s = (est_velocity_z_meters_per_s * est_velocity_z_meters_per_s)
             .sqrt();
 
         speed_m_per_s / speed_of_sound_m_per_s
@@ -390,7 +384,7 @@ mod tests {
     #[test]
     fn mach_zero_velocity() {
         let deriver = DataProcessor::new();
-        let mach = deriver.derive_mach_number(0.0, 0.0, 0.0, 20.0);
+        let mach = deriver.derive_mach_number(0.0, 20.0);
         assert!(mach.abs() < 1e-6);
     }
 }

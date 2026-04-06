@@ -172,3 +172,15 @@ pub mod log_parsing {
 
     pub const HEADER_PARSE_DELAY: Duration = Duration::from_millis(100);
 }
+
+pub mod data_deriver_constants {
+    pub struct DataDeriverConstants;
+
+    impl DataDeriverConstants {
+        pub const SPECIFIC_HEAT_RATIO_AIR: f32 = 1.4;
+        pub const SPECIFIC_GAS_CONSTANT_AIR_J_PER_KG_K: f32 = 287.05;
+        pub const CELSIUS_TO_KELVIN_OFFSET: f32 = 273.15;
+        pub const RAD_TO_DEG: f32 = 180.0 / core::f32::consts::PI;
+        pub const IMU_Z_AXIS_CCW_ROTATION_DEGREES: f32 = 45.0;
+    }
+}

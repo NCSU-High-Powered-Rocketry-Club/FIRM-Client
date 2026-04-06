@@ -7,7 +7,7 @@ use firm_core::constants::command::{
 use firm_core::constants::log_parsing::{FIRMLogPacketType, HEADER_PARSE_DELAY, HEADER_TOTAL_SIZE};
 use firm_core::data_parser::SerialParser;
 use firm_core::firm_packets::{
-    CalibrationValues, DeviceConfig, DeviceInfo, DeviceProtocol, FIRMData, FIRMResponse,
+    CalibrationValues, DeviceConfig, DeviceInfo, DeviceProtocol, FIRMResponse, ProcessedFIRMData,
 };
 use firm_core::framed_packet::Framed;
 use firm_core::log_parsing::LogParser;
@@ -43,12 +43,12 @@ pub mod mock_serial;
 ///     }
 /// }
 pub struct FIRMClient {
-    packet_receiver: Receiver<FIRMData>,
+    packet_receiver: Receiver<ProcessedFIRMData>,
     response_receiver: Receiver<FIRMResponse>,
     error_receiver: Receiver<String>,
     running: Arc<AtomicBool>,
     join_handle: Option<JoinHandle<Box<dyn SerialPort>>>,
-    sender: Sender<FIRMData>,
+    sender: Sender<ProcessedFIRMData>,
     response_sender: Sender<FIRMResponse>,
     error_sender: Sender<String>,
     command_sender: Sender<FIRMCommandPacket>,
@@ -62,7 +62,7 @@ pub struct FIRMClient {
     mock_stream_stop: Arc<AtomicBool>,
     mock_stream_handle: Option<JoinHandle<anyhow::Result<usize>>>,
 
-    calibration_snoop: Arc<RwLock<Option<Sender<FIRMData>>>>,
+    calibration_snoop: Arc<RwLock<Option<Sender<ProcessedFIRMData>>>>,
     calibration_handle: Option<JoinHandle<Option<MagnetometerCalibration>>>,
 }
 
@@ -208,9 +208,7 @@ impl FIRMClient {
                         parser.parse_bytes(&buffer[..bytes_read]);
 
                         // Reads all available data packets and send them to the main thread and calibration if wanted
-                        while let Some(firm_data_packet) = parser.get_data_packet() {
-                            let packet = firm_data_packet.data().clone();
-
+                        while let Some(packet) = parser.get_data_packet() {
                             if sender.send(packet.clone()).is_err() {
                                 return port; // Receiver dropped
                             }
@@ -290,7 +288,7 @@ impl FIRMClient {
     pub fn get_data_packets(
         &mut self,
         timeout: Option<Duration>,
-    ) -> Result<Vec<FIRMData>, RecvTimeoutError> {
+    ) -> Result<Vec<ProcessedFIRMData>, RecvTimeoutError> {
         let mut packets = Vec::new();
 
         // If blocking, wait for at most one packet. The next loop will drain any others.
@@ -583,12 +581,10 @@ impl FIRMClient {
     ) -> Result<Option<bool>> {
         // Reset magnetometer calibration to a known state before collecting.
         // This avoids using stale calibration while we gather new samples.
-        let zero_offsets: [f32; NUMBER_OF_CALIBRATION_OFFSETS] = [0.0; NUMBER_OF_CALIBRATION_OFFSETS];
-        let identity_matrix: [f32; NUMBER_OF_CALIBRATION_SCALE_MATRIX_ELEMENTS] = [
-            1.0, 0.0, 0.0,
-            0.0, 1.0, 0.0,
-            0.0, 0.0, 1.0,
-        ];
+        let zero_offsets: [f32; NUMBER_OF_CALIBRATION_OFFSETS] =
+            [0.0; NUMBER_OF_CALIBRATION_OFFSETS];
+        let identity_matrix: [f32; NUMBER_OF_CALIBRATION_SCALE_MATRIX_ELEMENTS] =
+            [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
 
         match self.set_magnetometer_calibration(zero_offsets, identity_matrix, apply_timeout)? {
             Some(true) => {}

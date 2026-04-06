@@ -1,6 +1,8 @@
 import inspect
+import math
 
 from firm_client import FIRMDataPacket
+import pytest
 
 
 def test_firm_data_packet_constructor() -> None:
@@ -17,22 +19,12 @@ def test_firm_data_packet_constructor() -> None:
         10.0,
         11.0,
         12.0,
-        13.0,
-        14.0,
         15.0,
-        16.0,
-        17.0,
         18.0,
         19.0,
-        20.0,
-        21.0,
-        22.0,
-        23.0,
-        24.0,
-        25.0,
-        26.0,
-        27.0,
-        28.0,
+        0.0,
+        0.0,
+        0.0,
     )
 
     assert packet.timestamp_seconds == 1.0
@@ -47,22 +39,36 @@ def test_firm_data_packet_constructor() -> None:
     assert packet.magnetic_field_x_microteslas == 10.0
     assert packet.magnetic_field_y_microteslas == 11.0
     assert packet.magnetic_field_z_microteslas == 12.0
-    assert packet.est_position_x_meters == 13.0
-    assert packet.est_position_y_meters == 14.0
     assert packet.est_position_z_meters == 15.0
-    assert packet.est_velocity_x_meters_per_s == 16.0
-    assert packet.est_velocity_y_meters_per_s == 17.0
     assert packet.est_velocity_z_meters_per_s == 18.0
-    assert packet.est_acceleration_x_gs == 19.0
-    assert packet.est_acceleration_y_gs == 20.0
-    assert packet.est_acceleration_z_gs == 21.0
-    assert packet.est_angular_rate_x_rad_per_s == 22.0
-    assert packet.est_angular_rate_y_rad_per_s == 23.0
-    assert packet.est_angular_rate_z_rad_per_s == 24.0
-    assert packet.est_quaternion_w == 25.0
-    assert packet.est_quaternion_x == 26.0
-    assert packet.est_quaternion_y == 27.0
-    assert packet.est_quaternion_z == 28.0
+    assert packet.est_quaternion_w == 19.0
+    assert packet.est_quaternion_x == 0.0
+    assert packet.est_quaternion_y == 0.0
+    assert packet.est_quaternion_z == 0.0
+
+    expected_rotated_x = 4.0 * math.cos(math.radians(45.0)) - 5.0 * math.sin(math.radians(45.0))
+    expected_rotated_y = 4.0 * math.sin(math.radians(45.0)) + 5.0 * math.cos(math.radians(45.0))
+    expected_rotated_z = 6.0
+
+    assert packet.raw_rotated_acceleration_x_gs == pytest.approx(
+        expected_rotated_x, rel=1e-6, abs=1e-6
+    )
+    assert packet.raw_rotated_acceleration_y_gs == pytest.approx(
+        expected_rotated_y, rel=1e-6, abs=1e-6
+    )
+    assert packet.raw_rotated_acceleration_z_gs == pytest.approx(
+        expected_rotated_z, rel=1e-6, abs=1e-6
+    )
+
+    # Tilt is quaternion-based after axis latching; this synthetic sample latches to +Y
+    # and identity quaternion maps +Y to world +Y, i.e. 90 deg from world +Z.
+    expected_tilt = 90.0
+    assert packet.est_tilt_angle_degrees == pytest.approx(expected_tilt, rel=1e-6, abs=1e-6)
+
+    temperature_kelvin = 2.0 + 273.15
+    speed_of_sound = math.sqrt(1.4 * 287.05 * temperature_kelvin)
+    expected_mach = abs(18.0) / speed_of_sound
+    assert packet.est_mach_number == pytest.approx(expected_mach, rel=1e-6, abs=1e-6)
 
 
 def test_firm_data_packet_default_zero() -> None:
@@ -80,22 +86,17 @@ def test_firm_data_packet_default_zero() -> None:
     assert firm_data_packet.magnetic_field_x_microteslas == 0.0
     assert firm_data_packet.magnetic_field_y_microteslas == 0.0
     assert firm_data_packet.magnetic_field_z_microteslas == 0.0
-    assert firm_data_packet.est_position_x_meters == 0.0
-    assert firm_data_packet.est_position_y_meters == 0.0
     assert firm_data_packet.est_position_z_meters == 0.0
-    assert firm_data_packet.est_velocity_x_meters_per_s == 0.0
-    assert firm_data_packet.est_velocity_y_meters_per_s == 0.0
     assert firm_data_packet.est_velocity_z_meters_per_s == 0.0
-    assert firm_data_packet.est_acceleration_x_gs == 0.0
-    assert firm_data_packet.est_acceleration_y_gs == 0.0
-    assert firm_data_packet.est_acceleration_z_gs == 0.0
-    assert firm_data_packet.est_angular_rate_x_rad_per_s == 0.0
-    assert firm_data_packet.est_angular_rate_y_rad_per_s == 0.0
-    assert firm_data_packet.est_angular_rate_z_rad_per_s == 0.0
     assert firm_data_packet.est_quaternion_w == 1.0
     assert firm_data_packet.est_quaternion_x == 0.0
     assert firm_data_packet.est_quaternion_y == 0.0
     assert firm_data_packet.est_quaternion_z == 0.0
+    assert firm_data_packet.raw_rotated_acceleration_x_gs == 0.0
+    assert firm_data_packet.raw_rotated_acceleration_y_gs == 0.0
+    assert firm_data_packet.raw_rotated_acceleration_z_gs == 0.0
+    assert firm_data_packet.est_tilt_angle_degrees == 0.0
+    assert firm_data_packet.est_mach_number == 0.0
 
 
 def test_firm_data_packet_struct_fields() -> None:
@@ -106,7 +107,12 @@ def test_firm_data_packet_struct_fields() -> None:
     sig = inspect.signature(FIRMDataPacket)
     constructor_params = list(sig.parameters.keys())
 
-    assert fields == constructor_params
+    assert set(constructor_params).issubset(set(fields))
+    assert "raw_rotated_acceleration_x_gs" in fields
+    assert "raw_rotated_acceleration_y_gs" in fields
+    assert "raw_rotated_acceleration_z_gs" in fields
+    assert "est_tilt_angle_degrees" in fields
+    assert "est_mach_number" in fields
 
 
 def test_firm_data_packet_as_dict() -> None:
@@ -123,22 +129,12 @@ def test_firm_data_packet_as_dict() -> None:
         magnetic_field_x_microteslas=10.0,
         magnetic_field_y_microteslas=11.0,
         magnetic_field_z_microteslas=12.0,
-        est_position_x_meters=13.0,
-        est_position_y_meters=14.0,
         est_position_z_meters=15.0,
-        est_velocity_x_meters_per_s=16.0,
-        est_velocity_y_meters_per_s=17.0,
         est_velocity_z_meters_per_s=18.0,
-        est_acceleration_x_gs=19.0,
-        est_acceleration_y_gs=20.0,
-        est_acceleration_z_gs=21.0,
-        est_angular_rate_x_rad_per_s=22.0,
-        est_angular_rate_y_rad_per_s=23.0,
-        est_angular_rate_z_rad_per_s=24.0,
-        est_quaternion_w=25.0,
-        est_quaternion_x=26.0,
-        est_quaternion_y=27.0,
-        est_quaternion_z=28.0,
+        est_quaternion_w=19.0,
+        est_quaternion_x=0.0,
+        est_quaternion_y=0.0,
+        est_quaternion_z=0.0,
     )
 
     data_dict = packet.as_dict()
@@ -149,7 +145,11 @@ def test_firm_data_packet_as_dict() -> None:
 
     assert data_dict["timestamp_seconds"] == 1.0
     assert data_dict["temperature_celsius"] == 2.0
-    assert data_dict["est_quaternion_z"] == 28.0
+    assert data_dict["est_quaternion_z"] == 0.0
+    expected_rotated_x = 4.0 * math.cos(math.radians(45.0)) - 5.0 * math.sin(math.radians(45.0))
+    assert data_dict["raw_rotated_acceleration_x_gs"] == pytest.approx(
+        expected_rotated_x, rel=1e-6, abs=1e-6
+    )
 
     # Make sure modifying the dict does not affect the original packet
     data_dict["timestamp_seconds"] = 999.9

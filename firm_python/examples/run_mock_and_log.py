@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional
 from firm_client import FIRMClient
 
 
-# uv run  .\firm_python\examples\run_mock_and_log.py --out output.csv COM12 "C:\Users\jackg\Downloads\LOG1.TXT"
+# uv run  .\firm_python\examples\run_mock_and_log.py --out output.csv COM8 "C:\Users\jackg\Downloads\gov_work_launch_1_ab (1).FRM"
 
 TIMEOUT_SECONDS_DEFAULT = 0.5
 START_TIMEOUT_SECONDS_DEFAULT = 5.0
@@ -30,18 +30,8 @@ FIELDS: List[str] = [
     "magnetic_field_x_microteslas",
     "magnetic_field_y_microteslas",
     "magnetic_field_z_microteslas",
-    "est_position_x_meters",
-    "est_position_y_meters",
     "est_position_z_meters",
-    "est_velocity_x_meters_per_s",
-    "est_velocity_y_meters_per_s",
     "est_velocity_z_meters_per_s",
-    "est_acceleration_x_gs",
-    "est_acceleration_y_gs",
-    "est_acceleration_z_gs",
-    "est_angular_rate_x_rad_per_s",
-    "est_angular_rate_y_rad_per_s",
-    "est_angular_rate_z_rad_per_s",
     "est_quaternion_w",
     "est_quaternion_x",
     "est_quaternion_y",

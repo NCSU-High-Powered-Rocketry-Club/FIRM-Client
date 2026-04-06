@@ -1,4 +1,5 @@
 use crate::constants::command::*;
+use crate::data_processor::DataProcessor;
 use crate::framed_packet::{FrameError, Framed, FramedPacket};
 use crate::utils::{bytes_to_str, parse_bytes_to_f32, parse_bytes_to_many_f32s};
 use field_names::FieldNames;
@@ -65,14 +66,11 @@ pub struct DeviceConfig {
     pub protocol: DeviceProtocol,
 }
 
-/// Represents a decoded FIRM telemetry packet with converted physical units. In our Python code
-/// it's called FIRMDataPacket, but to avoid confusion with the Rust packet struct
-/// we name this FIRMData.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, FieldNames)]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(name = "FIRMDataPacket", get_all, freelist = 20, frozen)
-)]
+/// Represents decoded raw telemetry fields from the wire payload.
+///
+/// This type intentionally excludes derived fields and is intended for
+/// internal processing.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FIRMData {
     pub timestamp_seconds: f64,
 
@@ -91,21 +89,9 @@ pub struct FIRMData {
     pub magnetic_field_y_microteslas: f32,
     pub magnetic_field_z_microteslas: f32,
 
-    pub est_position_x_meters: f32,
-    pub est_position_y_meters: f32,
     pub est_position_z_meters: f32,
 
-    pub est_velocity_x_meters_per_s: f32,
-    pub est_velocity_y_meters_per_s: f32,
     pub est_velocity_z_meters_per_s: f32,
-
-    pub est_acceleration_x_gs: f32,
-    pub est_acceleration_y_gs: f32,
-    pub est_acceleration_z_gs: f32,
-
-    pub est_angular_rate_x_rad_per_s: f32,
-    pub est_angular_rate_y_rad_per_s: f32,
-    pub est_angular_rate_z_rad_per_s: f32,
 
     pub est_quaternion_w: f32,
     pub est_quaternion_x: f32,
@@ -113,12 +99,157 @@ pub struct FIRMData {
     pub est_quaternion_z: f32,
 }
 
+/// Represents processed telemetry with derived fields included.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, FieldNames)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(name = "FIRMDataPacket", get_all, freelist = 20, frozen)
+)]
+pub struct ProcessedFIRMData {
+    pub timestamp_seconds: f64,
+
+    pub temperature_celsius: f32,
+    pub pressure_pascals: f32,
+
+    pub raw_acceleration_x_gs: f32,
+    pub raw_acceleration_y_gs: f32,
+    pub raw_acceleration_z_gs: f32,
+
+    pub raw_rotated_acceleration_x_gs: f32,
+    pub raw_rotated_acceleration_y_gs: f32,
+    pub raw_rotated_acceleration_z_gs: f32,
+    pub est_tilt_angle_degrees: f32,
+
+    pub raw_angular_rate_x_deg_per_s: f32,
+    pub raw_angular_rate_y_deg_per_s: f32,
+    pub raw_angular_rate_z_deg_per_s: f32,
+
+    pub magnetic_field_x_microteslas: f32,
+    pub magnetic_field_y_microteslas: f32,
+    pub magnetic_field_z_microteslas: f32,
+
+    pub est_position_z_meters: f32,
+
+    pub est_velocity_z_meters_per_s: f32,
+    pub est_mach_number: f32,
+
+    pub est_quaternion_w: f32,
+    pub est_quaternion_x: f32,
+    pub est_quaternion_y: f32,
+    pub est_quaternion_z: f32,
+}
+
+impl DataProcessor {
+    pub fn process_firm_data(&mut self, firm_data: &FIRMData) -> ProcessedFIRMData {
+        let (
+            raw_rotated_acceleration_x_gs,
+            raw_rotated_acceleration_y_gs,
+            raw_rotated_acceleration_z_gs,
+        ) = self.derive_rotated_raw_acceleration(
+            firm_data.raw_acceleration_x_gs,
+            firm_data.raw_acceleration_y_gs,
+            firm_data.raw_acceleration_z_gs,
+            firm_data.est_quaternion_w,
+            firm_data.est_quaternion_x,
+            firm_data.est_quaternion_y,
+            firm_data.est_quaternion_z,
+        );
+        let est_tilt_angle_degrees = self.derive_tilt_angle_degrees(
+            firm_data.raw_acceleration_x_gs,
+            firm_data.raw_acceleration_y_gs,
+            firm_data.raw_acceleration_z_gs,
+            firm_data.est_quaternion_w,
+            firm_data.est_quaternion_x,
+            firm_data.est_quaternion_y,
+            firm_data.est_quaternion_z,
+        );
+        let est_mach_number = self.derive_mach_number(
+            firm_data.est_velocity_z_meters_per_s,
+            firm_data.temperature_celsius,
+        );
+
+        ProcessedFIRMData {
+            timestamp_seconds: firm_data.timestamp_seconds,
+            temperature_celsius: firm_data.temperature_celsius,
+            pressure_pascals: firm_data.pressure_pascals,
+            raw_acceleration_x_gs: firm_data.raw_acceleration_x_gs,
+            raw_acceleration_y_gs: firm_data.raw_acceleration_y_gs,
+            raw_acceleration_z_gs: firm_data.raw_acceleration_z_gs,
+            raw_rotated_acceleration_x_gs,
+            raw_rotated_acceleration_y_gs,
+            raw_rotated_acceleration_z_gs,
+            est_tilt_angle_degrees,
+            raw_angular_rate_x_deg_per_s: firm_data.raw_angular_rate_x_deg_per_s,
+            raw_angular_rate_y_deg_per_s: firm_data.raw_angular_rate_y_deg_per_s,
+            raw_angular_rate_z_deg_per_s: firm_data.raw_angular_rate_z_deg_per_s,
+            magnetic_field_x_microteslas: firm_data.magnetic_field_x_microteslas,
+            magnetic_field_y_microteslas: firm_data.magnetic_field_y_microteslas,
+            magnetic_field_z_microteslas: firm_data.magnetic_field_z_microteslas,
+            est_position_z_meters: firm_data.est_position_z_meters,
+            est_velocity_z_meters_per_s: firm_data.est_velocity_z_meters_per_s,
+            est_mach_number,
+            est_quaternion_w: firm_data.est_quaternion_w,
+            est_quaternion_x: firm_data.est_quaternion_x,
+            est_quaternion_y: firm_data.est_quaternion_y,
+            est_quaternion_z: firm_data.est_quaternion_z,
+        }
+    }
+}
+
+#[cfg(feature = "python")]
+impl ProcessedFIRMData {
+    #[allow(clippy::too_many_arguments)]
+    fn from_base_fields(
+        timestamp_seconds: f64,
+        temperature_celsius: f32,
+        pressure_pascals: f32,
+        raw_acceleration_x_gs: f32,
+        raw_acceleration_y_gs: f32,
+        raw_acceleration_z_gs: f32,
+        raw_angular_rate_x_deg_per_s: f32,
+        raw_angular_rate_y_deg_per_s: f32,
+        raw_angular_rate_z_deg_per_s: f32,
+        magnetic_field_x_microteslas: f32,
+        magnetic_field_y_microteslas: f32,
+        magnetic_field_z_microteslas: f32,
+        est_position_z_meters: f32,
+        est_velocity_z_meters_per_s: f32,
+        est_quaternion_w: f32,
+        est_quaternion_x: f32,
+        est_quaternion_y: f32,
+        est_quaternion_z: f32,
+    ) -> Self {
+        let mut processor = DataProcessor::default();
+        let firm_data = FIRMData {
+            timestamp_seconds,
+            temperature_celsius,
+            pressure_pascals,
+            raw_acceleration_x_gs,
+            raw_acceleration_y_gs,
+            raw_acceleration_z_gs,
+            raw_angular_rate_x_deg_per_s,
+            raw_angular_rate_y_deg_per_s,
+            raw_angular_rate_z_deg_per_s,
+            magnetic_field_x_microteslas,
+            magnetic_field_y_microteslas,
+            magnetic_field_z_microteslas,
+            est_position_z_meters,
+            est_velocity_z_meters_per_s,
+            est_quaternion_w,
+            est_quaternion_x,
+            est_quaternion_y,
+            est_quaternion_z,
+        };
+        processor.process_firm_data(&firm_data)
+    }
+}
+
 #[cfg(feature = "python")]
 #[pymethods]
-impl FIRMData {
+impl ProcessedFIRMData {
     #[classattr]
     fn __struct_fields__() -> Vec<&'static str> {
-        FIRMData::FIELDS.to_vec()
+        ProcessedFIRMData::FIELDS.to_vec()
     }
 
     #[new]
@@ -136,24 +267,14 @@ impl FIRMData {
         magnetic_field_x_microteslas: f32,
         magnetic_field_y_microteslas: f32,
         magnetic_field_z_microteslas: f32,
-        est_position_x_meters: f32,
-        est_position_y_meters: f32,
         est_position_z_meters: f32,
-        est_velocity_x_meters_per_s: f32,
-        est_velocity_y_meters_per_s: f32,
         est_velocity_z_meters_per_s: f32,
-        est_acceleration_x_gs: f32,
-        est_acceleration_y_gs: f32,
-        est_acceleration_z_gs: f32,
-        est_angular_rate_x_rad_per_s: f32,
-        est_angular_rate_y_rad_per_s: f32,
-        est_angular_rate_z_rad_per_s: f32,
         est_quaternion_w: f32,
         est_quaternion_x: f32,
         est_quaternion_y: f32,
         est_quaternion_z: f32,
     ) -> Self {
-        FIRMData {
+        Self::from_base_fields(
             timestamp_seconds,
             temperature_celsius,
             pressure_pascals,
@@ -166,57 +287,22 @@ impl FIRMData {
             magnetic_field_x_microteslas,
             magnetic_field_y_microteslas,
             magnetic_field_z_microteslas,
-            est_position_x_meters,
-            est_position_y_meters,
             est_position_z_meters,
-            est_velocity_x_meters_per_s,
-            est_velocity_y_meters_per_s,
             est_velocity_z_meters_per_s,
-            est_acceleration_x_gs,
-            est_acceleration_y_gs,
-            est_acceleration_z_gs,
-            est_angular_rate_x_rad_per_s,
-            est_angular_rate_y_rad_per_s,
-            est_angular_rate_z_rad_per_s,
             est_quaternion_w,
             est_quaternion_x,
             est_quaternion_y,
             est_quaternion_z,
-        }
+        )
     }
 
     #[staticmethod]
     fn default_zero() -> Self {
-        FIRMData {
-            timestamp_seconds: 0.0,
-            temperature_celsius: 0.0,
-            pressure_pascals: 0.0,
-            raw_acceleration_x_gs: 0.0,
-            raw_acceleration_y_gs: 0.0,
-            raw_acceleration_z_gs: 0.0,
-            raw_angular_rate_x_deg_per_s: 0.0,
-            raw_angular_rate_y_deg_per_s: 0.0,
-            raw_angular_rate_z_deg_per_s: 0.0,
-            magnetic_field_x_microteslas: 0.0,
-            magnetic_field_y_microteslas: 0.0,
-            magnetic_field_z_microteslas: 0.0,
-            est_position_x_meters: 0.0,
-            est_position_y_meters: 0.0,
-            est_position_z_meters: 0.0,
-            est_velocity_x_meters_per_s: 0.0,
-            est_velocity_y_meters_per_s: 0.0,
-            est_velocity_z_meters_per_s: 0.0,
-            est_acceleration_x_gs: 0.0,
-            est_acceleration_y_gs: 0.0,
-            est_acceleration_z_gs: 0.0,
-            est_angular_rate_x_rad_per_s: 0.0,
-            est_angular_rate_y_rad_per_s: 0.0,
-            est_angular_rate_z_rad_per_s: 0.0,
-            est_quaternion_w: 1.0, // Identity quaternion
-            est_quaternion_x: 0.0,
-            est_quaternion_y: 0.0,
-            est_quaternion_z: 0.0,
-        }
+        Self::from_base_fields(
+            0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+            1.0, // Identity quaternion
+            0.0, 0.0, 0.0,
+        )
     }
 
     fn as_dict<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
@@ -301,21 +387,9 @@ impl FIRMData {
         let magnetic_field_y_microteslas: f32 = parse_bytes_to_f32(bytes, &mut idx);
         let magnetic_field_z_microteslas: f32 = parse_bytes_to_f32(bytes, &mut idx);
 
-        let est_position_x_meters: f32 = parse_bytes_to_f32(bytes, &mut idx);
-        let est_position_y_meters: f32 = parse_bytes_to_f32(bytes, &mut idx);
         let est_position_z_meters: f32 = parse_bytes_to_f32(bytes, &mut idx);
 
-        let est_velocity_x_meters_per_s: f32 = parse_bytes_to_f32(bytes, &mut idx);
-        let est_velocity_y_meters_per_s: f32 = parse_bytes_to_f32(bytes, &mut idx);
         let est_velocity_z_meters_per_s: f32 = parse_bytes_to_f32(bytes, &mut idx);
-
-        let est_acceleration_x_gs: f32 = parse_bytes_to_f32(bytes, &mut idx);
-        let est_acceleration_y_gs: f32 = parse_bytes_to_f32(bytes, &mut idx);
-        let est_acceleration_z_gs: f32 = parse_bytes_to_f32(bytes, &mut idx);
-
-        let est_angular_rate_x_rad_per_s: f32 = parse_bytes_to_f32(bytes, &mut idx);
-        let est_angular_rate_y_rad_per_s: f32 = parse_bytes_to_f32(bytes, &mut idx);
-        let est_angular_rate_z_rad_per_s: f32 = parse_bytes_to_f32(bytes, &mut idx);
 
         let est_quaternion_w: f32 = parse_bytes_to_f32(bytes, &mut idx);
         let est_quaternion_x: f32 = parse_bytes_to_f32(bytes, &mut idx);
@@ -326,35 +400,17 @@ impl FIRMData {
             timestamp_seconds,
             temperature_celsius,
             pressure_pascals,
-
             raw_acceleration_x_gs,
             raw_acceleration_y_gs,
             raw_acceleration_z_gs,
-
             raw_angular_rate_x_deg_per_s,
             raw_angular_rate_y_deg_per_s,
             raw_angular_rate_z_deg_per_s,
-
             magnetic_field_x_microteslas,
             magnetic_field_y_microteslas,
             magnetic_field_z_microteslas,
-
-            est_position_x_meters,
-            est_position_y_meters,
             est_position_z_meters,
-
-            est_velocity_x_meters_per_s,
-            est_velocity_y_meters_per_s,
             est_velocity_z_meters_per_s,
-
-            est_acceleration_x_gs,
-            est_acceleration_y_gs,
-            est_acceleration_z_gs,
-
-            est_angular_rate_x_rad_per_s,
-            est_angular_rate_y_rad_per_s,
-            est_angular_rate_z_rad_per_s,
-
             est_quaternion_w,
             est_quaternion_x,
             est_quaternion_y,

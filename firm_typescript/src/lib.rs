@@ -12,7 +12,7 @@ use serde::Serialize;
 use wasm_bindgen::prelude::*;
 
 use firm_core::calibration::MagnetometerCalibrator;
-use firm_core::firm_packets::FIRMData;
+use firm_core::firm_packets::ProcessedFIRMData;
 
 #[wasm_bindgen]
 pub struct FIRMCommandBuilder;
@@ -176,7 +176,7 @@ impl FIRMDataParser {
     #[wasm_bindgen]
     pub fn get_packet(&mut self) -> JsValue {
         match self.inner.get_data_packet() {
-            Some(frame) => serde_wasm_bindgen::to_value(frame.data()).unwrap(),
+            Some(packet) => serde_wasm_bindgen::to_value(&packet).unwrap(),
             None => JsValue::NULL,
         }
     }
@@ -301,10 +301,10 @@ impl MagnetometerCalibratorWasm {
 
     /// Adds a sample from a parsed telemetry packet.
     ///
-    /// Expects an object compatible with the `FIRMData` serde shape.
+    /// Expects an object compatible with the processed telemetry serde shape.
     #[wasm_bindgen]
     pub fn add_sample(&mut self, packet: JsValue) {
-        let data: FIRMData = serde_wasm_bindgen::from_value(packet).unwrap_or_else(|e| {
+        let data: ProcessedFIRMData = serde_wasm_bindgen::from_value(packet).unwrap_or_else(|e| {
             wasm_bindgen::throw_str(&format!("Failed to parse FIRMPacket for calibration: {e}"))
         });
         self.inner.add_sample(&data);

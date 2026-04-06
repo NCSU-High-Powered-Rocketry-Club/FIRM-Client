@@ -1,4 +1,4 @@
-use crate::firm_packets::FIRMData;
+use crate::firm_packets::ProcessedFIRMData;
 use nalgebra::{Matrix3, Vector3};
 use std::vec::Vec;
 
@@ -63,7 +63,7 @@ impl MagnetometerCalibration {
     }
 }
 
-/// Accumulates FIRMData packets and calculates magnetometer calibration parameters
+/// Accumulates processed telemetry packets and calculates magnetometer calibration parameters
 /// using least squares ellipsoid fitting (similar to MATLAB's magcal).
 pub struct MagnetometerCalibrator {
     /// Buffer of collected points (x, y, z).
@@ -99,7 +99,7 @@ impl MagnetometerCalibrator {
     }
 
     /// Adds a data packet to the calibration buffer if collecting.
-    pub fn add_sample(&mut self, data: &FIRMData) {
+    pub fn add_sample(&mut self, data: &ProcessedFIRMData) {
         if self.is_collecting {
             self.samples.push(Vector3::new(
                 data.magnetic_field_x_microteslas,

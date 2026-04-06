@@ -267,9 +267,7 @@ impl DataProcessor {
         est_velocity_z_meters_per_s: f32,
         temperature_celsius: f32,
     ) -> f32 {
-        if !est_velocity_z_meters_per_s.is_finite()
-            || !temperature_celsius.is_finite()
-        {
+        if !est_velocity_z_meters_per_s.is_finite() || !temperature_celsius.is_finite() {
             return 0.0;
         }
 
@@ -285,8 +283,7 @@ impl DataProcessor {
             return 0.0;
         }
 
-        let speed_m_per_s = (est_velocity_z_meters_per_s * est_velocity_z_meters_per_s)
-            .sqrt();
+        let speed_m_per_s = (est_velocity_z_meters_per_s * est_velocity_z_meters_per_s).sqrt();
 
         speed_m_per_s / speed_of_sound_m_per_s
     }

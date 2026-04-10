@@ -156,7 +156,6 @@ pub mod log_parsing {
     pub const HEADER_COMM_SIZE: usize = 4; // 1 byte usb, 1 byte uart, 1 byte spi, 1 byte i2c
     pub const HEADER_FIRMWARE_VERSION_SIZE: usize = 8; // "vX.X.X.X"
     pub const HEADER_FREQUENCY_SIZE: usize = 2;
-    pub const HEADER_PADDING_SIZE: usize = 2;
     pub const HEADER_CAL_SIZE: usize = (3 + 9) * 3 * 4; // (offsets + 3x3 matrix) * 3 sensors * 4 bytes
     pub const HEADER_NUM_SCALE_FACTOR_SIZE: usize = 5 * 4; // 5 floats
 
@@ -166,7 +165,6 @@ pub mod log_parsing {
         + HEADER_COMM_SIZE
         + HEADER_FIRMWARE_VERSION_SIZE
         + HEADER_FREQUENCY_SIZE
-        + HEADER_PADDING_SIZE
         + HEADER_CAL_SIZE
         + HEADER_NUM_SCALE_FACTOR_SIZE;
 

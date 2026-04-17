@@ -6,7 +6,7 @@ A modular Rust library for parsing FIRM data packets, with bindings for Python a
 
 The project is organized as a Cargo workspace with the following crates:
 
-- **`firm_core`**: The core `no_std` crate containing the packet parser, CRC logic, and data structures. This is the foundation for all other crates and can be used in embedded environments.
+- **`firm_core`**: The core `no_std` crate containing the packet parser, CRC logic, and data structures. This is the foundation for all other crates and can be used in embedded environments. Note: `firm_core` isn't actually `no_std` yet.
 - **`firm_rust`**: A high-level Rust API that uses `serialport` to read from a serial device and provides a threaded client for receiving packets.
 - **`firm_python`**: Python bindings for the Rust client.
 - **`firm_typescript`**: WebAssembly bindings and TypeScript code for using the parser in web applications.
@@ -121,7 +121,22 @@ This is mostly for maintainers, but here are the steps to publish each crate to 
 
 ### Rust API (crates.io)
 
-todo (idk actually know yet)
+Get a crates.io API token from your account settings, and then login using Cargo:
+
+```
+cargo login
+```
+Then, to publish the `firm_core` crate:
+
+```
+cargo publish -p firm_core
+```
+
+To add owners to the crate (so that other maintainers can publish new versions):
+
+```
+cargo owner --add <gitub_username> firm_core
+```
 
 ### Python Bindings (PyPI)
 

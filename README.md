@@ -121,7 +121,22 @@ This is mostly for maintainers, but here are the steps to publish each crate to 
 
 ### Rust API (crates.io)
 
-todo (idk actually know yet)
+Get a crates.io API token from your account settings, and then login using Cargo:
+
+```
+cargo login
+```
+Then, to publish the `firm_core` crate:
+
+```
+cargo publish -p firm_core
+```
+
+To add owners to the crate (so that other maintainers can publish new versions):
+
+```
+cargo owner --add <gitub_username> firm_core
+```
 
 ### Python Bindings (PyPI)
 
